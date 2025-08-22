@@ -14,7 +14,285 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      adjustments: {
+        Row: {
+          adjustment_date: string
+          adjustment_type: string
+          amount: number
+          created_at: string
+          description: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          adjustment_date?: string
+          adjustment_type: string
+          amount: number
+          created_at?: string
+          description: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          adjustment_date?: string
+          adjustment_type?: string
+          amount?: number
+          created_at?: string
+          description?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      customers: {
+        Row: {
+          branch: string | null
+          client_name: string
+          created_at: string
+          id: string
+          price_per_bottle: number | null
+          price_per_case: number | null
+          sku: string | null
+          updated_at: string
+        }
+        Insert: {
+          branch?: string | null
+          client_name: string
+          created_at?: string
+          id?: string
+          price_per_bottle?: number | null
+          price_per_case?: number | null
+          sku?: string | null
+          updated_at?: string
+        }
+        Update: {
+          branch?: string | null
+          client_name?: string
+          created_at?: string
+          id?: string
+          price_per_bottle?: number | null
+          price_per_case?: number | null
+          sku?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      factory_payables: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          quantity: number | null
+          transaction_date: string
+          transaction_type: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          quantity?: number | null
+          transaction_date?: string
+          transaction_type: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          quantity?: number | null
+          transaction_date?: string
+          transaction_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      label_design_costs: {
+        Row: {
+          cost: number
+          created_at: string
+          customer_id: string
+          design_date: string
+          design_description: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          cost: number
+          created_at?: string
+          customer_id: string
+          design_date?: string
+          design_description: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          cost?: number
+          created_at?: string
+          customer_id?: string
+          design_date?: string
+          design_description?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "label_design_costs_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      label_purchases: {
+        Row: {
+          cost_per_label: number
+          created_at: string
+          description: string | null
+          id: string
+          purchase_date: string
+          quantity: number
+          total_amount: number
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          cost_per_label: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          purchase_date?: string
+          quantity: number
+          total_amount: number
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          cost_per_label?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          purchase_date?: string
+          quantity?: number
+          total_amount?: number
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "label_purchases_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "label_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      label_vendors: {
+        Row: {
+          created_at: string
+          id: string
+          label_type: string | null
+          price_per_label: number | null
+          updated_at: string
+          vendor_name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label_type?: string | null
+          price_per_label?: number | null
+          updated_at?: string
+          vendor_name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label_type?: string | null
+          price_per_label?: number | null
+          updated_at?: string
+          vendor_name?: string
+        }
+        Relationships: []
+      }
+      sales_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          customer_id: string
+          description: string | null
+          id: string
+          quantity: number | null
+          transaction_date: string
+          transaction_type: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          customer_id: string
+          description?: string | null
+          id?: string
+          quantity?: number | null
+          transaction_date?: string
+          transaction_type: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          customer_id?: string
+          description?: string | null
+          id?: string
+          quantity?: number | null
+          transaction_date?: string
+          transaction_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transport_expenses: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string
+          expense_date: string
+          expense_group: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description: string
+          expense_date?: string
+          expense_group?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string
+          expense_date?: string
+          expense_group?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
