@@ -110,6 +110,36 @@ export type Database = {
         }
         Relationships: []
       }
+      factory_pricing: {
+        Row: {
+          created_at: string | null
+          id: string
+          price_per_bottle: number
+          pricing_date: string
+          sku: string
+          tax: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          price_per_bottle: number
+          pricing_date?: string
+          sku: string
+          tax?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          price_per_bottle?: number
+          pricing_date?: string
+          sku?: string
+          tax?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       label_design_costs: {
         Row: {
           cost: number
@@ -150,34 +180,43 @@ export type Database = {
       }
       label_purchases: {
         Row: {
+          client_id: string | null
           cost_per_label: number
           created_at: string
           description: string | null
           id: string
+          payment_amount: number | null
           purchase_date: string
           quantity: number
+          sku: string | null
           total_amount: number
           updated_at: string
           vendor_id: string
         }
         Insert: {
+          client_id?: string | null
           cost_per_label: number
           created_at?: string
           description?: string | null
           id?: string
+          payment_amount?: number | null
           purchase_date?: string
           quantity: number
+          sku?: string | null
           total_amount: number
           updated_at?: string
           vendor_id: string
         }
         Update: {
+          client_id?: string | null
           cost_per_label?: number
           created_at?: string
           description?: string | null
           id?: string
+          payment_amount?: number | null
           purchase_date?: string
           quantity?: number
+          sku?: string | null
           total_amount?: number
           updated_at?: string
           vendor_id?: string
@@ -222,33 +261,39 @@ export type Database = {
       sales_transactions: {
         Row: {
           amount: number
+          branch: string | null
           created_at: string
           customer_id: string
           description: string | null
           id: string
           quantity: number | null
+          sku: string | null
           transaction_date: string
           transaction_type: string
           updated_at: string
         }
         Insert: {
           amount: number
+          branch?: string | null
           created_at?: string
           customer_id: string
           description?: string | null
           id?: string
           quantity?: number | null
+          sku?: string | null
           transaction_date?: string
           transaction_type: string
           updated_at?: string
         }
         Update: {
           amount?: number
+          branch?: string | null
           created_at?: string
           customer_id?: string
           description?: string | null
           id?: string
           quantity?: number | null
+          sku?: string | null
           transaction_date?: string
           transaction_type?: string
           updated_at?: string
@@ -263,9 +308,41 @@ export type Database = {
           },
         ]
       }
+      sku_configurations: {
+        Row: {
+          bottles_per_case: number
+          cost_per_bottle: number
+          cost_per_case: number | null
+          created_at: string | null
+          id: string
+          sku: string
+          updated_at: string | null
+        }
+        Insert: {
+          bottles_per_case: number
+          cost_per_bottle: number
+          cost_per_case?: number | null
+          created_at?: string | null
+          id?: string
+          sku: string
+          updated_at?: string | null
+        }
+        Update: {
+          bottles_per_case?: number
+          cost_per_bottle?: number
+          cost_per_case?: number | null
+          created_at?: string | null
+          id?: string
+          sku?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       transport_expenses: {
         Row: {
           amount: number
+          branch: string | null
+          client_id: string | null
           created_at: string
           description: string
           expense_date: string
@@ -275,6 +352,8 @@ export type Database = {
         }
         Insert: {
           amount: number
+          branch?: string | null
+          client_id?: string | null
           created_at?: string
           description: string
           expense_date?: string
@@ -284,6 +363,8 @@ export type Database = {
         }
         Update: {
           amount?: number
+          branch?: string | null
+          client_id?: string | null
           created_at?: string
           description?: string
           expense_date?: string

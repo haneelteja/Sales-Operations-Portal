@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 
 const Receivables = () => {
+  const [adminComments, setAdminComments] = useState<{[key: string]: string}>({});
   const { data: receivables, isLoading } = useQuery({
     queryKey: ["receivables"],
     queryFn: async () => {
@@ -57,6 +59,13 @@ const Receivables = () => {
     },
   });
 
+  const handleCommentChange = (customerId: string, comment: string) => {
+    setAdminComments(prev => ({
+      ...prev,
+      [customerId]: comment
+    }));
+  };
+
   const { data: allTransactions } = useQuery({
     queryKey: ["all-customer-transactions"],
     queryFn: async () => {
@@ -83,9 +92,9 @@ const Receivables = () => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Outstanding Receivables</CardTitle>
+          <CardTitle>Outstanding Client Receivables</CardTitle>
           <CardDescription>
-            Customers with pending payments
+            Outstanding balances with internal team notes for follow-up
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -99,6 +108,7 @@ const Receivables = () => {
                   <TableHead className="text-right">Payments Received</TableHead>
                   <TableHead className="text-right">Outstanding</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Admin/Manager Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -124,6 +134,15 @@ const Receivables = () => {
                         {receivable.outstanding > 50000 ? "High" : "Normal"}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <textarea
+                        className="w-full min-w-[200px] p-2 border border-input rounded-md resize-y"
+                        placeholder="Add internal notes for follow-up..."
+                        value={adminComments[receivable.customer.id] || ''}
+                        onChange={(e) => handleCommentChange(receivable.customer.id, e.target.value)}
+                        rows={2}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -133,54 +152,6 @@ const Receivables = () => {
               No outstanding receivables found
             </p>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Transactions</CardTitle>
-          <CardDescription>
-            Latest customer transactions across all accounts
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {allTransactions?.map((transaction) => (
-                <TableRow key={transaction.id}>
-                  <TableCell>
-                    {new Date(transaction.transaction_date).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {transaction.customers?.client_name}
-                    {transaction.customers?.branch && ` - ${transaction.customers.branch}`}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={transaction.transaction_type === 'sale' ? 'default' : 'secondary'}>
-                      {transaction.transaction_type === 'sale' ? 'Sale' : 'Payment'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate">
-                    {transaction.description}
-                  </TableCell>
-                  <TableCell className={`text-right font-medium ${
-                    transaction.transaction_type === 'sale' ? 'text-green-600' : 'text-blue-600'
-                  }`}>
-                    {transaction.transaction_type === 'sale' ? '+' : '-'}₹{transaction.amount?.toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         </CardContent>
       </Card>
     </div>

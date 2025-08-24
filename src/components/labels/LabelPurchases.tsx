@@ -11,10 +11,12 @@ import { useToast } from "@/hooks/use-toast";
 
 const LabelPurchases = () => {
   const [form, setForm] = useState({
-    vendor_id: "",
+    client_id: "",
+    sku: "",
     quantity: "",
     cost_per_label: "",
     total_amount: "",
+    payment_amount: "",
     purchase_date: new Date().toISOString().split('T')[0],
     description: ""
   });
@@ -22,10 +24,18 @@ const LabelPurchases = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: vendors } = useQuery({
-    queryKey: ["label-vendors"],
+  const { data: customers } = useQuery({
+    queryKey: ["customers"],
     queryFn: async () => {
-      const { data } = await supabase.from("label_vendors").select("*").order("vendor_name");
+      const { data } = await supabase.from("customers").select("*").order("client_name");
+      return data || [];
+    },
+  });
+
+  const { data: skuConfigs } = useQuery({
+    queryKey: ["sku-configurations"],
+    queryFn: async () => {
+      const { data } = await supabase.from("sku_configurations").select("*").order("sku");
       return data || [];
     },
   });
@@ -37,9 +47,8 @@ const LabelPurchases = () => {
         .from("label_purchases")
         .select(`
           *,
-          label_vendors (
-            vendor_name,
-            label_type
+          customers (
+            client_name
           )
         `)
         .order("purchase_date", { ascending: false });
@@ -55,7 +64,8 @@ const LabelPurchases = () => {
           ...data,
           quantity: parseInt(data.quantity),
           cost_per_label: parseFloat(data.cost_per_label),
-          total_amount: parseFloat(data.total_amount)
+          total_amount: parseFloat(data.total_amount),
+          payment_amount: data.payment_amount ? parseFloat(data.payment_amount) : null
         });
 
       if (error) throw error;
@@ -63,10 +73,12 @@ const LabelPurchases = () => {
     onSuccess: () => {
       toast({ title: "Success", description: "Label purchase recorded!" });
       setForm({
-        vendor_id: "",
+        client_id: "",
+        sku: "",
         quantity: "",
         cost_per_label: "",
         total_amount: "",
+        payment_amount: "",
         purchase_date: new Date().toISOString().split('T')[0],
         description: ""
       });
@@ -83,10 +95,10 @@ const LabelPurchases = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.vendor_id || !form.quantity || !form.cost_per_label) {
+    if (!form.client_id || !form.sku || !form.quantity || !form.cost_per_label) {
       toast({ 
         title: "Error", 
-        description: "Please fill in required fields",
+        description: "Client, SKU, Quantity, and Cost per Label are required",
         variant: "destructive"
       });
       return;
@@ -113,21 +125,37 @@ const LabelPurchases = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="vendor">Vendor *</Label>
-            <Select value={form.vendor_id} onValueChange={(value) => setForm({...form, vendor_id: value})}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select vendor" />
-              </SelectTrigger>
-              <SelectContent>
-                {vendors?.map((vendor) => (
-                  <SelectItem key={vendor.id} value={vendor.id}>
-                    {vendor.vendor_name} - {vendor.label_type}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="client">Client *</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+              value={form.client_id}
+              onChange={(e) => setForm({...form, client_id: e.target.value})}
+            >
+              <option value="">Select a client</option>
+              {customers?.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.client_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="sku">SKU *</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+              value={form.sku}
+              onChange={(e) => setForm({...form, sku: e.target.value})}
+            >
+              <option value="">Select SKU</option>
+              {skuConfigs?.map((sku) => (
+                <option key={sku.id} value={sku.sku}>
+                  {sku.sku}
+                </option>
+              ))}
+            </select>
           </div>
           
           <div className="space-y-2">
@@ -166,6 +194,18 @@ const LabelPurchases = () => {
           </div>
           
           <div className="space-y-2">
+            <Label htmlFor="payment-amount">Payment for Labels (₹)</Label>
+            <Input
+              id="payment-amount"
+              type="number"
+              step="0.01"
+              value={form.payment_amount}
+              onChange={(e) => setForm({...form, payment_amount: e.target.value})}
+              placeholder="Payment amount"
+            />
+          </div>
+          
+          <div className="space-y-2">
             <Label htmlFor="purchase-date">Purchase Date</Label>
             <Input
               id="purchase-date"
@@ -195,23 +235,24 @@ const LabelPurchases = () => {
         <TableHeader>
           <TableRow>
             <TableHead>Date</TableHead>
-            <TableHead>Vendor</TableHead>
+            <TableHead>Client</TableHead>
+            <TableHead>SKU</TableHead>
             <TableHead className="text-right">Quantity</TableHead>
             <TableHead className="text-right">Cost/Label</TableHead>
             <TableHead className="text-right">Total</TableHead>
+            <TableHead className="text-right">Payment</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {purchases?.map((purchase) => (
             <TableRow key={purchase.id}>
               <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
-              <TableCell>
-                {purchase.label_vendors?.vendor_name}
-                {purchase.label_vendors?.label_type && ` (${purchase.label_vendors.label_type})`}
-              </TableCell>
+              <TableCell>{purchase.customers?.client_name || 'N/A'}</TableCell>
+              <TableCell>{purchase.sku}</TableCell>
               <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
               <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
               <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString()}</TableCell>
+              <TableCell className="text-right">{purchase.payment_amount ? `₹${purchase.payment_amount.toLocaleString()}` : '-'}</TableCell>
             </TableRow>
           ))}
         </TableBody>

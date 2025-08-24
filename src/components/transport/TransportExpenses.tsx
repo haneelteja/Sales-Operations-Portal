@@ -11,7 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 const TransportExpenses = () => {
   const [form, setForm] = useState({
     expense_date: new Date().toISOString().split('T')[0],
-    description: "",
+    client_id: "",
+    branch: "",
     expense_group: "",
     amount: ""
   });
@@ -19,12 +20,25 @@ const TransportExpenses = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const { data: customers } = useQuery({
+    queryKey: ["customers"],
+    queryFn: async () => {
+      const { data } = await supabase.from("customers").select("*").order("client_name");
+      return data || [];
+    },
+  });
+
   const { data: expenses } = useQuery({
     queryKey: ["transport-expenses"],
     queryFn: async () => {
       const { data } = await supabase
         .from("transport_expenses")
-        .select("*")
+        .select(`
+          *,
+          customers (
+            client_name
+          )
+        `)
         .order("expense_date", { ascending: false });
       return data || [];
     },
@@ -45,7 +59,8 @@ const TransportExpenses = () => {
       toast({ title: "Success", description: "Transport expense recorded!" });
       setForm({
         expense_date: new Date().toISOString().split('T')[0],
-        description: "",
+        client_id: "",
+        branch: "",
         expense_group: "",
         amount: ""
       });
@@ -62,10 +77,10 @@ const TransportExpenses = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.description || !form.amount) {
+    if (!form.client_id || !form.branch || !form.amount) {
       toast({ 
         title: "Error", 
-        description: "Please fill in required fields",
+        description: "Client, Branch, and Amount are required",
         variant: "destructive"
       });
       return;
@@ -95,6 +110,32 @@ const TransportExpenses = () => {
           </div>
           
           <div className="space-y-2">
+            <Label htmlFor="client">Client *</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+              value={form.client_id}
+              onChange={(e) => setForm({...form, client_id: e.target.value})}
+            >
+              <option value="">Select a client</option>
+              {customers?.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.client_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="branch">Branch *</Label>
+            <Input
+              id="branch"
+              value={form.branch}
+              onChange={(e) => setForm({...form, branch: e.target.value})}
+              placeholder="Branch name"
+            />
+          </div>
+          
+          <div className="space-y-2">
             <Label htmlFor="expense-amount">Amount (₹) *</Label>
             <Input
               id="expense-amount"
@@ -117,16 +158,6 @@ const TransportExpenses = () => {
           </div>
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="expense-description">Description *</Label>
-          <Textarea
-            id="expense-description"
-            value={form.description}
-            onChange={(e) => setForm({...form, description: e.target.value})}
-            placeholder="Transport expense details..."
-          />
-        </div>
-        
         <Button type="submit" disabled={mutation.isPending}>
           {mutation.isPending ? "Recording..." : "Record Expense"}
         </Button>
@@ -136,7 +167,8 @@ const TransportExpenses = () => {
         <TableHeader>
           <TableRow>
             <TableHead>Date</TableHead>
-            <TableHead>Description</TableHead>
+            <TableHead>Client</TableHead>
+            <TableHead>Branch</TableHead>
             <TableHead>Group</TableHead>
             <TableHead className="text-right">Amount</TableHead>
           </TableRow>
@@ -145,7 +177,8 @@ const TransportExpenses = () => {
           {expenses?.map((expense) => (
             <TableRow key={expense.id}>
               <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
-              <TableCell className="max-w-xs truncate">{expense.description}</TableCell>
+              <TableCell>{expense.customers?.client_name || 'N/A'}</TableCell>
+              <TableCell>{expense.branch}</TableCell>
               <TableCell>{expense.expense_group}</TableCell>
               <TableCell className="text-right font-medium">₹{expense.amount?.toLocaleString()}</TableCell>
             </TableRow>
