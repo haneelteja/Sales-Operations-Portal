@@ -14,6 +14,7 @@ const SalesEntry = () => {
     customer_id: "",
     amount: "",
     quantity: "",
+    sku: "",
     description: "",
     transaction_date: new Date().toISOString().split('T')[0]
   });
@@ -27,6 +28,36 @@ const SalesEntry = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Function to handle customer selection and auto-populate SKU
+  const handleCustomerChange = (customerId: string) => {
+    const selectedCustomer = customers?.find(c => c.id === customerId);
+    setSaleForm({
+      ...saleForm, 
+      customer_id: customerId,
+      sku: selectedCustomer?.sku || "",
+      amount: "" // Reset amount when customer changes
+    });
+  };
+
+  // Function to handle quantity change and auto-calculate amount
+  const handleQuantityChange = (quantity: string) => {
+    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
+    let calculatedAmount = "";
+    
+    if (selectedCustomer && quantity) {
+      const qty = parseInt(quantity);
+      if (qty && selectedCustomer.price_per_bottle) {
+        calculatedAmount = (qty * selectedCustomer.price_per_bottle).toString();
+      }
+    }
+    
+    setSaleForm({
+      ...saleForm,
+      quantity,
+      amount: calculatedAmount
+    });
+  };
 
   // Fetch customers for dropdown
   const { data: customers } = useQuery({
@@ -70,6 +101,7 @@ const SalesEntry = () => {
         customer_id: "",
         amount: "",
         quantity: "",
+        sku: "",
         description: "",
         transaction_date: new Date().toISOString().split('T')[0]
       });
@@ -158,7 +190,7 @@ const SalesEntry = () => {
               <Label htmlFor="sale-customer">Customer *</Label>
               <Select 
                 value={saleForm.customer_id} 
-                onValueChange={(value) => setSaleForm({...saleForm, customer_id: value})}
+                onValueChange={handleCustomerChange}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select customer" />
@@ -174,14 +206,14 @@ const SalesEntry = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="sale-amount">Amount (₹) *</Label>
+              <Label htmlFor="sale-sku">SKU</Label>
               <Input
-                id="sale-amount"
-                type="number"
-                step="0.01"
-                value={saleForm.amount}
-                onChange={(e) => setSaleForm({...saleForm, amount: e.target.value})}
-                placeholder="0.00"
+                id="sale-sku"
+                type="text"
+                value={saleForm.sku}
+                readOnly
+                placeholder="Auto-populated from customer"
+                className="bg-muted"
               />
             </div>
             
@@ -191,8 +223,20 @@ const SalesEntry = () => {
                 id="sale-quantity"
                 type="number"
                 value={saleForm.quantity}
-                onChange={(e) => setSaleForm({...saleForm, quantity: e.target.value})}
+                onChange={(e) => handleQuantityChange(e.target.value)}
                 placeholder="Number of units"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="sale-amount">Amount (₹) *</Label>
+              <Input
+                id="sale-amount"
+                type="number"
+                step="0.01"
+                value={saleForm.amount}
+                onChange={(e) => setSaleForm({...saleForm, amount: e.target.value})}
+                placeholder="Auto-calculated or enter manually"
               />
             </div>
             
