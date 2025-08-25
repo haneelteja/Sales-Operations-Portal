@@ -29,26 +29,68 @@ const SalesEntry = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Function to handle customer selection and auto-populate SKU
+  // Function to handle customer selection and auto-populate SKU options
   const handleCustomerChange = (customerId: string) => {
+    // Find the selected customer record
     const selectedCustomer = customers?.find(c => c.id === customerId);
+    
     setSaleForm({
       ...saleForm, 
       customer_id: customerId,
-      sku: selectedCustomer?.sku || "",
+      sku: "", // Reset SKU when customer changes
       amount: "" // Reset amount when customer changes
+    });
+  };
+
+  // Get available SKUs for selected customer
+  const getAvailableSKUs = () => {
+    if (!saleForm.customer_id) return [];
+    
+    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
+    if (!selectedCustomer) return [];
+    
+    // Get all customer records with the same client_name and branch
+    return customers?.filter(c => 
+      c.client_name === selectedCustomer.client_name && 
+      c.branch === selectedCustomer.branch
+    ) || [];
+  };
+
+  // Function to handle SKU selection
+  const handleSKUChange = (sku: string) => {
+    setSaleForm({
+      ...saleForm,
+      sku,
+      amount: "" // Reset amount when SKU changes
     });
   };
 
   // Function to handle quantity change and auto-calculate amount
   const handleQuantityChange = (quantity: string) => {
+    if (!saleForm.customer_id || !saleForm.sku) {
+      setSaleForm({
+        ...saleForm,
+        quantity,
+        amount: ""
+      });
+      return;
+    }
+
     const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
+    if (!selectedCustomer) return;
+
+    // Find the specific customer-SKU combination for pricing
+    const customerSKURecord = customers?.find(c => 
+      c.client_name === selectedCustomer.client_name && 
+      c.branch === selectedCustomer.branch &&
+      c.sku === saleForm.sku
+    );
+
     let calculatedAmount = "";
-    
-    if (selectedCustomer && quantity) {
+    if (customerSKURecord && quantity) {
       const qty = parseInt(quantity);
-      if (qty && selectedCustomer.price_per_case) {
-        calculatedAmount = (qty * selectedCustomer.price_per_case).toString();
+      if (qty && customerSKURecord.price_per_case) {
+        calculatedAmount = (qty * customerSKURecord.price_per_case).toString();
       }
     }
     
@@ -152,7 +194,7 @@ const SalesEntry = () => {
 
   const handleSaleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!saleForm.customer_id || !saleForm.amount) {
+    if (!saleForm.customer_id || !saleForm.amount || !saleForm.sku) {
       toast({ 
         title: "Error", 
         description: "Please fill in all required fields",
@@ -168,7 +210,7 @@ const SalesEntry = () => {
     if (!paymentForm.customer_id || !paymentForm.amount) {
       toast({ 
         title: "Error", 
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields (Customer, SKU, Amount)",
         variant: "destructive"
       });
       return;
@@ -206,15 +248,23 @@ const SalesEntry = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="sale-sku">SKU</Label>
-              <Input
-                id="sale-sku"
-                type="text"
-                value={saleForm.sku}
-                readOnly
-                placeholder="Auto-populated from customer"
-                className="bg-muted"
-              />
+              <Label htmlFor="sale-sku">SKU *</Label>
+              <Select 
+                value={saleForm.sku} 
+                onValueChange={handleSKUChange}
+                disabled={!saleForm.customer_id}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={saleForm.customer_id ? "Select SKU" : "Select customer first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableSKUs().map((customer) => (
+                    <SelectItem key={`${customer.id}-${customer.sku}`} value={customer.sku || ""}>
+                      {customer.sku}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="space-y-2">
