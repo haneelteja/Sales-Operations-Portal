@@ -47,8 +47,8 @@ const SalesEntry = () => {
     
     if (selectedCustomer && quantity) {
       const qty = parseInt(quantity);
-      if (qty && selectedCustomer.price_per_bottle) {
-        calculatedAmount = (qty * selectedCustomer.price_per_bottle).toString();
+      if (qty && selectedCustomer.price_per_case) {
+        calculatedAmount = (qty * selectedCustomer.price_per_case).toString();
       }
     }
     
@@ -218,13 +218,13 @@ const SalesEntry = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="sale-quantity">Quantity</Label>
+              <Label htmlFor="sale-quantity">Quantity (Cases)</Label>
               <Input
                 id="sale-quantity"
                 type="number"
                 value={saleForm.quantity}
                 onChange={(e) => handleQuantityChange(e.target.value)}
-                placeholder="Number of units"
+                placeholder="Number of cases"
               />
             </div>
             
@@ -236,7 +236,7 @@ const SalesEntry = () => {
                 step="0.01"
                 value={saleForm.amount}
                 onChange={(e) => setSaleForm({...saleForm, amount: e.target.value})}
-                placeholder="Auto-calculated or enter manually"
+                placeholder="Auto-calculated (cases × price per case)"
               />
             </div>
             
