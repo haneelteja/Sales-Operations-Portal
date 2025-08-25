@@ -110,6 +110,21 @@ const SalesEntry = () => {
     },
   });
 
+  // Get unique customers (no duplicates based on client_name and branch)
+  const getUniqueCustomers = () => {
+    if (!customers) return [];
+    
+    const uniqueCustomers = customers.reduce((acc, customer) => {
+      const key = `${customer.client_name}-${customer.branch}`;
+      if (!acc.some(c => `${c.client_name}-${c.branch}` === key)) {
+        acc.push(customer);
+      }
+      return acc;
+    }, [] as typeof customers);
+    
+    return uniqueCustomers;
+  };
+
   // Sale entry mutation
   const saleMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -210,7 +225,7 @@ const SalesEntry = () => {
     if (!paymentForm.customer_id || !paymentForm.amount) {
       toast({ 
         title: "Error", 
-        description: "Please fill in all required fields (Customer, SKU, Amount)",
+        description: "Please fill in all required fields",
         variant: "destructive"
       });
       return;
@@ -238,7 +253,7 @@ const SalesEntry = () => {
                   <SelectValue placeholder="Select customer" />
                 </SelectTrigger>
                 <SelectContent>
-                  {customers?.map((customer) => (
+                  {getUniqueCustomers().map((customer) => (
                     <SelectItem key={customer.id} value={customer.id}>
                       {customer.client_name} - {customer.branch}
                     </SelectItem>
@@ -334,7 +349,7 @@ const SalesEntry = () => {
                   <SelectValue placeholder="Select customer" />
                 </SelectTrigger>
                 <SelectContent>
-                  {customers?.map((customer) => (
+                  {getUniqueCustomers().map((customer) => (
                     <SelectItem key={customer.id} value={customer.id}>
                       {customer.client_name} - {customer.branch}
                     </SelectItem>
