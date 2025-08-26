@@ -7,18 +7,22 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 const ConfigurationManagement = () => {
-  const [skuForm, setSkuForm] = useState({
+  const [customerForm, setCustomerForm] = useState({
+    client_name: "",
+    branch: "",
     sku: "",
-    bottles_per_case: "",
-    cost_per_bottle: ""
+    price_per_case: "",
+    price_per_bottle: ""
   });
 
   const [pricingForm, setPricingForm] = useState({
     pricing_date: new Date().toISOString().split('T')[0],
     sku: "",
+    bottles_per_case: "",
     price_per_bottle: "",
     tax: ""
   });
@@ -26,43 +30,60 @@ const ConfigurationManagement = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // SKU Configurations queries and mutations
-  const { data: skuConfigs } = useQuery({
-    queryKey: ["sku-configurations"],
+  // Customer Management queries and mutations
+  const { data: customers } = useQuery({
+    queryKey: ["customers"],
     queryFn: async () => {
       const { data } = await supabase
-        .from("sku_configurations")
+        .from("customers")
         .select("*")
-        .order("sku");
+        .order("client_name");
       return data || [];
     },
   });
 
-  const skuMutation = useMutation({
+  // Get available SKUs from factory pricing
+  const { data: availableSKUs } = useQuery({
+    queryKey: ["available-skus"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("factory_pricing")
+        .select("sku")
+        .order("sku");
+      
+      // Get unique SKUs
+      const uniqueSKUs = [...new Set(data?.map(item => item.sku) || [])];
+      return uniqueSKUs;
+    },
+  });
+
+  const customerMutation = useMutation({
     mutationFn: async (data: any) => {
       const { error } = await supabase
-        .from("sku_configurations")
+        .from("customers")
         .insert({
           ...data,
-          bottles_per_case: parseInt(data.bottles_per_case),
-          cost_per_bottle: parseFloat(data.cost_per_bottle)
+          price_per_case: data.price_per_case ? parseFloat(data.price_per_case) : null,
+          price_per_bottle: data.price_per_bottle ? parseFloat(data.price_per_bottle) : null
         });
 
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "SKU configuration added successfully!" });
-      setSkuForm({
+      toast({ title: "Success", description: "Customer added successfully!" });
+      setCustomerForm({
+        client_name: "",
+        branch: "",
         sku: "",
-        bottles_per_case: "",
-        cost_per_bottle: ""
+        price_per_case: "",
+        price_per_bottle: ""
       });
-      queryClient.invalidateQueries({ queryKey: ["sku-configurations"] });
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
     },
     onError: (error) => {
       toast({ 
         title: "Error", 
-        description: "Failed to add SKU: " + error.message,
+        description: "Failed to add customer: " + error.message,
         variant: "destructive"
       });
     },
@@ -97,10 +118,12 @@ const ConfigurationManagement = () => {
       setPricingForm({
         pricing_date: new Date().toISOString().split('T')[0],
         sku: "",
+        bottles_per_case: "",
         price_per_bottle: "",
         tax: ""
       });
       queryClient.invalidateQueries({ queryKey: ["factory-pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["available-skus"] });
     },
     onError: (error) => {
       toast({ 
@@ -111,25 +134,25 @@ const ConfigurationManagement = () => {
     },
   });
 
-  const handleSkuSubmit = (e: React.FormEvent) => {
+  const handleCustomerSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!skuForm.sku || !skuForm.bottles_per_case || !skuForm.cost_per_bottle) {
+    if (!customerForm.client_name || !customerForm.branch) {
       toast({ 
         title: "Error", 
-        description: "All fields are required",
+        description: "Client Name and Branch are required",
         variant: "destructive"
       });
       return;
     }
-    skuMutation.mutate(skuForm);
+    customerMutation.mutate(customerForm);
   };
 
   const handlePricingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pricingForm.sku || !pricingForm.price_per_bottle) {
+    if (!pricingForm.sku || !pricingForm.bottles_per_case || !pricingForm.price_per_bottle) {
       toast({ 
         title: "Error", 
-        description: "SKU and Price per Bottle are required",
+        description: "SKU, Bottles per Case, and Price per Bottle are required",
         variant: "destructive"
       });
       return;
@@ -137,61 +160,98 @@ const ConfigurationManagement = () => {
     pricingMutation.mutate(pricingForm);
   };
 
+  // Calculate cost per case for factory pricing
+  const calculateCostPerCase = () => {
+    const bottles = parseFloat(pricingForm.bottles_per_case) || 0;
+    const pricePerBottle = parseFloat(pricingForm.price_per_bottle) || 0;
+    return bottles * pricePerBottle;
+  };
+
   return (
     <div className="space-y-6">
-      <Tabs defaultValue="sku-config" className="w-full">
+      <Tabs defaultValue="customers" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="sku-config">SKU Configurations</TabsTrigger>
+          <TabsTrigger value="customers">Customers</TabsTrigger>
           <TabsTrigger value="factory-pricing">Factory Pricing</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="sku-config" className="space-y-6">
+        <TabsContent value="customers" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Add SKU Configuration</CardTitle>
+              <CardTitle>Add Customer</CardTitle>
               <CardDescription>
-                Configure available SKUs and their bottle/case specifications
+                Add new customers with their pricing details
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSkuSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <form onSubmit={handleCustomerSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="sku">SKU *</Label>
+                    <Label htmlFor="client-name">Client Name *</Label>
                     <Input
-                      id="sku"
-                      value={skuForm.sku}
-                      onChange={(e) => setSkuForm({...skuForm, sku: e.target.value})}
-                      placeholder="e.g., SKU001"
+                      id="client-name"
+                      value={customerForm.client_name}
+                      onChange={(e) => setCustomerForm({...customerForm, client_name: e.target.value})}
+                      placeholder="e.g., ABC Company"
                     />
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="bottles-per-case">No of Bottles per Case *</Label>
+                    <Label htmlFor="branch">Branch *</Label>
                     <Input
-                      id="bottles-per-case"
-                      type="number"
-                      value={skuForm.bottles_per_case}
-                      onChange={(e) => setSkuForm({...skuForm, bottles_per_case: e.target.value})}
-                      placeholder="12"
+                      id="branch"
+                      value={customerForm.branch}
+                      onChange={(e) => setCustomerForm({...customerForm, branch: e.target.value})}
+                      placeholder="e.g., Mumbai"
                     />
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="cost-per-bottle">Cost per Bottle (₹) *</Label>
+                    <Label htmlFor="customer-sku">SKU</Label>
+                    <Select 
+                      value={customerForm.sku} 
+                      onValueChange={(value) => setCustomerForm({...customerForm, sku: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select SKU" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableSKUs?.map((sku) => (
+                          <SelectItem key={sku} value={sku}>
+                            {sku}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="price-per-case">Price per Case (₹)</Label>
                     <Input
-                      id="cost-per-bottle"
+                      id="price-per-case"
                       type="number"
                       step="0.01"
-                      value={skuForm.cost_per_bottle}
-                      onChange={(e) => setSkuForm({...skuForm, cost_per_bottle: e.target.value})}
-                      placeholder="10.50"
+                      value={customerForm.price_per_case}
+                      onChange={(e) => setCustomerForm({...customerForm, price_per_case: e.target.value})}
+                      placeholder="125.00"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="customer-price-per-bottle">Price per Bottle (₹)</Label>
+                    <Input
+                      id="customer-price-per-bottle"
+                      type="number"
+                      step="0.01"
+                      value={customerForm.price_per_bottle}
+                      onChange={(e) => setCustomerForm({...customerForm, price_per_bottle: e.target.value})}
+                      placeholder="12.50"
                     />
                   </div>
                 </div>
                 
-                <Button type="submit" disabled={skuMutation.isPending}>
-                  {skuMutation.isPending ? "Adding..." : "Add SKU Configuration"}
+                <Button type="submit" disabled={customerMutation.isPending}>
+                  {customerMutation.isPending ? "Adding..." : "Add Customer"}
                 </Button>
               </form>
             </CardContent>
@@ -199,30 +259,36 @@ const ConfigurationManagement = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>SKU Configurations List</CardTitle>
+              <CardTitle>Customers List</CardTitle>
               <CardDescription>
-                All configured SKUs with pricing details
+                All registered customers with their pricing
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Client Name</TableHead>
+                    <TableHead>Branch</TableHead>
                     <TableHead>SKU</TableHead>
-                    <TableHead>Bottles per Case</TableHead>
-                    <TableHead className="text-right">Cost per Bottle</TableHead>
-                    <TableHead className="text-right">Cost per Case</TableHead>
+                    <TableHead className="text-right">Price per Case</TableHead>
+                    <TableHead className="text-right">Price per Bottle</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {skuConfigs?.map((config) => (
-                    <TableRow key={config.id}>
-                      <TableCell className="font-medium">{config.sku}</TableCell>
-                      <TableCell>{config.bottles_per_case}</TableCell>
-                      <TableCell className="text-right">₹{config.cost_per_bottle}</TableCell>
-                      <TableCell className="text-right">₹{config.cost_per_case}</TableCell>
-                      <TableCell>{new Date(config.created_at).toLocaleDateString()}</TableCell>
+                  {customers?.map((customer) => (
+                    <TableRow key={customer.id}>
+                      <TableCell className="font-medium">{customer.client_name}</TableCell>
+                      <TableCell>{customer.branch}</TableCell>
+                      <TableCell>{customer.sku || '-'}</TableCell>
+                      <TableCell className="text-right">
+                        {customer.price_per_case ? `₹${customer.price_per_case}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}
+                      </TableCell>
+                      <TableCell>{new Date(customer.created_at).toLocaleDateString()}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -241,7 +307,7 @@ const ConfigurationManagement = () => {
             </CardHeader>
             <CardContent>
               <form onSubmit={handlePricingSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="pricing-date">Date *</Label>
                     <Input
@@ -258,7 +324,18 @@ const ConfigurationManagement = () => {
                       id="pricing-sku"
                       value={pricingForm.sku}
                       onChange={(e) => setPricingForm({...pricingForm, sku: e.target.value})}
-                      placeholder="Select from available SKUs"
+                      placeholder="e.g., SKU001"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="bottles-per-case-pricing">No of Bottles per Case *</Label>
+                    <Input
+                      id="bottles-per-case-pricing"
+                      type="number"
+                      value={pricingForm.bottles_per_case}
+                      onChange={(e) => setPricingForm({...pricingForm, bottles_per_case: e.target.value})}
+                      placeholder="12"
                     />
                   </div>
                   
@@ -271,6 +348,18 @@ const ConfigurationManagement = () => {
                       value={pricingForm.price_per_bottle}
                       onChange={(e) => setPricingForm({...pricingForm, price_per_bottle: e.target.value})}
                       placeholder="12.50"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="cost-per-case">Cost per Case (₹)</Label>
+                    <Input
+                      id="cost-per-case"
+                      type="number"
+                      step="0.01"
+                      value={calculateCostPerCase().toFixed(2)}
+                      disabled
+                      className="bg-muted"
                     />
                   </div>
                   
@@ -307,7 +396,9 @@ const ConfigurationManagement = () => {
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>SKU</TableHead>
+                    <TableHead className="text-right">Bottles per Case</TableHead>
                     <TableHead className="text-right">Price per Bottle</TableHead>
+                    <TableHead className="text-right">Cost per Case</TableHead>
                     <TableHead className="text-right">Tax (%)</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
@@ -317,7 +408,9 @@ const ConfigurationManagement = () => {
                     <TableRow key={pricing.id}>
                       <TableCell>{new Date(pricing.pricing_date).toLocaleDateString()}</TableCell>
                       <TableCell className="font-medium">{pricing.sku}</TableCell>
+                      <TableCell className="text-right">-</TableCell>
                       <TableCell className="text-right">₹{pricing.price_per_bottle}</TableCell>
+                      <TableCell className="text-right">-</TableCell>
                       <TableCell className="text-right">{pricing.tax ? `${pricing.tax}%` : '-'}</TableCell>
                       <TableCell>{new Date(pricing.created_at).toLocaleDateString()}</TableCell>
                     </TableRow>
