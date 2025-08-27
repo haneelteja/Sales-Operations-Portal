@@ -42,6 +42,18 @@ const ConfigurationManagement = () => {
     },
   });
 
+  // Get available SKUs from factory pricing with bottles per case info
+  const { data: factoryPricingData } = useQuery({
+    queryKey: ["factory-pricing-data"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("factory_pricing")
+        .select("sku, bottles_per_case")
+        .order("sku");
+      return data || [];
+    },
+  });
+
   // Get available SKUs from factory pricing
   const { data: availableSKUs } = useQuery({
     queryKey: ["available-skus"],
@@ -137,6 +149,19 @@ const ConfigurationManagement = () => {
     },
   });
 
+  // Calculate price per case based on selected SKU and price per bottle
+  const calculatePricePerCase = () => {
+    if (!customerForm.sku || !customerForm.price_per_bottle) return "";
+    
+    const selectedSKUData = factoryPricingData?.find(item => item.sku === customerForm.sku);
+    if (!selectedSKUData) return "";
+    
+    const pricePerBottle = parseFloat(customerForm.price_per_bottle) || 0;
+    const bottlesPerCase = selectedSKUData.bottles_per_case || 0;
+    
+    return (pricePerBottle * bottlesPerCase).toFixed(2);
+  };
+
   const handleCustomerSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerForm.client_name || !customerForm.branch) {
@@ -147,7 +172,15 @@ const ConfigurationManagement = () => {
       });
       return;
     }
-    customerMutation.mutate(customerForm);
+    
+    // Auto-calculate price per case before submitting
+    const calculatedPricePerCase = calculatePricePerCase();
+    const formDataWithCalculatedPrice = {
+      ...customerForm,
+      price_per_case: calculatedPricePerCase || customerForm.price_per_case
+    };
+    
+    customerMutation.mutate(formDataWithCalculatedPrice);
   };
 
   const handlePricingSubmit = (e: React.FormEvent) => {
@@ -213,7 +246,7 @@ const ConfigurationManagement = () => {
                     <Label htmlFor="customer-sku">SKU</Label>
                     <Select 
                       value={customerForm.sku} 
-                      onValueChange={(value) => setCustomerForm({...customerForm, sku: value})}
+                      onValueChange={(value) => setCustomerForm({...customerForm, sku: value, price_per_case: ""})}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select SKU" />
@@ -229,18 +262,6 @@ const ConfigurationManagement = () => {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="price-per-case">Price per Case (₹)</Label>
-                    <Input
-                      id="price-per-case"
-                      type="number"
-                      step="0.01"
-                      value={customerForm.price_per_case}
-                      onChange={(e) => setCustomerForm({...customerForm, price_per_case: e.target.value})}
-                      placeholder="125.00"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
                     <Label htmlFor="customer-price-per-bottle">Price per Bottle (₹)</Label>
                     <Input
                       id="customer-price-per-bottle"
@@ -249,6 +270,19 @@ const ConfigurationManagement = () => {
                       value={customerForm.price_per_bottle}
                       onChange={(e) => setCustomerForm({...customerForm, price_per_bottle: e.target.value})}
                       placeholder="12.50"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="price-per-case">Price per Case (₹)</Label>
+                    <Input
+                      id="price-per-case"
+                      type="number"
+                      step="0.01"
+                      value={calculatePricePerCase() || customerForm.price_per_case}
+                      disabled
+                      className="bg-muted"
+                      placeholder="Auto-calculated"
                     />
                   </div>
                 </div>
