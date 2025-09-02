@@ -8,12 +8,15 @@ import {
   UserPlus,
   Settings,
   FileText,
-  Cog
+  Cog,
+  LogOut,
+  User
 } from "lucide-react";
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -21,6 +24,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/contexts/AuthContext";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface AppSidebarProps {
   activeView: string;
@@ -41,7 +47,18 @@ const menuItems = [
 ];
 
 export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
+  const { profile, signOut } = useAuth();
   const isActive = (id: string) => activeView === id;
+
+  const getRoleColor = (role: string) => {
+    switch (role) {
+      case 'admin': return 'bg-red-500';
+      case 'manager': return 'bg-blue-500';
+      case 'employee': return 'bg-green-500';
+      case 'viewer': return 'bg-gray-500';
+      default: return 'bg-gray-500';
+    }
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -65,6 +82,37 @@ export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <div className="flex items-center gap-2 p-2">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback>
+                  <User className="h-4 w-4" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {profile?.full_name || profile?.email}
+                </p>
+                <Badge 
+                  variant="secondary" 
+                  className={`text-xs ${getRoleColor(profile?.role || 'viewer')} text-white`}
+                >
+                  {profile?.role}
+                </Badge>
+              </div>
+            </div>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={signOut} className="text-destructive hover:text-destructive">
+              <LogOut className="h-4 w-4" />
+              <span>Sign Out</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   );
 }
