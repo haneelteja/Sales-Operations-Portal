@@ -40,7 +40,6 @@ const menuItems = [
   { id: "factory", title: "Factory Payables", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
   { id: "labels", title: "Labels", icon: Tag },
-  { id: "customers", title: "Customers", icon: UserPlus },
   { id: "configurations", title: "Configurations", icon: Cog },
   { id: "reports", title: "Reports", icon: FileText },
   { id: "adjustments", title: "Adjustments", icon: Settings },
