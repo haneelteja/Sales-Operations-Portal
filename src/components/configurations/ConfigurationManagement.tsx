@@ -9,7 +9,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
 
 const ConfigurationManagement = () => {
   const [customerForm, setCustomerForm] = useState({
@@ -30,8 +29,6 @@ const ConfigurationManagement = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { profile } = useAuth();
-  const canManageFactory = (profile?.role === 'manager' || profile?.role === 'admin');
 
   // Customer Management queries and mutations
   const { data: customers } = useQuery({
@@ -48,7 +45,6 @@ const ConfigurationManagement = () => {
   // Get available SKUs from factory pricing with bottles per case info
   const { data: factoryPricingData } = useQuery({
     queryKey: ["factory-pricing-data"],
-    enabled: canManageFactory,
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_pricing")
@@ -61,7 +57,6 @@ const ConfigurationManagement = () => {
   // Get available SKUs from factory pricing
   const { data: availableSKUs } = useQuery({
     queryKey: ["available-skus"],
-    enabled: canManageFactory,
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_pricing")
@@ -109,7 +104,6 @@ const ConfigurationManagement = () => {
   // Factory Pricing queries and mutations
   const { data: factoryPricing } = useQuery({
     queryKey: ["factory-pricing"],
-    enabled: canManageFactory,
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_pricing")
@@ -212,11 +206,9 @@ const ConfigurationManagement = () => {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="customers" className="w-full">
-        <TabsList className={`grid w-full ${canManageFactory ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="customers">Customers</TabsTrigger>
-          {canManageFactory && (
-            <TabsTrigger value="factory-pricing">Factory Pricing</TabsTrigger>
-          )}
+          <TabsTrigger value="factory-pricing">Factory Pricing</TabsTrigger>
         </TabsList>
 
         <TabsContent value="customers" className="space-y-6">
@@ -342,7 +334,7 @@ const ConfigurationManagement = () => {
           </Card>
         </TabsContent>
 
-        {canManageFactory && (<TabsContent value="factory-pricing" className="space-y-6">
+        <TabsContent value="factory-pricing" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Add Factory Pricing</CardTitle>
@@ -464,7 +456,7 @@ const ConfigurationManagement = () => {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>)}
+        </TabsContent>
       </Tabs>
     </div>
   );
