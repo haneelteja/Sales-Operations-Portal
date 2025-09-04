@@ -59,6 +59,12 @@ export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
     }
   };
 
+  const isManager = (profile?.role === 'manager' || profile?.role === 'admin');
+  const filteredMenuItems = menuItems.filter((item) => {
+    if (item.id === 'factory' || item.id === 'adjustments') return isManager;
+    return true;
+  });
+
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
@@ -66,7 +72,7 @@ export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
           <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
+              {filteredMenuItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton 
                     onClick={() => setActiveView(item.id)}
