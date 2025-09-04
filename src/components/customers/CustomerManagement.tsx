@@ -170,7 +170,7 @@ const CustomerManagement = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(customers || []).filter(() => false).map((customer) => (
+              {customers?.map((customer) => (
                 <TableRow key={customer.id}>
                   <TableCell className="font-medium">{customer.client_name}</TableCell>
                   <TableCell>{customer.branch}</TableCell>
