@@ -50,6 +50,7 @@ export type Database = {
           client_name: string
           created_at: string
           id: string
+          is_active: boolean
           price_per_bottle: number | null
           price_per_case: number | null
           sku: string | null
@@ -60,6 +61,7 @@ export type Database = {
           client_name: string
           created_at?: string
           id?: string
+          is_active?: boolean
           price_per_bottle?: number | null
           price_per_case?: number | null
           sku?: string | null
@@ -70,6 +72,7 @@ export type Database = {
           client_name?: string
           created_at?: string
           id?: string
+          is_active?: boolean
           price_per_bottle?: number | null
           price_per_case?: number | null
           sku?: string | null

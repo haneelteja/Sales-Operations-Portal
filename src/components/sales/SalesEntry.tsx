@@ -203,6 +203,19 @@ const SalesEntry = () => {
         });
 
       if (factoryError) throw factoryError;
+
+      // Create corresponding transport transaction
+      const { error: transportError } = await supabase
+        .from("transport_expenses")
+        .insert({
+          client_id: data.customer_id,
+          amount: 0, // Start with 0, can be edited later
+          description: `Transport for sale: ${data.description}`,
+          expense_date: data.transaction_date,
+          expense_group: "Client Sale Transport"
+        });
+
+      if (transportError) throw transportError;
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Sale recorded successfully!" });

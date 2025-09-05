@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2 } from "lucide-react";
+import { Trash2, Edit, UserX } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const ConfigurationManagement = () => {
   const [customerForm, setCustomerForm] = useState({
@@ -28,6 +29,11 @@ const ConfigurationManagement = () => {
     tax: ""
   });
 
+  const [editingCustomer, setEditingCustomer] = useState<any>(null);
+  const [editingPricing, setEditingPricing] = useState<any>(null);
+  const [isEditCustomerOpen, setIsEditCustomerOpen] = useState(false);
+  const [isEditPricingOpen, setIsEditPricingOpen] = useState(false);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -38,6 +44,7 @@ const ConfigurationManagement = () => {
       const { data } = await supabase
         .from("customers")
         .select("*")
+        .eq("is_active", true)
         .order("client_name");
       return data || [];
     },
@@ -169,6 +176,91 @@ const ConfigurationManagement = () => {
       toast({ 
         title: "Error", 
         description: "Failed to delete pricing: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
+  const updateCustomerMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const { error } = await supabase
+        .from("customers")
+        .update({
+          client_name: data.client_name,
+          branch: data.branch,
+          sku: data.sku,
+          price_per_case: data.price_per_case ? parseFloat(data.price_per_case) : null,
+          price_per_bottle: data.price_per_bottle ? parseFloat(data.price_per_bottle) : null
+        })
+        .eq("id", data.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Customer updated successfully!" });
+      setIsEditCustomerOpen(false);
+      setEditingCustomer(null);
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to update customer: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
+  const softDeleteCustomerMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("customers")
+        .update({ is_active: false })
+        .eq("id", id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Customer deactivated successfully!" });
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to deactivate customer: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
+  const updatePricingMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const { error } = await supabase
+        .from("factory_pricing")
+        .update({
+          pricing_date: data.pricing_date,
+          sku: data.sku,
+          bottles_per_case: parseInt(data.bottles_per_case),
+          price_per_bottle: parseFloat(data.price_per_bottle),
+          cost_per_case: data.cost_per_case ? parseFloat(data.cost_per_case) : null,
+          tax: data.tax ? parseFloat(data.tax) : null
+        })
+        .eq("id", data.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Factory pricing updated successfully!" });
+      setIsEditPricingOpen(false);
+      setEditingPricing(null);
+      queryClient.invalidateQueries({ queryKey: ["factory-pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["available-skus"] });
+      queryClient.invalidateQueries({ queryKey: ["factory-pricing-data"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to update pricing: " + error.message,
         variant: "destructive"
       });
     },
@@ -336,6 +428,7 @@ const ConfigurationManagement = () => {
                     <TableHead className="text-right">Price per Case</TableHead>
                     <TableHead className="text-right">Price per Bottle</TableHead>
                     <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -477,15 +570,27 @@ const ConfigurationManagement = () => {
                       <TableCell className="text-right">{pricing.tax ? `${pricing.tax}%` : '-'}</TableCell>
                       <TableCell>{new Date(pricing.created_at).toLocaleDateString()}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deletePricingMutation.mutate(pricing.id)}
-                          disabled={deletePricingMutation.isPending}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingPricing(pricing);
+                              setIsEditPricingOpen(true);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deletePricingMutation.mutate(pricing.id)}
+                            disabled={deletePricingMutation.isPending}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -495,6 +600,159 @@ const ConfigurationManagement = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Customer Dialog */}
+      <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Customer</DialogTitle>
+            <DialogDescription>
+              Update customer information and pricing
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-client-name">Client Name *</Label>
+              <Input
+                id="edit-client-name"
+                value={editingCustomer?.client_name || ""}
+                onChange={(e) => setEditingCustomer({...editingCustomer, client_name: e.target.value})}
+                placeholder="Customer company name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-branch">Branch</Label>
+              <Input
+                id="edit-branch"
+                value={editingCustomer?.branch || ""}
+                onChange={(e) => setEditingCustomer({...editingCustomer, branch: e.target.value})}
+                placeholder="Branch or location"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-sku">SKU</Label>
+              <Input
+                id="edit-sku"
+                value={editingCustomer?.sku || ""}
+                onChange={(e) => setEditingCustomer({...editingCustomer, sku: e.target.value})}
+                placeholder="Product SKU"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-price-per-case">Price per Case (₹)</Label>
+              <Input
+                id="edit-price-per-case"
+                type="number"
+                step="0.01"
+                value={editingCustomer?.price_per_case || ""}
+                onChange={(e) => setEditingCustomer({...editingCustomer, price_per_case: e.target.value})}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-price-per-bottle">Price per Bottle (₹)</Label>
+              <Input
+                id="edit-price-per-bottle"
+                type="number"
+                step="0.01"
+                value={editingCustomer?.price_per_bottle || ""}
+                onChange={(e) => setEditingCustomer({...editingCustomer, price_per_bottle: e.target.value})}
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditCustomerOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => updateCustomerMutation.mutate(editingCustomer)}
+              disabled={updateCustomerMutation.isPending}
+            >
+              {updateCustomerMutation.isPending ? "Updating..." : "Update Customer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Factory Pricing Dialog */}
+      <Dialog open={isEditPricingOpen} onOpenChange={setIsEditPricingOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Factory Pricing</DialogTitle>
+            <DialogDescription>
+              Update factory pricing information
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-pricing-date">Date *</Label>
+                <Input
+                  id="edit-pricing-date"
+                  type="date"
+                  value={editingPricing?.pricing_date || ""}
+                  onChange={(e) => setEditingPricing({...editingPricing, pricing_date: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-pricing-sku">SKU *</Label>
+                <Input
+                  id="edit-pricing-sku"
+                  value={editingPricing?.sku || ""}
+                  onChange={(e) => setEditingPricing({...editingPricing, sku: e.target.value})}
+                  placeholder="e.g., SKU001"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-bottles-per-case">Bottles per Case *</Label>
+                <Input
+                  id="edit-bottles-per-case"
+                  type="number"
+                  value={editingPricing?.bottles_per_case || ""}
+                  onChange={(e) => setEditingPricing({...editingPricing, bottles_per_case: e.target.value})}
+                  placeholder="12"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-price-per-bottle">Price per Bottle (₹) *</Label>
+                <Input
+                  id="edit-price-per-bottle"
+                  type="number"
+                  step="0.01"
+                  value={editingPricing?.price_per_bottle || ""}
+                  onChange={(e) => setEditingPricing({...editingPricing, price_per_bottle: e.target.value})}
+                  placeholder="12.50"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-tax">TAX (%)</Label>
+              <Input
+                id="edit-tax"
+                type="number"
+                step="0.01"
+                value={editingPricing?.tax || ""}
+                onChange={(e) => setEditingPricing({...editingPricing, tax: e.target.value})}
+                placeholder="18.00"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditPricingOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => updatePricingMutation.mutate(editingPricing)}
+              disabled={updatePricingMutation.isPending}
+            >
+              {updatePricingMutation.isPending ? "Updating..." : "Update Pricing"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
