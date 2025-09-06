@@ -17,28 +17,74 @@ const FactoryPayables = () => {
     transaction_date: new Date().toISOString().split('T')[0]
   });
 
+  const [productionForm, setProductionForm] = useState({
+    sku: "",
+    quantity: "",
+    description: "",
+    transaction_date: new Date().toISOString().split('T')[0]
+  });
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch factory transactions
+  // Fetch factory pricing data
+  const { data: factoryPricing } = useQuery({
+    queryKey: ["factory-pricing"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("factory_pricing")
+        .select("*")
+        .order("pricing_date", { ascending: false });
+      return data || [];
+    },
+  });
+
+  // Get unique SKUs for dropdown
+  const { data: availableSKUs } = useQuery({
+    queryKey: ["available-skus"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("factory_pricing")
+        .select("sku")
+        .order("sku");
+      
+      const uniqueSKUs = [...new Set(data?.map(item => item.sku) || [])];
+      return uniqueSKUs;
+    },
+  });
+
+  // Fetch factory transactions with calculated amounts
   const { data: transactions } = useQuery({
     queryKey: ["factory-transactions"],
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_payables")
-        .select("*")
+        .select(`
+          *,
+          factory_pricing!inner(cost_per_case, price_per_bottle, bottles_per_case)
+        `)
         .order("created_at", { ascending: false });
       return data || [];
     },
   });
 
-  // Calculate summary
+  // Calculate summary with proper amount calculation
   const summary = transactions?.reduce(
     (acc, transaction) => {
+      let amount = transaction.amount || 0;
+      
+      // For production transactions, calculate amount based on factory pricing
+      if (transaction.transaction_type === 'production' && transaction.quantity && transaction.sku) {
+        const pricing = factoryPricing?.find(p => p.sku === transaction.sku);
+        if (pricing && pricing.cost_per_case) {
+          amount = transaction.quantity * pricing.cost_per_case;
+        }
+      }
+      
       if (transaction.transaction_type === 'production') {
-        acc.totalProduction += transaction.amount || 0;
+        acc.totalProduction += amount;
       } else if (transaction.transaction_type === 'payment') {
-        acc.totalPayments += transaction.amount || 0;
+        acc.totalPayments += amount;
       }
       return acc;
     },
@@ -46,6 +92,44 @@ const FactoryPayables = () => {
   );
 
   const outstanding = (summary?.totalProduction || 0) - (summary?.totalPayments || 0);
+
+  // Production mutation
+  const productionMutation = useMutation({
+    mutationFn: async (data: any) => {
+      // Calculate amount based on factory pricing
+      const pricing = factoryPricing?.find(p => p.sku === data.sku);
+      const calculatedAmount = pricing?.cost_per_case ? 
+        parseInt(data.quantity) * pricing.cost_per_case : 0;
+
+      const { error } = await supabase
+        .from("factory_payables")
+        .insert({
+          ...data,
+          transaction_type: "production",
+          quantity: parseInt(data.quantity),
+          amount: calculatedAmount
+        });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Production transaction recorded!" });
+      setProductionForm({
+        sku: "",
+        quantity: "",
+        description: "",
+        transaction_date: new Date().toISOString().split('T')[0]
+      });
+      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to record production: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
 
   // Payment mutation
   const paymentMutation = useMutation({
@@ -79,6 +163,19 @@ const FactoryPayables = () => {
     },
   });
 
+  const handleProductionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productionForm.sku || !productionForm.quantity) {
+      toast({ 
+        title: "Error", 
+        description: "Please select SKU and enter quantity",
+        variant: "destructive"
+      });
+      return;
+    }
+    productionMutation.mutate(productionForm);
+  };
+
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!paymentForm.amount) {
@@ -90,6 +187,14 @@ const FactoryPayables = () => {
       return;
     }
     paymentMutation.mutate(paymentForm);
+  };
+
+  // Get calculated amount for production form
+  const getCalculatedAmount = () => {
+    if (!productionForm.sku || !productionForm.quantity) return 0;
+    const pricing = factoryPricing?.find(p => p.sku === productionForm.sku);
+    return pricing?.cost_per_case ? 
+      parseInt(productionForm.quantity || "0") * pricing.cost_per_case : 0;
   };
 
   return (
@@ -114,6 +219,85 @@ const FactoryPayables = () => {
             ₹{outstanding?.toLocaleString() || 0}
           </p>
         </div>
+      </div>
+
+      {/* Production Form */}
+      <div className="border rounded-lg p-6">
+        <h3 className="text-lg font-semibold mb-4">Record Production Transaction</h3>
+        <form onSubmit={handleProductionSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="production-sku">SKU *</Label>
+              <Select 
+                value={productionForm.sku} 
+                onValueChange={(value) => setProductionForm({...productionForm, sku: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select SKU" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSKUs?.map((sku) => (
+                    <SelectItem key={sku} value={sku}>
+                      {sku}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="production-quantity">Quantity (Cases) *</Label>
+              <Input
+                id="production-quantity"
+                type="number"
+                value={productionForm.quantity}
+                onChange={(e) => setProductionForm({...productionForm, quantity: e.target.value})}
+                placeholder="0"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="production-amount">Calculated Amount (₹)</Label>
+              <Input
+                id="production-amount"
+                type="number"
+                step="0.01"
+                value={getCalculatedAmount().toFixed(2)}
+                disabled
+                className="bg-muted"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="production-date">Production Date</Label>
+              <Input
+                id="production-date"
+                type="date"
+                value={productionForm.transaction_date}
+                onChange={(e) => setProductionForm({...productionForm, transaction_date: e.target.value})}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="production-description">Description</Label>
+              <Textarea
+                id="production-description"
+                value={productionForm.description}
+                onChange={(e) => setProductionForm({...productionForm, description: e.target.value})}
+                placeholder="Production details..."
+              />
+            </div>
+          </div>
+          
+          <Button 
+            type="submit" 
+            disabled={productionMutation.isPending}
+          >
+            {productionMutation.isPending ? "Recording..." : "Record Production"}
+          </Button>
+        </form>
       </div>
 
       {/* Payment Form */}
@@ -171,6 +355,8 @@ const FactoryPayables = () => {
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>SKU</TableHead>
+              <TableHead>Quantity</TableHead>
               <TableHead>Description</TableHead>
               <TableHead className="text-right">Amount</TableHead>
             </TableRow>
@@ -186,13 +372,31 @@ const FactoryPayables = () => {
                     {transaction.transaction_type === 'production' ? 'Production' : 'Payment'}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  {transaction.sku || '-'}
+                </TableCell>
+                <TableCell>
+                  {transaction.quantity || '-'}
+                </TableCell>
                 <TableCell className="max-w-xs truncate">
                   {transaction.description}
                 </TableCell>
                 <TableCell className={`text-right font-medium ${
                   transaction.transaction_type === 'production' ? 'text-red-600' : 'text-green-600'
                 }`}>
-                  {transaction.transaction_type === 'production' ? '+' : '-'}₹{transaction.amount?.toLocaleString()}
+                  {(() => {
+                    let amount = transaction.amount || 0;
+                    
+                    // For production transactions, calculate amount based on factory pricing
+                    if (transaction.transaction_type === 'production' && transaction.quantity && transaction.sku) {
+                      const pricing = factoryPricing?.find(p => p.sku === transaction.sku);
+                      if (pricing && pricing.cost_per_case) {
+                        amount = transaction.quantity * pricing.cost_per_case;
+                      }
+                    }
+                    
+                    return `${transaction.transaction_type === 'production' ? '+' : '-'}₹${amount.toLocaleString()}`;
+                  })()}
                 </TableCell>
               </TableRow>
             ))}
