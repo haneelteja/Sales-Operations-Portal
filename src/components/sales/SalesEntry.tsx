@@ -191,13 +191,26 @@ const SalesEntry = () => {
 
       if (saleError) throw saleError;
 
+      // Get factory pricing for amount calculation
+      const { data: factoryPricing } = await supabase
+        .from("factory_pricing")
+        .select("cost_per_case")
+        .eq("sku", data.sku)
+        .order("pricing_date", { ascending: false })
+        .limit(1);
+
+      const factoryCostPerCase = factoryPricing?.[0]?.cost_per_case || 0;
+      const quantity = data.quantity ? parseInt(data.quantity) : 0;
+      const factoryAmount = quantity * factoryCostPerCase;
+
       // Create corresponding factory production entry for Elma
       const { error: factoryError } = await supabase
         .from("factory_payables")
         .insert({
           transaction_type: "production",
-          amount: parseFloat(data.amount),
-          quantity: data.quantity ? parseInt(data.quantity) : null,
+          sku: data.sku,
+          amount: factoryAmount,
+          quantity: quantity,
           description: `Production for ${data.description}`,
           transaction_date: data.transaction_date
         });

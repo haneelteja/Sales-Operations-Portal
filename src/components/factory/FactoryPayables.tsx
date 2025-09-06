@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
 const FactoryPayables = () => {
@@ -221,131 +222,141 @@ const FactoryPayables = () => {
         </div>
       </div>
 
-      {/* Production Form */}
-      <div className="border rounded-lg p-6">
-        <h3 className="text-lg font-semibold mb-4">Record Production Transaction</h3>
-        <form onSubmit={handleProductionSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="production-sku">SKU *</Label>
-              <Select 
-                value={productionForm.sku} 
-                onValueChange={(value) => setProductionForm({...productionForm, sku: value})}
+      {/* Tabs for Production and Payment Forms */}
+      <Tabs defaultValue="production" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="production">Record Production Transaction</TabsTrigger>
+          <TabsTrigger value="payment">Record Payment to Elma Industries</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="production">
+          <div className="border rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4">Record Production Transaction</h3>
+            <form onSubmit={handleProductionSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="production-sku">SKU *</Label>
+                  <Select 
+                    value={productionForm.sku} 
+                    onValueChange={(value) => setProductionForm({...productionForm, sku: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select SKU" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSKUs?.map((sku) => (
+                        <SelectItem key={sku} value={sku}>
+                          {sku}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="production-quantity">Quantity (Cases) *</Label>
+                  <Input
+                    id="production-quantity"
+                    type="number"
+                    value={productionForm.quantity}
+                    onChange={(e) => setProductionForm({...productionForm, quantity: e.target.value})}
+                    placeholder="0"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="production-amount">Calculated Amount (₹)</Label>
+                  <Input
+                    id="production-amount"
+                    type="number"
+                    step="0.01"
+                    value={getCalculatedAmount().toFixed(2)}
+                    disabled
+                    className="bg-muted"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="production-date">Production Date</Label>
+                  <Input
+                    id="production-date"
+                    type="date"
+                    value={productionForm.transaction_date}
+                    onChange={(e) => setProductionForm({...productionForm, transaction_date: e.target.value})}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="production-description">Description</Label>
+                  <Textarea
+                    id="production-description"
+                    value={productionForm.description}
+                    onChange={(e) => setProductionForm({...productionForm, description: e.target.value})}
+                    placeholder="Production details..."
+                  />
+                </div>
+              </div>
+              
+              <Button 
+                type="submit" 
+                disabled={productionMutation.isPending}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select SKU" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableSKUs?.map((sku) => (
-                    <SelectItem key={sku} value={sku}>
-                      {sku}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="production-quantity">Quantity (Cases) *</Label>
-              <Input
-                id="production-quantity"
-                type="number"
-                value={productionForm.quantity}
-                onChange={(e) => setProductionForm({...productionForm, quantity: e.target.value})}
-                placeholder="0"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="production-amount">Calculated Amount (₹)</Label>
-              <Input
-                id="production-amount"
-                type="number"
-                step="0.01"
-                value={getCalculatedAmount().toFixed(2)}
-                disabled
-                className="bg-muted"
-              />
-            </div>
+                {productionMutation.isPending ? "Recording..." : "Record Production"}
+              </Button>
+            </form>
           </div>
+        </TabsContent>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="production-date">Production Date</Label>
-              <Input
-                id="production-date"
-                type="date"
-                value={productionForm.transaction_date}
-                onChange={(e) => setProductionForm({...productionForm, transaction_date: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="production-description">Description</Label>
-              <Textarea
-                id="production-description"
-                value={productionForm.description}
-                onChange={(e) => setProductionForm({...productionForm, description: e.target.value})}
-                placeholder="Production details..."
-              />
-            </div>
+        <TabsContent value="payment">
+          <div className="border rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4">Record Payment to Elma Industries</h3>
+            <form onSubmit={handlePaymentSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="payment-amount">Payment Amount (₹) *</Label>
+                  <Input
+                    id="payment-amount"
+                    type="number"
+                    step="0.01"
+                    value={paymentForm.amount}
+                    onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
+                    placeholder="0.00"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="payment-date">Payment Date</Label>
+                  <Input
+                    id="payment-date"
+                    type="date"
+                    value={paymentForm.transaction_date}
+                    onChange={(e) => setPaymentForm({...paymentForm, transaction_date: e.target.value})}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="payment-description">Description</Label>
+                <Textarea
+                  id="payment-description"
+                  value={paymentForm.description}
+                  onChange={(e) => setPaymentForm({...paymentForm, description: e.target.value})}
+                  placeholder="Payment details..."
+                />
+              </div>
+              
+              <Button 
+                type="submit" 
+                disabled={paymentMutation.isPending}
+              >
+                {paymentMutation.isPending ? "Recording..." : "Record Payment"}
+              </Button>
+            </form>
           </div>
-          
-          <Button 
-            type="submit" 
-            disabled={productionMutation.isPending}
-          >
-            {productionMutation.isPending ? "Recording..." : "Record Production"}
-          </Button>
-        </form>
-      </div>
-
-      {/* Payment Form */}
-      <div className="border rounded-lg p-6">
-        <h3 className="text-lg font-semibold mb-4">Record Payment to Elma Industries</h3>
-        <form onSubmit={handlePaymentSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="payment-amount">Payment Amount (₹) *</Label>
-              <Input
-                id="payment-amount"
-                type="number"
-                step="0.01"
-                value={paymentForm.amount}
-                onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
-                placeholder="0.00"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="payment-date">Payment Date</Label>
-              <Input
-                id="payment-date"
-                type="date"
-                value={paymentForm.transaction_date}
-                onChange={(e) => setPaymentForm({...paymentForm, transaction_date: e.target.value})}
-              />
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="payment-description">Description</Label>
-            <Textarea
-              id="payment-description"
-              value={paymentForm.description}
-              onChange={(e) => setPaymentForm({...paymentForm, description: e.target.value})}
-              placeholder="Payment details..."
-            />
-          </div>
-          
-          <Button 
-            type="submit" 
-            disabled={paymentMutation.isPending}
-          >
-            {paymentMutation.isPending ? "Recording..." : "Record Payment"}
-          </Button>
-        </form>
-      </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Transactions Table */}
       <div className="border rounded-lg p-6">
