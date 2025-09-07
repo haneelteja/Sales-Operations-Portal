@@ -9,7 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { Pencil, Trash2 } from "lucide-react";
 
 const FactoryPayables = () => {
   const [paymentForm, setPaymentForm] = useState({
@@ -23,6 +25,15 @@ const FactoryPayables = () => {
     quantity: "",
     description: "",
     transaction_date: new Date().toISOString().split('T')[0]
+  });
+
+  const [editingTransaction, setEditingTransaction] = useState<any>(null);
+  const [editForm, setEditForm] = useState({
+    amount: "",
+    quantity: "",
+    sku: "",
+    description: "",
+    transaction_date: ""
   });
 
   const { toast } = useToast();
@@ -164,6 +175,62 @@ const FactoryPayables = () => {
     },
   });
 
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      let updateData = { ...data };
+      
+      // For production transactions, recalculate amount based on factory pricing
+      if (data.transaction_type === 'production' && data.quantity && data.sku) {
+        const pricing = factoryPricing?.find(p => p.sku === data.sku);
+        updateData.amount = pricing?.cost_per_case ? 
+          parseInt(data.quantity) * pricing.cost_per_case : data.amount;
+      }
+
+      const { error } = await supabase
+        .from("factory_payables")
+        .update(updateData)
+        .eq("id", data.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Transaction updated successfully!" });
+      setEditingTransaction(null);
+      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to update transaction: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("factory_payables")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Transaction deleted successfully!" });
+      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to delete transaction: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
   const handleProductionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!productionForm.sku || !productionForm.quantity) {
@@ -188,6 +255,38 @@ const FactoryPayables = () => {
       return;
     }
     paymentMutation.mutate(paymentForm);
+  };
+
+  const handleEditClick = (transaction: any) => {
+    setEditingTransaction(transaction);
+    setEditForm({
+      amount: transaction.amount?.toString() || "",
+      quantity: transaction.quantity?.toString() || "",
+      sku: transaction.sku || "",
+      description: transaction.description || "",
+      transaction_date: transaction.transaction_date || ""
+    });
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTransaction) return;
+    
+    updateMutation.mutate({
+      id: editingTransaction.id,
+      transaction_type: editingTransaction.transaction_type,
+      amount: editingTransaction.transaction_type === 'payment' ? parseFloat(editForm.amount) : editForm.amount,
+      quantity: editForm.quantity ? parseInt(editForm.quantity) : null,
+      sku: editForm.sku || null,
+      description: editForm.description,
+      transaction_date: editForm.transaction_date
+    });
+  };
+
+  const handleDeleteClick = (id: string) => {
+    if (confirm("Are you sure you want to delete this transaction?")) {
+      deleteMutation.mutate(id);
+    }
   };
 
   // Get calculated amount for production form
@@ -370,6 +469,7 @@ const FactoryPayables = () => {
               <TableHead>Quantity</TableHead>
               <TableHead>Description</TableHead>
               <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -408,6 +508,109 @@ const FactoryPayables = () => {
                     
                     return `${transaction.transaction_type === 'production' ? '+' : '-'}₹${amount.toLocaleString()}`;
                   })()}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditClick(transaction)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Edit Transaction</DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={handleEditSubmit} className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="edit-date">Date</Label>
+                              <Input
+                                id="edit-date"
+                                type="date"
+                                value={editForm.transaction_date}
+                                onChange={(e) => setEditForm({...editForm, transaction_date: e.target.value})}
+                              />
+                            </div>
+                            
+                            {editingTransaction?.transaction_type === 'production' && (
+                              <>
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-sku">SKU</Label>
+                                  <Select 
+                                    value={editForm.sku} 
+                                    onValueChange={(value) => setEditForm({...editForm, sku: value})}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select SKU" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {availableSKUs?.map((sku) => (
+                                        <SelectItem key={sku} value={sku}>
+                                          {sku}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-quantity">Quantity</Label>
+                                  <Input
+                                    id="edit-quantity"
+                                    type="number"
+                                    value={editForm.quantity}
+                                    onChange={(e) => setEditForm({...editForm, quantity: e.target.value})}
+                                  />
+                                </div>
+                              </>
+                            )}
+                            
+                            {editingTransaction?.transaction_type === 'payment' && (
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-amount">Amount (₹)</Label>
+                                <Input
+                                  id="edit-amount"
+                                  type="number"
+                                  step="0.01"
+                                  value={editForm.amount}
+                                  onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-description">Description</Label>
+                            <Textarea
+                              id="edit-description"
+                              value={editForm.description}
+                              onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                            />
+                          </div>
+                          
+                          <div className="flex justify-end gap-2">
+                            <Button type="submit" disabled={updateMutation.isPending}>
+                              {updateMutation.isPending ? "Updating..." : "Update"}
+                            </Button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeleteClick(transaction.id)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
