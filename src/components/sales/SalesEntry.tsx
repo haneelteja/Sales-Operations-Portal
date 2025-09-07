@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { Pencil, Trash2 } from "lucide-react";
 
 const SalesEntry = () => {
   const [saleForm, setSaleForm] = useState({
@@ -26,6 +28,16 @@ const SalesEntry = () => {
     amount: "",
     description: "",
     transaction_date: new Date().toISOString().split('T')[0]
+  });
+
+  const [editingTransaction, setEditingTransaction] = useState<any>(null);
+  const [editForm, setEditForm] = useState({
+    customer_id: "",
+    amount: "",
+    quantity: "",
+    sku: "",
+    description: "",
+    transaction_date: ""
   });
 
   const { toast } = useToast();
@@ -285,6 +297,60 @@ const SalesEntry = () => {
     },
   });
 
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const { error } = await supabase
+        .from("sales_transactions")
+        .update({
+          customer_id: data.customer_id,
+          amount: parseFloat(data.amount),
+          quantity: data.quantity ? parseInt(data.quantity) : null,
+          sku: data.sku,
+          description: data.description,
+          transaction_date: data.transaction_date
+        })
+        .eq("id", data.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Transaction updated successfully!" });
+      setEditingTransaction(null);
+      queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to update transaction: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("sales_transactions")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Transaction deleted successfully!" });
+      queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Error", 
+        description: "Failed to delete transaction: " + error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
   const handleSaleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!saleForm.customer_id || !saleForm.amount || !saleForm.sku) {
@@ -309,6 +375,39 @@ const SalesEntry = () => {
       return;
     }
     paymentMutation.mutate(paymentForm);
+  };
+
+  const handleEditClick = (transaction: any) => {
+    setEditingTransaction(transaction);
+    setEditForm({
+      customer_id: transaction.customer_id || "",
+      amount: transaction.amount?.toString() || "",
+      quantity: transaction.quantity?.toString() || "",
+      sku: transaction.sku || "",
+      description: transaction.description || "",
+      transaction_date: transaction.transaction_date || ""
+    });
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTransaction) return;
+    
+    updateMutation.mutate({
+      id: editingTransaction.id,
+      customer_id: editForm.customer_id,
+      amount: editForm.amount,
+      quantity: editForm.quantity,
+      sku: editForm.sku,
+      description: editForm.description,
+      transaction_date: editForm.transaction_date
+    });
+  };
+
+  const handleDeleteClick = (id: string) => {
+    if (confirm("Are you sure you want to delete this transaction?")) {
+      deleteMutation.mutate(id);
+    }
   };
 
   return (
@@ -517,6 +616,7 @@ const SalesEntry = () => {
                 <TableHead className="text-right">Factory Payable</TableHead>
                 <TableHead className="text-right">Transport</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -551,6 +651,112 @@ const SalesEntry = () => {
                     <TableCell className="text-right">-</TableCell>
                     <TableCell className="truncate max-w-[150px]">
                       {transaction.description || '-'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditClick(transaction)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Edit Transaction</DialogTitle>
+                            </DialogHeader>
+                            <form onSubmit={handleEditSubmit} className="space-y-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-customer">Customer</Label>
+                                  <Select 
+                                    value={editForm.customer_id} 
+                                    onValueChange={(value) => setEditForm({...editForm, customer_id: value})}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select customer" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {getUniqueCustomers().map((customer) => (
+                                        <SelectItem key={customer.id} value={customer.id}>
+                                          {customer.client_name} - {customer.branch}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-sku">SKU</Label>
+                                  <Input
+                                    id="edit-sku"
+                                    value={editForm.sku}
+                                    onChange={(e) => setEditForm({...editForm, sku: e.target.value})}
+                                  />
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-quantity">Quantity</Label>
+                                  <Input
+                                    id="edit-quantity"
+                                    type="number"
+                                    value={editForm.quantity}
+                                    onChange={(e) => setEditForm({...editForm, quantity: e.target.value})}
+                                  />
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-amount">Amount (₹)</Label>
+                                  <Input
+                                    id="edit-amount"
+                                    type="number"
+                                    step="0.01"
+                                    value={editForm.amount}
+                                    onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
+                                  />
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-date">Date</Label>
+                                  <Input
+                                    id="edit-date"
+                                    type="date"
+                                    value={editForm.transaction_date}
+                                    onChange={(e) => setEditForm({...editForm, transaction_date: e.target.value})}
+                                  />
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-description">Description</Label>
+                                <Textarea
+                                  id="edit-description"
+                                  value={editForm.description}
+                                  onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                                />
+                              </div>
+                              
+                              <div className="flex justify-end gap-2">
+                                <Button type="submit" disabled={updateMutation.isPending}>
+                                  {updateMutation.isPending ? "Updating..." : "Update"}
+                                </Button>
+                              </div>
+                            </form>
+                          </DialogContent>
+                        </Dialog>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteClick(transaction.id)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
