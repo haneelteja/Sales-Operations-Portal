@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 const LabelPurchases = () => {
   const [form, setForm] = useState({
     client_id: "",
+    vendor_id: "",
     sku: "",
     quantity: "",
     cost_per_label: "",
@@ -36,6 +37,14 @@ const LabelPurchases = () => {
     queryKey: ["sku-configurations"],
     queryFn: async () => {
       const { data } = await supabase.from("sku_configurations").select("*").order("sku");
+      return data || [];
+    },
+  });
+
+  const { data: vendors } = useQuery({
+    queryKey: ["label-vendors"],
+    queryFn: async () => {
+      const { data } = await supabase.from("label_vendors").select("id, vendor_name").order("vendor_name");
       return data || [];
     },
   });
@@ -69,6 +78,7 @@ const LabelPurchases = () => {
       toast({ title: "Success", description: "Label purchase recorded!" });
       setForm({
         client_id: "",
+        vendor_id: "",
         sku: "",
         quantity: "",
         cost_per_label: "",
@@ -90,10 +100,10 @@ const LabelPurchases = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.client_id || !form.sku || !form.quantity || !form.cost_per_label) {
+    if (!form.client_id || !form.vendor_id || !form.sku || !form.quantity || !form.cost_per_label) {
       toast({ 
         title: "Error", 
-        description: "Client, SKU, Quantity, and Cost per Label are required",
+        description: "Client, Vendor, SKU, Quantity, and Cost per Label are required",
         variant: "destructive"
       });
       return;
@@ -136,7 +146,22 @@ const LabelPurchases = () => {
               ))}
             </select>
           </div>
-          
+          <div className="space-y-2">
+            <Label htmlFor="vendor">Vendor *</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+              value={form.vendor_id}
+              onChange={(e) => setForm({ ...form, vendor_id: e.target.value })}
+            >
+              <option value="">Select a vendor</option>
+              {vendors?.map((vendor) => (
+                <option key={vendor.id} value={vendor.id}>
+                  {vendor.vendor_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="sku">SKU *</Label>
             <select
