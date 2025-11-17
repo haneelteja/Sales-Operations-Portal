@@ -1,0 +1,271 @@
+-- Add RLS policies for client/branch-based access control
+
+-- First, let's add a function to check if a user has access to specific data
+CREATE OR REPLACE FUNCTION user_has_data_access(table_name TEXT, client_name TEXT DEFAULT NULL, branch_name TEXT DEFAULT NULL)
+RETURNS BOOLEAN AS $$
+DECLARE
+  user_clients TEXT[];
+  user_branches TEXT[];
+  is_admin BOOLEAN;
+BEGIN
+  -- Check if user is admin
+  SELECT EXISTS (
+    SELECT 1 FROM user_management um
+    WHERE um.user_id = auth.uid()
+    AND um.role = 'admin'
+    AND um.status = 'active'
+  ) INTO is_admin;
+  
+  -- If admin, allow all access
+  IF is_admin THEN
+    RETURN TRUE;
+  END IF;
+  
+  -- Get user's assigned clients and branches
+  SELECT um.associated_clients, um.associated_branches
+  INTO user_clients, user_branches
+  FROM user_management um
+  WHERE um.user_id = auth.uid()
+  AND um.status = 'active';
+  
+  -- If no user record found, deny access
+  IF user_clients IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  
+  -- If no specific client/branch provided, check if user has any access
+  IF client_name IS NULL AND branch_name IS NULL THEN
+    RETURN array_length(user_clients, 1) > 0;
+  END IF;
+  
+  -- Check client access
+  IF client_name IS NOT NULL THEN
+    IF NOT (client_name = ANY(user_clients)) THEN
+      RETURN FALSE;
+    END IF;
+  END IF;
+  
+  -- Check branch access (if branch is specified and user has branch restrictions)
+  IF branch_name IS NOT NULL AND array_length(user_branches, 1) > 0 THEN
+    IF NOT (branch_name = ANY(user_branches)) THEN
+      RETURN FALSE;
+    END IF;
+  END IF;
+  
+  RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Update existing RLS policies for sales_transactions (only if table exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sales_transactions') THEN
+    DROP POLICY IF EXISTS "Users can view own sales transactions" ON sales_transactions;
+    DROP POLICY IF EXISTS "Users can insert own sales transactions" ON sales_transactions;
+    DROP POLICY IF EXISTS "Users can update own sales transactions" ON sales_transactions;
+    DROP POLICY IF EXISTS "Users can delete own sales transactions" ON sales_transactions;
+  END IF;
+END $$;
+
+-- New RLS policies for sales_transactions based on client/branch access
+CREATE POLICY "Users can view sales transactions based on client/branch access" ON sales_transactions
+  FOR SELECT USING (
+    user_has_data_access('sales_transactions', 
+      (SELECT client_name FROM customers WHERE id = sales_transactions.customer_id),
+      (SELECT branch FROM customers WHERE id = sales_transactions.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can insert sales transactions based on client/branch access" ON sales_transactions
+  FOR INSERT WITH CHECK (
+    user_has_data_access('sales_transactions', 
+      (SELECT client_name FROM customers WHERE id = sales_transactions.customer_id),
+      (SELECT branch FROM customers WHERE id = sales_transactions.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can update sales transactions based on client/branch access" ON sales_transactions
+  FOR UPDATE USING (
+    user_has_data_access('sales_transactions', 
+      (SELECT client_name FROM customers WHERE id = sales_transactions.customer_id),
+      (SELECT branch FROM customers WHERE id = sales_transactions.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can delete sales transactions based on client/branch access" ON sales_transactions
+  FOR DELETE USING (
+    user_has_data_access('sales_transactions', 
+      (SELECT client_name FROM customers WHERE id = sales_transactions.customer_id),
+      (SELECT branch FROM customers WHERE id = sales_transactions.customer_id)
+    )
+  );
+
+-- Update RLS policies for customers table
+DROP POLICY IF EXISTS "Users can view customers" ON customers;
+DROP POLICY IF EXISTS "Users can insert customers" ON customers;
+DROP POLICY IF EXISTS "Users can update customers" ON customers;
+DROP POLICY IF EXISTS "Users can delete customers" ON customers;
+
+CREATE POLICY "Users can view customers based on client/branch access" ON customers
+  FOR SELECT USING (user_has_data_access('customers', client_name, branch));
+
+CREATE POLICY "Users can insert customers based on client/branch access" ON customers
+  FOR INSERT WITH CHECK (user_has_data_access('customers', client_name, branch));
+
+CREATE POLICY "Users can update customers based on client/branch access" ON customers
+  FOR UPDATE USING (user_has_data_access('customers', client_name, branch));
+
+CREATE POLICY "Users can delete customers based on client/branch access" ON customers
+  FOR DELETE USING (user_has_data_access('customers', client_name, branch));
+
+-- Update RLS policies for factory_payables
+DROP POLICY IF EXISTS "Users can view factory payables" ON factory_payables;
+DROP POLICY IF EXISTS "Users can insert factory payables" ON factory_payables;
+DROP POLICY IF EXISTS "Users can update factory payables" ON factory_payables;
+DROP POLICY IF EXISTS "Users can delete factory payables" ON factory_payables;
+
+CREATE POLICY "Users can view factory payables based on client/branch access" ON factory_payables
+  FOR SELECT USING (
+    user_has_data_access('factory_payables', 
+      (SELECT client_name FROM customers WHERE id = factory_payables.customer_id),
+      (SELECT branch FROM customers WHERE id = factory_payables.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can insert factory payables based on client/branch access" ON factory_payables
+  FOR INSERT WITH CHECK (
+    user_has_data_access('factory_payables', 
+      (SELECT client_name FROM customers WHERE id = factory_payables.customer_id),
+      (SELECT branch FROM customers WHERE id = factory_payables.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can update factory payables based on client/branch access" ON factory_payables
+  FOR UPDATE USING (
+    user_has_data_access('factory_payables', 
+      (SELECT client_name FROM customers WHERE id = factory_payables.customer_id),
+      (SELECT branch FROM customers WHERE id = factory_payables.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can delete factory payables based on client/branch access" ON factory_payables
+  FOR DELETE USING (
+    user_has_data_access('factory_payables', 
+      (SELECT client_name FROM customers WHERE id = factory_payables.customer_id),
+      (SELECT branch FROM customers WHERE id = factory_payables.customer_id)
+    )
+  );
+
+-- Update RLS policies for transport_expenses
+DROP POLICY IF EXISTS "Users can view transport expenses" ON transport_expenses;
+DROP POLICY IF EXISTS "Users can insert transport expenses" ON transport_expenses;
+DROP POLICY IF EXISTS "Users can update transport expenses" ON transport_expenses;
+DROP POLICY IF EXISTS "Users can delete transport expenses" ON transport_expenses;
+
+CREATE POLICY "Users can view transport expenses based on client/branch access" ON transport_expenses
+  FOR SELECT USING (
+    user_has_data_access('transport_expenses', 
+      (SELECT client_name FROM customers WHERE id = transport_expenses.customer_id),
+      (SELECT branch FROM customers WHERE id = transport_expenses.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can insert transport expenses based on client/branch access" ON transport_expenses
+  FOR INSERT WITH CHECK (
+    user_has_data_access('transport_expenses', 
+      (SELECT client_name FROM customers WHERE id = transport_expenses.customer_id),
+      (SELECT branch FROM customers WHERE id = transport_expenses.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can update transport expenses based on client/branch access" ON transport_expenses
+  FOR UPDATE USING (
+    user_has_data_access('transport_expenses', 
+      (SELECT client_name FROM customers WHERE id = transport_expenses.customer_id),
+      (SELECT branch FROM customers WHERE id = transport_expenses.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can delete transport expenses based on client/branch access" ON transport_expenses
+  FOR DELETE USING (
+    user_has_data_access('transport_expenses', 
+      (SELECT client_name FROM customers WHERE id = transport_expenses.customer_id),
+      (SELECT branch FROM customers WHERE id = transport_expenses.customer_id)
+    )
+  );
+
+-- Update RLS policies for label_purchases
+DROP POLICY IF EXISTS "Users can view label purchases" ON label_purchases;
+DROP POLICY IF EXISTS "Users can insert label purchases" ON label_purchases;
+DROP POLICY IF EXISTS "Users can update label purchases" ON label_purchases;
+DROP POLICY IF EXISTS "Users can delete label purchases" ON label_purchases;
+
+CREATE POLICY "Users can view label purchases based on client/branch access" ON label_purchases
+  FOR SELECT USING (
+    user_has_data_access('label_purchases', 
+      (SELECT client_name FROM customers WHERE id = label_purchases.customer_id),
+      (SELECT branch FROM customers WHERE id = label_purchases.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can insert label purchases based on client/branch access" ON label_purchases
+  FOR INSERT WITH CHECK (
+    user_has_data_access('label_purchases', 
+      (SELECT client_name FROM customers WHERE id = label_purchases.customer_id),
+      (SELECT branch FROM customers WHERE id = label_purchases.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can update label purchases based on client/branch access" ON label_purchases
+  FOR UPDATE USING (
+    user_has_data_access('label_purchases', 
+      (SELECT client_name FROM customers WHERE id = label_purchases.customer_id),
+      (SELECT branch FROM customers WHERE id = label_purchases.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can delete label purchases based on client/branch access" ON label_purchases
+  FOR DELETE USING (
+    user_has_data_access('label_purchases', 
+      (SELECT client_name FROM customers WHERE id = label_purchases.customer_id),
+      (SELECT branch FROM customers WHERE id = label_purchases.customer_id)
+    )
+  );
+
+-- Update RLS policies for orders table
+DROP POLICY IF EXISTS "Users can view orders" ON orders;
+DROP POLICY IF EXISTS "Users can insert orders" ON orders;
+DROP POLICY IF EXISTS "Users can update orders" ON orders;
+DROP POLICY IF EXISTS "Users can delete orders" ON orders;
+
+CREATE POLICY "Users can view orders based on client/branch access" ON orders
+  FOR SELECT USING (
+    user_has_data_access('orders', 
+      (SELECT client_name FROM customers WHERE id = orders.customer_id),
+      (SELECT branch FROM customers WHERE id = orders.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can insert orders based on client/branch access" ON orders
+  FOR INSERT WITH CHECK (
+    user_has_data_access('orders', 
+      (SELECT client_name FROM customers WHERE id = orders.customer_id),
+      (SELECT branch FROM customers WHERE id = orders.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can update orders based on client/branch access" ON orders
+  FOR UPDATE USING (
+    user_has_data_access('orders', 
+      (SELECT client_name FROM customers WHERE id = orders.customer_id),
+      (SELECT branch FROM customers WHERE id = orders.customer_id)
+    )
+  );
+
+CREATE POLICY "Users can delete orders based on client/branch access" ON orders
+  FOR DELETE USING (
+    user_has_data_access('orders', 
+      (SELECT client_name FROM customers WHERE id = orders.customer_id),
+      (SELECT branch FROM customers WHERE id = orders.customer_id)
+    )
+  );

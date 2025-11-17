@@ -10,7 +10,9 @@ import {
   FileText,
   Cog,
   LogOut,
-  User
+  User,
+  ShoppingCart,
+  Shield
 } from "lucide-react";
 
 import {
@@ -35,14 +37,16 @@ interface AppSidebarProps {
 
 const menuItems = [
   { id: "dashboard", title: "Dashboard", icon: BarChart3 },
+  { id: "order-management", title: "Order Management", icon: ShoppingCart },
+  { id: "client-receivables", title: "Client Receivables", icon: DollarSign },
   { id: "client-transactions", title: "Client Transactions", icon: DollarSign },
-  { id: "client-receivables", title: "Client Receivables", icon: Users },
   { id: "factory", title: "Factory Payables", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
   { id: "labels", title: "Labels", icon: Tag },
   { id: "configurations", title: "Configurations", icon: Cog },
   { id: "reports", title: "Reports", icon: FileText },
   { id: "adjustments", title: "Adjustments", icon: Settings },
+  { id: "user-management", title: "User Management", icon: Shield },
 ];
 
 export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {

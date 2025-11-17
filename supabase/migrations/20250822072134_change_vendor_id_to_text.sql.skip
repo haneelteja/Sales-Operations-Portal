@@ -1,0 +1,16 @@
+-- Change vendor_id in label_purchases to store vendor names as text instead of UUID
+-- First, drop the foreign key constraint
+ALTER TABLE public.label_purchases DROP CONSTRAINT IF EXISTS fk_label_purchases_vendor;
+ALTER TABLE public.label_purchases DROP CONSTRAINT IF EXISTS label_purchases_vendor_id_fkey;
+
+-- Change the column type from UUID to TEXT
+ALTER TABLE public.label_purchases ALTER COLUMN vendor_id TYPE TEXT;
+
+-- Update any existing UUID vendor_ids to their corresponding vendor names
+UPDATE public.label_purchases 
+SET vendor_id = lv.vendor_name
+FROM public.label_vendors lv
+WHERE public.label_purchases.vendor_id = lv.id::text;
+
+-- Make the column NOT NULL since we want to require vendor names
+ALTER TABLE public.label_purchases ALTER COLUMN vendor_id SET NOT NULL;

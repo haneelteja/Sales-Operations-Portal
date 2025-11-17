@@ -2,8 +2,19 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://gqyxvdpoychzqtbsjqec.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdxeXh2ZHBveWNoenF0YnNqcWVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU3Njg2MDYsImV4cCI6MjA3MTM0NDYwNn0.hW9I90dvYLRwUI-m6Co4Ln5ccFbSReKSZmi7l-vU-cQ";
+// Force new project configuration - clear any cached values
+const SUPABASE_URL = "https://qkvmdrtfhpcvwvqjuyuu.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFrdm1kcnRmaHBjdnd2cWp1eXV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMjgyMTgsImV4cCI6MjA3NDgwNDIxOH0.DJeoI0LFeMArVs5s6DV2HP0kYnjWcIVLQEbiCQr97CE";
+
+// Clear any cached auth data
+if (typeof window !== 'undefined') {
+  localStorage.removeItem('supabase.auth.token');
+  localStorage.removeItem('supabase.auth.refresh_token');
+  localStorage.removeItem('sb-yltbknkksjgtexluhtau-auth-token');
+  localStorage.removeItem('sb-yltbknkksjgtexluhtau-auth-refresh-token');
+  localStorage.removeItem('sb-qkvmdrtfhpcvwvqjuyuu-auth-token');
+  localStorage.removeItem('sb-qkvmdrtfhpcvwvqjuyuu-auth-refresh-token');
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

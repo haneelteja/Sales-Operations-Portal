@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import type { 
+  FactoryPayable, 
+  FactoryPricing, 
+  FactoryProductionForm, 
+  FactoryPaymentForm
+} from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +17,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Download } from "lucide-react";
+import * as XLSX from 'xlsx';
+import { ColumnFilter } from '@/components/ui/column-filter';
 
 const FactoryPayables = () => {
   const [paymentForm, setPaymentForm] = useState({
@@ -27,13 +35,30 @@ const FactoryPayables = () => {
     transaction_date: new Date().toISOString().split('T')[0]
   });
 
-  const [editingTransaction, setEditingTransaction] = useState<any>(null);
+  const [editingTransaction, setEditingTransaction] = useState<FactoryPayable | null>(null);
   const [editForm, setEditForm] = useState({
     amount: "",
     quantity: "",
     sku: "",
     description: "",
     transaction_date: ""
+  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [columnFilters, setColumnFilters] = useState({
+    date: "",
+    type: "",
+    sku: "",
+    description: "",
+    branch: "",
+    amount: ""
+  });
+  const [columnSorts, setColumnSorts] = useState<{[key: string]: 'asc' | 'desc' | null}>({
+    date: null,
+    type: null,
+    sku: null,
+    description: null,
+    branch: null,
+    amount: null
   });
 
   const { toast } = useToast();
@@ -58,27 +83,174 @@ const FactoryPayables = () => {
       const { data } = await supabase
         .from("factory_pricing")
         .select("sku")
-        .order("sku");
+        .order("sku", { ascending: true });
       
       const uniqueSKUs = [...new Set(data?.map(item => item.sku) || [])];
       return uniqueSKUs;
     },
   });
 
-  // Fetch factory transactions with calculated amounts
-  const { data: transactions } = useQuery({
+  // Fetch factory transactions
+  const { data: transactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ["factory-transactions"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("factory_payables")
         .select(`
           *,
-          factory_pricing!inner(cost_per_case, price_per_bottle, bottles_per_case)
+          customers (
+            id,
+            client_name,
+            branch
+          )
         `)
         .order("created_at", { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching factory transactions:", error);
+        throw error;
+      }
+      
       return data || [];
     },
   });
+
+  // Filter and sort transactions
+  const filteredAndSortedTransactions = transactions?.filter((transaction) => {
+    const sku = transaction.sku || '';
+    const description = transaction.description || '';
+    const amount = transaction.amount?.toString() || '';
+    const date = new Date(transaction.transaction_date).toLocaleDateString();
+    const dateISO = transaction.transaction_date;
+    const type = transaction.transaction_type || '';
+    const clientName = transaction.customers?.client_name || '';
+    const branch = transaction.customers?.branch || '';
+    
+    // Global search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesGlobalSearch = (
+        sku.toLowerCase().includes(searchLower) ||
+        description.toLowerCase().includes(searchLower) ||
+        clientName.toLowerCase().includes(searchLower) ||
+        branch.toLowerCase().includes(searchLower) ||
+        amount.includes(searchLower) ||
+        date.includes(searchLower) ||
+        type.toLowerCase().includes(searchLower)
+      );
+      if (!matchesGlobalSearch) return false;
+    }
+    
+    // Column-specific filters
+    if (columnFilters.date && dateISO !== columnFilters.date) return false;
+    if (columnFilters.type && !type.toLowerCase().includes(columnFilters.type.toLowerCase())) return false;
+    if (columnFilters.sku && !sku.toLowerCase().includes(columnFilters.sku.toLowerCase())) return false;
+    if (columnFilters.description && !description.toLowerCase().includes(columnFilters.description.toLowerCase()) && !clientName.toLowerCase().includes(columnFilters.description.toLowerCase())) return false;
+    if (columnFilters.branch && !branch.toLowerCase().includes(columnFilters.branch.toLowerCase())) return false;
+    if (columnFilters.amount && !amount.includes(columnFilters.amount)) return false;
+    
+    return true;
+  }).sort((a, b) => {
+    // Apply sorting
+    const activeSort = Object.entries(columnSorts).find(([_, direction]) => direction !== null);
+    if (!activeSort) return 0;
+
+    const [columnKey, direction] = activeSort;
+
+    let valueA: string | number, valueB: string | number;
+
+    switch (columnKey) {
+      case 'date':
+        valueA = new Date(a.transaction_date).getTime();
+        valueB = new Date(b.transaction_date).getTime();
+        break;
+      case 'type':
+        valueA = a.transaction_type || '';
+        valueB = b.transaction_type || '';
+        break;
+      case 'sku':
+        valueA = a.sku || '';
+        valueB = b.sku || '';
+        break;
+      case 'description':
+        valueA = a.description || '';
+        valueB = b.description || '';
+        break;
+      case 'branch':
+        valueA = a.customers?.branch || '';
+        valueB = b.customers?.branch || '';
+        break;
+      case 'amount':
+        valueA = a.amount || 0;
+        valueB = b.amount || 0;
+        break;
+      default:
+        return 0;
+    }
+
+    if (valueA < valueB) return direction === 'asc' ? -1 : 1;
+    if (valueA > valueB) return direction === 'asc' ? 1 : -1;
+    return 0;
+  }) || [];
+
+  // Column filter handlers
+  const handleColumnFilterChange = (columnKey: string, value: string) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: value
+    }));
+  };
+
+  const handleClearColumnFilter = (columnKey: string) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: ""
+    }));
+  };
+
+  const handleColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
+    setColumnSorts(prev => ({
+      ...prev,
+      [columnKey]: direction
+    }));
+  };
+
+  // Get unique values for dropdown filters
+  const getUniqueTypes = () => {
+    if (!transactions) return [];
+    return [...new Set(transactions.map(t => t.transaction_type).filter(Boolean))].sort();
+  };
+
+  const getUniqueSKUs = () => {
+    if (!transactions) return [];
+    return [...new Set(transactions.map(t => t.sku).filter(Boolean))].sort();
+  };
+
+  // Export filtered transactions to Excel
+  const exportToExcel = () => {
+    const exportData = filteredAndSortedTransactions.map((transaction) => {
+      return {
+        'Date': new Date(transaction.transaction_date).toLocaleDateString(),
+        'Type': transaction.transaction_type === 'production' ? 'Production' : 'Payment',
+        'SKU': transaction.sku || '',
+        'Quantity (cases)': transaction.quantity || 0,
+        'Description': transaction.description || '',
+        'Amount (₹)': transaction.amount || 0
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Factory Transactions');
+    
+    const fileName = `Factory_Transactions_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    
+    toast({
+      title: "Export Successful",
+      description: `Exported ${exportData.length} factory transactions to ${fileName}`,
+    });
+  };
 
   // Calculate summary with proper amount calculation
   const summary = transactions?.reduce(
@@ -107,7 +279,7 @@ const FactoryPayables = () => {
 
   // Production mutation
   const productionMutation = useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: FactoryProductionForm) => {
       // Calculate amount based on factory pricing
       const pricing = factoryPricing?.find(p => p.sku === data.sku);
       const calculatedAmount = pricing?.cost_per_case ? 
@@ -134,10 +306,10 @@ const FactoryPayables = () => {
       });
       queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       toast({ 
         title: "Error", 
-        description: "Failed to record production: " + error.message,
+        description: "Failed to record production: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });
     },
@@ -145,7 +317,7 @@ const FactoryPayables = () => {
 
   // Payment mutation
   const paymentMutation = useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: FactoryPaymentForm) => {
       const { error } = await supabase
         .from("factory_payables")
         .insert({
@@ -166,10 +338,10 @@ const FactoryPayables = () => {
       queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["factory-summary"] });
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       toast({ 
         title: "Error", 
-        description: "Failed to record payment: " + error.message,
+        description: "Failed to record payment: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });
     },
@@ -177,8 +349,8 @@ const FactoryPayables = () => {
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: async (data: any) => {
-      let updateData = { ...data };
+    mutationFn: async (data: { id: string; transaction_type: string } & Partial<FactoryProductionForm & FactoryPaymentForm>) => {
+      const updateData = { ...data };
       
       // For production transactions, recalculate amount based on factory pricing
       if (data.transaction_type === 'production' && data.quantity && data.sku) {
@@ -199,10 +371,10 @@ const FactoryPayables = () => {
       setEditingTransaction(null);
       queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       toast({ 
         title: "Error", 
-        description: "Failed to update transaction: " + error.message,
+        description: "Failed to update transaction: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });
     },
@@ -222,10 +394,10 @@ const FactoryPayables = () => {
       toast({ title: "Success", description: "Transaction deleted successfully!" });
       queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       toast({ 
         title: "Error", 
-        description: "Failed to delete transaction: " + error.message,
+        description: "Failed to delete transaction: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });
     },
@@ -257,7 +429,7 @@ const FactoryPayables = () => {
     paymentMutation.mutate(paymentForm);
   };
 
-  const handleEditClick = (transaction: any) => {
+  const handleEditClick = (transaction: FactoryPayable) => {
     setEditingTransaction(transaction);
     setEditForm({
       amount: transaction.amount?.toString() || "",
@@ -322,11 +494,59 @@ const FactoryPayables = () => {
       </div>
 
       {/* Tabs for Production and Payment Forms */}
-      <Tabs defaultValue="production" className="w-full">
+      <Tabs defaultValue="payment" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="production">Record Production Transaction</TabsTrigger>
           <TabsTrigger value="payment">Record Payment to Elma Industries</TabsTrigger>
+          <TabsTrigger value="production">Record Production Transaction</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="payment">
+          <div className="border rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4">Record Payment to Elma Industries</h3>
+            <form onSubmit={handlePaymentSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="payment-amount">Payment Amount (₹) *</Label>
+                  <Input
+                    id="payment-amount"
+                    type="number"
+                    step="0.01"
+                    value={paymentForm.amount}
+                    onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
+                    placeholder="0.00"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="payment-date">Payment Date</Label>
+                  <Input
+                    id="payment-date"
+                    type="date"
+                    value={paymentForm.transaction_date}
+                    onChange={(e) => setPaymentForm({...paymentForm, transaction_date: e.target.value})}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="payment-description">Description</Label>
+                <Textarea
+                  id="payment-description"
+                  value={paymentForm.description}
+                  onChange={(e) => setPaymentForm({...paymentForm, description: e.target.value})}
+                  placeholder="Payment details..."
+                />
+              </div>
+              
+              <Button 
+                type="submit" 
+                disabled={paymentMutation.isPending}
+              >
+                {paymentMutation.isPending ? "Recording..." : "Record Payment"}
+              </Button>
+            </form>
+          </div>
+        </TabsContent>
 
         <TabsContent value="production">
           <div className="border rounded-lg p-6">
@@ -407,81 +627,193 @@ const FactoryPayables = () => {
             </form>
           </div>
         </TabsContent>
-
-        <TabsContent value="payment">
-          <div className="border rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">Record Payment to Elma Industries</h3>
-            <form onSubmit={handlePaymentSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="payment-amount">Payment Amount (₹) *</Label>
-                  <Input
-                    id="payment-amount"
-                    type="number"
-                    step="0.01"
-                    value={paymentForm.amount}
-                    onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
-                    placeholder="0.00"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="payment-date">Payment Date</Label>
-                  <Input
-                    id="payment-date"
-                    type="date"
-                    value={paymentForm.transaction_date}
-                    onChange={(e) => setPaymentForm({...paymentForm, transaction_date: e.target.value})}
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="payment-description">Description</Label>
-                <Textarea
-                  id="payment-description"
-                  value={paymentForm.description}
-                  onChange={(e) => setPaymentForm({...paymentForm, description: e.target.value})}
-                  placeholder="Payment details..."
-                />
-              </div>
-              
-              <Button 
-                type="submit" 
-                disabled={paymentMutation.isPending}
-              >
-                {paymentMutation.isPending ? "Recording..." : "Record Payment"}
-              </Button>
-            </form>
-          </div>
-        </TabsContent>
       </Tabs>
 
       {/* Transactions Table */}
       <div className="border rounded-lg p-6">
-        <h3 className="text-lg font-semibold mb-4">Transaction History</h3>
+        <div className="space-y-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <h3 className="text-lg font-semibold">Elma Transaction History</h3>
+            <span className="text-sm text-muted-foreground">
+              {filteredAndSortedTransactions.length} of {transactions?.length || 0} transactions
+            </span>
+            </div>
+            <Button
+              onClick={exportToExcel}
+              variant="outline"
+              size="sm"
+              className="flex items-center space-x-2"
+            >
+              <Download className="h-4 w-4" />
+              <span>Export Excel</span>
+            </Button>
+          </div>
+          
+          {/* Search Filter */}
+          <div className="flex items-center space-x-2">
+            <Input
+              placeholder="Search transactions by SKU, description, amount, date, or type..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-md"
+            />
+            {(searchTerm || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setColumnFilters({
+                    date: "",
+                    type: "",
+                    sku: "",
+                    description: "",
+                    branch: "",
+                    amount: ""
+                  });
+                  setColumnSorts({
+                    date: null,
+                    type: null,
+                    sku: null,
+                    description: null,
+                    branch: null,
+                    amount: null
+                  });
+                }}
+              >
+                Clear All Filters
+              </Button>
+            )}
+          </div>
+        </div>
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>SKU</TableHead>
-              <TableHead>Quantity</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+            <TableRow className="bg-slate-50 border-b border-slate-200">
+              <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
+                <div className="flex items-center justify-between">
+                  <span>Date</span>
+                  <ColumnFilter
+                    columnKey="date"
+                    columnName="Date"
+                    filterValue={columnFilters.date}
+                    onFilterChange={(value) => handleColumnFilterChange('date', value)}
+                    onClearFilter={() => handleClearColumnFilter('date')}
+                    sortDirection={columnSorts.date}
+                    onSortChange={(direction) => handleColumnSortChange('date', direction)}
+                    dataType="date"
+                  />
+                </div>
+              </TableHead>
+              <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
+                <div className="flex items-center justify-between">
+                  <span>Client / Description</span>
+                  <ColumnFilter
+                    columnKey="description"
+                    columnName="Client / Description"
+                    filterValue={columnFilters.description}
+                    onFilterChange={(value) => handleColumnFilterChange('description', value)}
+                    onClearFilter={() => handleClearColumnFilter('description')}
+                    sortDirection={columnSorts.description}
+                    onSortChange={(direction) => handleColumnSortChange('description', direction)}
+                    dataType="text"
+                  />
+                </div>
+              </TableHead>
+              <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
+                <div className="flex items-center justify-between">
+                  <span>Branch</span>
+                  <ColumnFilter
+                    columnKey="branch"
+                    columnName="Branch"
+                    filterValue={columnFilters.branch}
+                    onFilterChange={(value) => handleColumnFilterChange('branch', value)}
+                    onClearFilter={() => handleClearColumnFilter('branch')}
+                    sortDirection={columnSorts.branch}
+                    onSortChange={(direction) => handleColumnSortChange('branch', direction)}
+                    dataType="text"
+                  />
+                </div>
+              </TableHead>
+              <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
+                <div className="flex items-center justify-between">
+                  <span>SKU</span>
+                  <ColumnFilter
+                    columnKey="sku"
+                    columnName="SKU"
+                    filterValue={columnFilters.sku}
+                    onFilterChange={(value) => handleColumnFilterChange('sku', value)}
+                    onClearFilter={() => handleClearColumnFilter('sku')}
+                    sortDirection={columnSorts.sku}
+                    onSortChange={(direction) => handleColumnSortChange('sku', direction)}
+                    dataType="text"
+                    options={getUniqueSKUs()}
+                  />
+                </div>
+              </TableHead>
+              <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-center border-r border-slate-200/50">
+                Quantity (cases)
+              </TableHead>
+              <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-center border-r border-slate-200/50">
+                <div className="flex items-center justify-between">
+                  <span>Type</span>
+                  <ColumnFilter
+                    columnKey="type"
+                    columnName="Type"
+                    filterValue={columnFilters.type}
+                    onFilterChange={(value) => handleColumnFilterChange('type', value)}
+                    onClearFilter={() => handleClearColumnFilter('type')}
+                    sortDirection={columnSorts.type}
+                    onSortChange={(direction) => handleColumnSortChange('type', direction)}
+                    dataType="text"
+                    options={getUniqueTypes()}
+                  />
+                </div>
+              </TableHead>
+              <TableHead className="text-right font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 border-r border-slate-200/50">
+                <div className="flex items-center justify-end">
+                  <span>Amount</span>
+                  <ColumnFilter
+                    columnKey="amount"
+                    columnName="Amount"
+                    filterValue={columnFilters.amount}
+                    onFilterChange={(value) => handleColumnFilterChange('amount', value)}
+                    onClearFilter={() => handleClearColumnFilter('amount')}
+                    sortDirection={columnSorts.amount}
+                    onSortChange={(direction) => handleColumnSortChange('amount', direction)}
+                    dataType="number"
+                  />
+                </div>
+              </TableHead>
+              <TableHead className="text-right font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transactions?.map((transaction) => (
+            {transactionsLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8">
+                  Loading factory transactions...
+                </TableCell>
+              </TableRow>
+            ) : transactionsError ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-red-600">
+                  Error loading factory transactions: {transactionsError.message}
+                </TableCell>
+              </TableRow>
+            ) : filteredAndSortedTransactions.length > 0 ? (
+              filteredAndSortedTransactions.map((transaction) => (
               <TableRow key={transaction.id}>
                 <TableCell>
                   {new Date(transaction.transaction_date).toLocaleDateString()}
                 </TableCell>
+                <TableCell className="max-w-xs truncate">
+                  {transaction.customers?.client_name || '-'} / {transaction.description || '-'}
+                </TableCell>
                 <TableCell>
-                  <Badge variant={transaction.transaction_type === 'production' ? 'default' : 'secondary'}>
-                    {transaction.transaction_type === 'production' ? 'Production' : 'Payment'}
-                  </Badge>
+                  {transaction.customers?.branch || '-'}
                 </TableCell>
                 <TableCell>
                   {transaction.sku || '-'}
@@ -489,8 +821,10 @@ const FactoryPayables = () => {
                 <TableCell>
                   {transaction.quantity || '-'}
                 </TableCell>
-                <TableCell className="max-w-xs truncate">
-                  {transaction.description}
+                <TableCell>
+                  <Badge variant={transaction.transaction_type === 'production' ? 'default' : 'secondary'}>
+                    {transaction.transaction_type === 'production' ? 'Production' : 'Payment'}
+                  </Badge>
                 </TableCell>
                 <TableCell className={`text-right font-medium ${
                   transaction.transaction_type === 'production' ? 'text-red-600' : 'text-green-600'
@@ -559,7 +893,7 @@ const FactoryPayables = () => {
                                 </div>
                                 
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-quantity">Quantity</Label>
+                                  <Label htmlFor="edit-quantity">Quantity (cases)</Label>
                                   <Input
                                     id="edit-quantity"
                                     type="number"
@@ -613,7 +947,14 @@ const FactoryPayables = () => {
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  {searchTerm ? "No transactions found matching your search" : `No factory transactions found. Total: ${transactions?.length || 0}, Filtered: ${filteredAndSortedTransactions?.length || 0}`}
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>

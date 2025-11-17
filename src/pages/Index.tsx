@@ -6,11 +6,12 @@ import SalesEntry from "@/components/sales/SalesEntry";
 import Receivables from "@/components/receivables/Receivables";
 import FactoryPayables from "@/components/factory/FactoryPayables";
 import TransportExpenses from "@/components/transport/TransportExpenses";
-import LabelPurchases from "@/components/labels/LabelPurchases";
-import CustomerManagement from "@/components/customers/CustomerManagement";
+import Labels from "@/components/labels/Labels";
 import ConfigurationManagement from "@/components/configurations/ConfigurationManagement";
 import Reports from "@/components/reports/Reports";
 import Adjustments from "@/components/adjustments/Adjustments";
+import UserManagement from "@/components/user-management/UserManagement";
+import OrderManagement from "@/components/order-management/OrderManagement";
 
 const Index = () => {
   const [activeView, setActiveView] = useState("dashboard");
@@ -19,6 +20,8 @@ const Index = () => {
     switch (activeView) {
       case "dashboard":
         return <Dashboard />;
+      case "order-management":
+        return <OrderManagement />;
       case "client-transactions":
         return <SalesEntry />;
       case "client-receivables":
@@ -28,15 +31,15 @@ const Index = () => {
       case "transport":
         return <TransportExpenses />;
       case "labels":
-        return <LabelPurchases />;
-      case "customers":
-        return <CustomerManagement />;
+        return <Labels />;
       case "configurations":
         return <ConfigurationManagement />;
       case "reports":
         return <Reports />;
       case "adjustments":
         return <Adjustments />;
+      case "user-management":
+        return <UserManagement />;
       default:
         return <Dashboard />;
     }

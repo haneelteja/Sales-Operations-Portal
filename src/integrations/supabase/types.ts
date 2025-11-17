@@ -53,6 +53,7 @@ export type Database = {
           is_active: boolean
           price_per_bottle: number | null
           price_per_case: number | null
+          pricing_date: string | null
           sku: string | null
           updated_at: string
         }
@@ -64,6 +65,7 @@ export type Database = {
           is_active?: boolean
           price_per_bottle?: number | null
           price_per_case?: number | null
+          pricing_date?: string | null
           sku?: string | null
           updated_at?: string
         }
@@ -75,6 +77,7 @@ export type Database = {
           is_active?: boolean
           price_per_bottle?: number | null
           price_per_case?: number | null
+          pricing_date?: string | null
           sku?: string | null
           updated_at?: string
         }
@@ -84,6 +87,7 @@ export type Database = {
         Row: {
           amount: number
           created_at: string
+          customer_id: string | null
           description: string | null
           id: string
           quantity: number | null
@@ -95,6 +99,7 @@ export type Database = {
         Insert: {
           amount: number
           created_at?: string
+          customer_id?: string | null
           description?: string | null
           id?: string
           quantity?: number | null
@@ -106,6 +111,7 @@ export type Database = {
         Update: {
           amount?: number
           created_at?: string
+          customer_id?: string | null
           description?: string | null
           id?: string
           quantity?: number | null
@@ -114,7 +120,15 @@ export type Database = {
           transaction_type?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "factory_payables_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       factory_pricing: {
         Row: {
@@ -307,6 +321,7 @@ export type Database = {
           id: string
           quantity: number | null
           sku: string | null
+          total_amount: number
           transaction_date: string
           transaction_type: string
           updated_at: string
@@ -320,6 +335,7 @@ export type Database = {
           id?: string
           quantity?: number | null
           sku?: string | null
+          total_amount: number
           transaction_date?: string
           transaction_type: string
           updated_at?: string
@@ -333,6 +349,7 @@ export type Database = {
           id?: string
           quantity?: number | null
           sku?: string | null
+          total_amount?: number
           transaction_date?: string
           transaction_type?: string
           updated_at?: string
