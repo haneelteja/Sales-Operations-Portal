@@ -810,7 +810,9 @@ const FactoryPayables = () => {
                   {new Date(transaction.transaction_date).toLocaleDateString()}
                 </TableCell>
                 <TableCell className="max-w-xs truncate">
-                  {transaction.customers?.client_name || '-'} / {transaction.description || '-'}
+                  {transaction.transaction_type === 'payment' 
+                    ? (transaction.description || 'Elma Payment')
+                    : (transaction.description || transaction.customers?.client_name || '-')}
                 </TableCell>
                 <TableCell>
                   {transaction.customers?.branch || '-'}

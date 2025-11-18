@@ -83,6 +83,32 @@ const LabelAvailability = () => {
     },
   });
 
+  // Fetch factory pricing to get bottles_per_case for each SKU
+  const { data: factoryPricing } = useQuery({
+    queryKey: ["factory-pricing-for-availability"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("factory_pricing")
+        .select("sku, bottles_per_case")
+        .order("pricing_date", { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching factory pricing:", error);
+        return [];
+      }
+      
+      // Get the latest bottles_per_case for each SKU
+      const skuMap = new Map<string, number>();
+      data?.forEach((item) => {
+        if (item.sku && item.bottles_per_case && !skuMap.has(item.sku)) {
+          skuMap.set(item.sku, item.bottles_per_case);
+        }
+      });
+      
+      return skuMap;
+    },
+  });
+
   // Get available SKUs from customers table (client-specific SKUs)
   const getAvailableSKUs = React.useCallback(() => {
     if (!customers) return [];
@@ -175,8 +201,9 @@ const LabelAvailability = () => {
               sku.client_name === customer.client_name
             );
             
-            // Default bottles per case (can be configured per client-SKU combination)
-            const bottlesPerCase = 1; // Default value, can be enhanced later
+            // Get bottles per case from factory_pricing table
+            // Use the latest bottles_per_case for this SKU, default to 1 if not found
+            const bottlesPerCase = factoryPricing?.get(sale.sku) || 1;
             
             if (existing) {
               // Update existing entry with labels used
@@ -220,7 +247,7 @@ const LabelAvailability = () => {
     });
 
     return sortedSummaries;
-  }, [labelPurchases, customers, salesTransactions, getAvailableSKUs]);
+  }, [labelPurchases, customers, salesTransactions, getAvailableSKUs, factoryPricing]);
 
   // Filter and sort the data
   const filteredAndSortedData = React.useMemo(() => {
