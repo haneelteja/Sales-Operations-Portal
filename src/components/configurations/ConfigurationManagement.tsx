@@ -186,6 +186,24 @@ const ConfigurationManagement = () => {
 
   const customerMutation = useMutation({
     mutationFn: async (data: Omit<Customer, 'id' | 'created_at' | 'updated_at'> & { pricing_date: string }) => {
+      // Check for duplicate (client_name, branch, sku) combination
+      if (data.client_name && data.branch && data.sku) {
+        const { data: existingCustomers, error: checkError } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("client_name", data.client_name)
+          .eq("branch", data.branch)
+          .eq("sku", data.sku)
+          .eq("is_active", true) // Only check active customers
+          .limit(1);
+
+        if (checkError) {
+          console.error('Error checking for duplicates:', checkError);
+        } else if (existingCustomers && existingCustomers.length > 0) {
+          throw new Error(`A customer with Client Name "${data.client_name}", Branch "${data.branch}", and SKU "${data.sku}" already exists. Please use different values.`);
+        }
+      }
+
       const { error } = await supabase
         .from("customers")
         .insert({
@@ -195,7 +213,13 @@ const ConfigurationManagement = () => {
           pricing_date: data.pricing_date
         });
 
-      if (error) throw error;
+      if (error) {
+        // Handle unique constraint violation
+        if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+          throw new Error(`A customer with Client Name "${data.client_name}", Branch "${data.branch}", and SKU "${data.sku}" already exists.`);
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Customer added successfully!" });
@@ -313,64 +337,7 @@ const ConfigurationManagement = () => {
     },
   });
 
-  // Delete customer mutation
-  const deleteCustomerMutation = useMutation({
-    mutationFn: async (id: string) => {
-      // First, check if customer is referenced by other tables
-      const { data: salesTransactions } = await supabase
-        .from("sales_transactions")
-        .select("id")
-        .eq("customer_id", id)
-        .limit(1);
-
-      const { data: factoryPayables } = await supabase
-        .from("factory_payables")
-        .select("id")
-        .eq("customer_id", id)
-        .limit(1);
-
-      if (salesTransactions && salesTransactions.length > 0) {
-        throw new Error("Cannot delete customer: This customer has sales transactions associated with it. Please delete or reassign the transactions first.");
-      }
-
-      if (factoryPayables && factoryPayables.length > 0) {
-        throw new Error("Cannot delete customer: This customer has factory payables associated with it. Please delete or reassign the payables first.");
-      }
-
-      console.log('Deleting customer:', id);
-      
-      const { error } = await supabase
-        .from("customers")
-        .delete()
-        .eq("id", id);
-
-      if (error) {
-        console.error('Delete error:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
-        
-        // Handle 409 conflict (foreign key constraint violation)
-        if (error.code === '23503' || error.message?.includes('foreign key') || error.message?.includes('violates foreign key')) {
-          throw new Error("Cannot delete customer: This customer is referenced by other records (sales transactions, factory payables, etc.). Please delete or reassign those records first.");
-        }
-        
-        throw error;
-      }
-
-      console.log('Successfully deleted customer');
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Customer deleted successfully!" });
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["customers-management"] });
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: error instanceof Error ? error.message : "Failed to delete customer: " + (error as any).message,
-        variant: "destructive"
-      });
-    },
-  });
+  // Delete functionality removed - using soft delete (deactivate) only
 
   // Reactivate customer mutation
   const reactivateCustomerMutation = useMutation({
@@ -613,25 +580,59 @@ const ConfigurationManagement = () => {
     
     return true;
   }).sort((a, b) => {
-    // Apply sorting
+    // Default sorting: Active first, then Client Name → Branch → SKU → Pricing Date
     const activeSort = Object.entries(columnSorts).find(([_, direction]) => direction !== null);
-    if (!activeSort) return 0;
+    
+    // If no manual sort is applied, use default sorting
+    if (!activeSort) {
+      // 1. Sort by is_active (active first)
+      if (a.is_active !== b.is_active) {
+        return a.is_active ? -1 : 1; // Active customers first
+      }
+      
+      // 2. Sort by client_name
+      const clientNameA = (a.client_name || '').toLowerCase();
+      const clientNameB = (b.client_name || '').toLowerCase();
+      if (clientNameA !== clientNameB) {
+        return clientNameA < clientNameB ? -1 : 1;
+      }
+      
+      // 3. Sort by branch
+      const branchA = (a.branch || '').toLowerCase();
+      const branchB = (b.branch || '').toLowerCase();
+      if (branchA !== branchB) {
+        return branchA < branchB ? -1 : 1;
+      }
+      
+      // 4. Sort by SKU
+      const skuA = (a.sku || '').toLowerCase();
+      const skuB = (b.sku || '').toLowerCase();
+      if (skuA !== skuB) {
+        return skuA < skuB ? -1 : 1;
+      }
+      
+      // 5. Sort by pricing_date (newest first)
+      const dateA = new Date(a.pricing_date || 0).getTime();
+      const dateB = new Date(b.pricing_date || 0).getTime();
+      return dateB - dateA; // Newest first
+    }
 
+    // Manual sorting (when user clicks column headers)
     const [columnKey, direction] = activeSort;
     let valueA: string | number, valueB: string | number;
 
     switch (columnKey) {
       case 'client_name':
-        valueA = a.client_name || '';
-        valueB = b.client_name || '';
+        valueA = (a.client_name || '').toLowerCase();
+        valueB = (b.client_name || '').toLowerCase();
         break;
       case 'branch':
-        valueA = a.branch || '';
-        valueB = b.branch || '';
+        valueA = (a.branch || '').toLowerCase();
+        valueB = (b.branch || '').toLowerCase();
         break;
       case 'sku':
-        valueA = a.sku || '';
-        valueB = b.sku || '';
+        valueA = (a.sku || '').toLowerCase();
+        valueB = (b.sku || '').toLowerCase();
         break;
       case 'pricing_date':
         valueA = new Date(a.pricing_date || 0).getTime();
@@ -834,9 +835,7 @@ const ConfigurationManagement = () => {
     deactivateCustomerMutation.mutate(id);
   };
 
-  const handleDelete = (id: string) => {
-    deleteCustomerMutation.mutate(id);
-  };
+  // Delete functionality removed - using soft delete (deactivate) only
 
   const handleReactivate = (id: string) => {
     reactivateCustomerMutation.mutate(id);
@@ -1171,35 +1170,6 @@ const ConfigurationManagement = () => {
                                 Reactivate
                               </DropdownMenuItem>
                             )}
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <DropdownMenuItem 
-                                  onSelect={(e) => e.preventDefault()}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This action cannot be undone. This will permanently delete the customer record
-                                    and all associated data. This is a hard delete and cannot be reversed.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(customer.id)}
-                                    className="bg-red-600 hover:bg-red-700"
-                                  >
-                                    Delete Permanently
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
