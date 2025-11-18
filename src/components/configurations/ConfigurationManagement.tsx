@@ -222,18 +222,36 @@ const ConfigurationManagement = () => {
   // Update customer mutation
   const updateCustomerMutation = useMutation({
     mutationFn: async (data: { id: string } & typeof customerForm) => {
-      const { error } = await supabase
+      const updateData = {
+        client_name: data.client_name,
+        branch: data.branch,
+        sku: data.sku,
+        price_per_case: data.price_per_case ? parseFloat(data.price_per_case) : null,
+        price_per_bottle: data.price_per_bottle ? parseFloat(data.price_per_bottle) : null,
+        pricing_date: data.pricing_date
+      };
+
+      console.log('Updating customer:', { id: data.id, ...updateData });
+
+      const { data: updatedData, error } = await supabase
         .from("customers")
-        .update({
-          client_name: data.client_name,
-          branch: data.branch,
-          sku: data.sku,
-          price_per_case: data.price_per_case ? parseFloat(data.price_per_case) : null,
-          price_per_bottle: data.price_per_bottle ? parseFloat(data.price_per_bottle) : null,
-          pricing_date: data.pricing_date
-        })
-        .eq("id", data.id);
-      if (error) throw error;
+        .update(updateData)
+        .eq("id", data.id)
+        .select();
+
+      if (error) {
+        console.error('Update error:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        
+        // Handle 409 conflict (unique constraint violation)
+        if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+          throw new Error(`A customer with Client Name "${data.client_name}" and Branch "${data.branch}" already exists. Please use different values.`);
+        }
+        
+        throw error;
+      }
+
+      console.log('Successfully updated:', updatedData);
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Customer updated successfully!" });
@@ -244,7 +262,7 @@ const ConfigurationManagement = () => {
     onError: (error) => {
       toast({ 
         title: "Error", 
-        description: "Failed to update customer: " + error.message,
+        description: error instanceof Error ? error.message : "Failed to update customer: " + (error as any).message,
         variant: "destructive"
       });
     },
