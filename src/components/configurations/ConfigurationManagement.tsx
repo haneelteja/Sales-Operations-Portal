@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import type { 
   Customer, 
   FactoryPricing, 
@@ -78,57 +78,110 @@ const ConfigurationManagement = () => {
   const queryClient = useQueryClient();
 
   // Customer Management queries and mutations
-  const { data: customers } = useQuery({
+  const { data: customers, error: customersError } = useQuery({
     queryKey: ["customers-management"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("customers")
-        .select("*")
-        .order("client_name", { ascending: true });
-      return data || [];
+      try {
+        const { data, error } = await supabase
+          .from("customers")
+          .select("*")
+          .order("client_name", { ascending: true });
+        
+        if (error) {
+          console.error('Error fetching customers:', error);
+          throw new Error(handleSupabaseError(error));
+        }
+        
+        return data || [];
+      } catch (error) {
+        console.error('Error fetching customers:', error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to fetch customers",
+          variant: "destructive"
+        });
+        throw error;
+      }
     },
+    retry: 2,
+    retryDelay: 1000,
   });
 
   // Get available SKUs from factory pricing with bottles per case info
-  const { data: factoryPricingData } = useQuery({
+  const { data: factoryPricingData, error: factoryPricingDataError, isLoading: factoryPricingDataLoading } = useQuery({
     queryKey: ["factory-pricing-data"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("factory_pricing")
-        .select("sku, bottles_per_case")
-        .order("sku", { ascending: true });
-      return data || [];
+      try {
+        const { data, error } = await supabase
+          .from("factory_pricing")
+          .select("sku, bottles_per_case")
+          .order("sku", { ascending: true });
+        
+        if (error) {
+          console.error('Error fetching factory pricing data:', error);
+          throw new Error(handleSupabaseError(error));
+        }
+        
+        return data || [];
+      } catch (error) {
+        console.error('Error while configuring the SKU in the portal:', error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Error while configuring the SKU in the portal",
+          variant: "destructive"
+        });
+        throw error;
+      }
     },
+    retry: 2,
+    retryDelay: 1000,
   });
 
   // Get available SKUs from factory pricing (unique, case-insensitive)
-  const { data: availableSKUs } = useQuery({
+  const { data: availableSKUs, error: availableSKUsError, isLoading: availableSKUsLoading } = useQuery({
     queryKey: ["available-skus"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("factory_pricing")
-        .select("sku")
-        .order("sku", { ascending: true });
-      
-      // Get unique SKUs (case-insensitive)
-      const seenSKUs = new Set<string>();
-      const uniqueSKUs: string[] = [];
-      
-      data?.forEach(item => {
-        if (item.sku && item.sku.trim() !== '') {
-          const trimmedSKU = item.sku.trim();
-          const lowerCaseSKU = trimmedSKU.toLowerCase();
-          
-          // Only add if we haven't seen this SKU (case-insensitive) before
-          if (!seenSKUs.has(lowerCaseSKU)) {
-            seenSKUs.add(lowerCaseSKU);
-            uniqueSKUs.push(trimmedSKU);
-          }
+      try {
+        const { data, error } = await supabase
+          .from("factory_pricing")
+          .select("sku")
+          .order("sku", { ascending: true });
+        
+        if (error) {
+          console.error('Error fetching available SKUs:', error);
+          throw new Error(handleSupabaseError(error));
         }
-      });
-      
-      return uniqueSKUs.sort();
+        
+        // Get unique SKUs (case-insensitive)
+        const seenSKUs = new Set<string>();
+        const uniqueSKUs: string[] = [];
+        
+        data?.forEach(item => {
+          if (item.sku && item.sku.trim() !== '') {
+            const trimmedSKU = item.sku.trim();
+            const lowerCaseSKU = trimmedSKU.toLowerCase();
+            
+            // Only add if we haven't seen this SKU (case-insensitive) before
+            if (!seenSKUs.has(lowerCaseSKU)) {
+              seenSKUs.add(lowerCaseSKU);
+              uniqueSKUs.push(trimmedSKU);
+            }
+          }
+        });
+        
+        return uniqueSKUs.sort();
+      } catch (error) {
+        console.error('Error while configuring the SKU in the portal:', error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Error while configuring the SKU in the portal",
+          variant: "destructive"
+        });
+        throw error;
+      }
     },
+    retry: 2,
+    retryDelay: 1000,
   });
 
   const customerMutation = useMutation({
@@ -267,15 +320,33 @@ const ConfigurationManagement = () => {
   });
 
   // Factory Pricing queries and mutations
-  const { data: factoryPricing } = useQuery({
+  const { data: factoryPricing, error: factoryPricingError } = useQuery({
     queryKey: ["factory-pricing"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("factory_pricing")
-        .select("*")
-        .order("pricing_date", { ascending: false });
-      return data || [];
+      try {
+        const { data, error } = await supabase
+          .from("factory_pricing")
+          .select("*")
+          .order("pricing_date", { ascending: false });
+        
+        if (error) {
+          console.error('Error fetching factory pricing:', error);
+          throw new Error(handleSupabaseError(error));
+        }
+        
+        return data || [];
+      } catch (error) {
+        console.error('Error fetching factory pricing:', error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to fetch factory pricing",
+          variant: "destructive"
+        });
+        throw error;
+      }
     },
+    retry: 2,
+    retryDelay: 1000,
   });
 
   const pricingMutation = useMutation({
@@ -728,18 +799,30 @@ const ConfigurationManagement = () => {
                       <Select 
                         value={customerForm.sku} 
                         onValueChange={(value) => setCustomerForm({...customerForm, sku: value})}
+                        disabled={availableSKUsLoading || !!availableSKUsError}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select SKU" />
+                          <SelectValue placeholder={availableSKUsLoading ? "Loading SKUs..." : availableSKUsError ? "Error loading SKUs" : "Select SKU"} />
                         </SelectTrigger>
                         <SelectContent>
-                          {availableSKUs?.map((sku) => (
-                            <SelectItem key={sku} value={sku}>
-                              {sku}
+                          {availableSKUs && availableSKUs.length > 0 ? (
+                            availableSKUs.map((sku) => (
+                              <SelectItem key={sku} value={sku}>
+                                {sku}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="no-skus" disabled>
+                              No SKUs available
                             </SelectItem>
-                          ))}
+                          )}
                         </SelectContent>
                       </Select>
+                      {availableSKUsError && (
+                        <p className="text-sm text-destructive">
+                          Error loading SKUs. Please check your connection and try again.
+                        </p>
+                      )}
                     </div>
                     
                     <div className="space-y-2">

@@ -25,5 +25,36 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+  },
+  // Add better error handling
+  global: {
+    headers: {
+      'x-client-info': 'aamodha-operations-portal'
+    }
   }
 });
+
+// Helper function to handle Supabase errors with better messages
+export const handleSupabaseError = (error: any): string => {
+  if (!error) return 'An unknown error occurred';
+  
+  // Handle network/SSL errors
+  if (error.message?.includes('ERR_CERT_AUTHORITY_INVALID') || 
+      error.message?.includes('certificate') ||
+      error.message?.includes('SSL')) {
+    return 'SSL certificate error. Please check your network connection or contact support.';
+  }
+  
+  // Handle 400 Bad Request errors
+  if (error.code === 'PGRST116' || error.message?.includes('400')) {
+    return 'Invalid request. Please check your query parameters and try again.';
+  }
+  
+  // Handle RLS (Row Level Security) errors
+  if (error.code === '42501' || error.message?.includes('permission') || error.message?.includes('RLS')) {
+    return 'Permission denied. Please check your access rights.';
+  }
+  
+  // Return the error message if available
+  return error.message || 'An error occurred while processing your request';
+};
