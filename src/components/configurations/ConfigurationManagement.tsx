@@ -316,11 +316,47 @@ const ConfigurationManagement = () => {
   // Delete customer mutation
   const deleteCustomerMutation = useMutation({
     mutationFn: async (id: string) => {
+      // First, check if customer is referenced by other tables
+      const { data: salesTransactions } = await supabase
+        .from("sales_transactions")
+        .select("id")
+        .eq("customer_id", id)
+        .limit(1);
+
+      const { data: factoryPayables } = await supabase
+        .from("factory_payables")
+        .select("id")
+        .eq("customer_id", id)
+        .limit(1);
+
+      if (salesTransactions && salesTransactions.length > 0) {
+        throw new Error("Cannot delete customer: This customer has sales transactions associated with it. Please delete or reassign the transactions first.");
+      }
+
+      if (factoryPayables && factoryPayables.length > 0) {
+        throw new Error("Cannot delete customer: This customer has factory payables associated with it. Please delete or reassign the payables first.");
+      }
+
+      console.log('Deleting customer:', id);
+      
       const { error } = await supabase
         .from("customers")
         .delete()
         .eq("id", id);
-      if (error) throw error;
+
+      if (error) {
+        console.error('Delete error:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        
+        // Handle 409 conflict (foreign key constraint violation)
+        if (error.code === '23503' || error.message?.includes('foreign key') || error.message?.includes('violates foreign key')) {
+          throw new Error("Cannot delete customer: This customer is referenced by other records (sales transactions, factory payables, etc.). Please delete or reassign those records first.");
+        }
+        
+        throw error;
+      }
+
+      console.log('Successfully deleted customer');
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Customer deleted successfully!" });
@@ -330,7 +366,7 @@ const ConfigurationManagement = () => {
     onError: (error) => {
       toast({ 
         title: "Error", 
-        description: "Failed to delete customer: " + error.message,
+        description: error instanceof Error ? error.message : "Failed to delete customer: " + (error as any).message,
         variant: "destructive"
       });
     },
