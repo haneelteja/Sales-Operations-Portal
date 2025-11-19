@@ -85,6 +85,8 @@ const OrderManagement = () => {
       const { data, error } = await supabase
         .rpc('get_orders_sorted');
       
+      let ordersData: any[] = [];
+      
       if (error) {
         // Fallback to direct table query with SQL ORDER BY if function doesn't exist
         const { data: fallbackData, error: fallbackError } = await supabase
@@ -105,30 +107,32 @@ const OrderManagement = () => {
           .order('tentative_delivery_date', { ascending: false });
         
         if (fallbackError) throw fallbackError;
-        
-        // Map client_name to client for compatibility with Order interface
-        const mappedData = (fallbackData as any[]).map(order => ({
-          ...order,
-          client: order.client_name || order.client || ''
-        }));
-        
-        // Apply the exact sorting logic in JavaScript as fallback
-        return mappedData.sort((a, b) => {
-          // First priority: pending status (pending = 1, dispatched = 2)
-          const statusA = a.status === 'pending' ? 1 : 2;
-          const statusB = b.status === 'pending' ? 1 : 2;
-          const statusComparison = statusA - statusB;
-          
-          if (statusComparison !== 0) return statusComparison;
-          
-          // Second priority: tentative delivery date (most recent first)
-          const dateA = new Date(a.tentative_delivery_date);
-          const dateB = new Date(b.tentative_delivery_date);
-          return dateB.getTime() - dateA.getTime();
-        });
+        ordersData = fallbackData || [];
+      } else {
+        ordersData = data || [];
       }
       
-      return data as Order[];
+      // Always map client_name to client for compatibility with Order interface
+      // This ensures the Client column displays correctly regardless of data source
+      const mappedData = ordersData.map((order: any) => ({
+        ...order,
+        client: order.client_name || order.client || ''
+      }));
+      
+      // Apply the exact sorting logic in JavaScript
+      return mappedData.sort((a, b) => {
+        // First priority: pending status (pending = 1, dispatched = 2)
+        const statusA = a.status === 'pending' ? 1 : 2;
+        const statusB = b.status === 'pending' ? 1 : 2;
+        const statusComparison = statusA - statusB;
+        
+        if (statusComparison !== 0) return statusComparison;
+        
+        // Second priority: tentative delivery date (most recent first)
+        const dateA = new Date(a.tentative_delivery_date);
+        const dateB = new Date(b.tentative_delivery_date);
+        return dateB.getTime() - dateA.getTime();
+      }) as Order[];
     },
   });
 
