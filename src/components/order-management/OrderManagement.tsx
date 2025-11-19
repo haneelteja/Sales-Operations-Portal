@@ -91,6 +91,7 @@ const OrderManagement = () => {
           .from('orders')
           .select(`
             id,
+            client_name,
             client,
             branch,
             sku,
@@ -105,8 +106,14 @@ const OrderManagement = () => {
         
         if (fallbackError) throw fallbackError;
         
+        // Map client_name to client for compatibility with Order interface
+        const mappedData = (fallbackData as any[]).map(order => ({
+          ...order,
+          client: order.client_name || order.client || ''
+        }));
+        
         // Apply the exact sorting logic in JavaScript as fallback
-        return (fallbackData as Order[]).sort((a, b) => {
+        return mappedData.sort((a, b) => {
           // First priority: pending status (pending = 1, dispatched = 2)
           const statusA = a.status === 'pending' ? 1 : 2;
           const statusB = b.status === 'pending' ? 1 : 2;
@@ -171,9 +178,9 @@ const OrderManagement = () => {
   const createOrderMutation = useMutation({
     mutationFn: async (formData: OrderForm) => {
       // Map form data to database schema
-      // The orders table uses 'client' column (not 'client_name')
+      // The orders table uses 'client_name' column (NOT 'client')
       const orderData: any = {
-        client: formData.client, // Use 'client' column as per schema
+        client_name: formData.client, // Use 'client_name' column as per actual database schema
         branch: formData.branch,
         sku: formData.sku,
         number_of_cases: parseInt(formData.number_of_cases),
@@ -252,7 +259,7 @@ const OrderManagement = () => {
   const updateOrderDetailsMutation = useMutation({
     mutationFn: async ({ id, orderData }: { id: string; orderData: OrderForm }) => {
       const updateData: any = {
-        client: orderData.client, // Use 'client' column as per schema
+        client_name: orderData.client, // Use 'client_name' column as per actual database schema
         branch: orderData.branch,
         sku: orderData.sku,
         number_of_cases: parseInt(orderData.number_of_cases),
@@ -342,7 +349,7 @@ const OrderManagement = () => {
     setEditingOrder(order);
       setEditForm({
         date: new Date(order.created_at).toISOString().split('T')[0],
-        client: order.client,
+        client: (order as any).client_name || order.client,
         branch: order.branch,
         sku: order.sku,
         number_of_cases: order.number_of_cases.toString(),
@@ -375,8 +382,9 @@ const OrderManagement = () => {
   const dispatchOrderMutation = useMutation({
     mutationFn: async (order: Order) => {
       // First, insert into orders_dispatch with current date as delivery_date
+      // orders_dispatch uses 'client' column, orders uses 'client_name'
       const dispatchData = {
-        client: order.client,
+        client: (order as any).client_name || order.client, // Get client_name from order, fallback to client
         branch: order.branch,
         sku: order.sku,
         cases: order.number_of_cases,
@@ -435,7 +443,7 @@ const OrderManagement = () => {
     if (!orders) return;
 
     const exportData = orders.map(order => ({
-        'Client': order.client,
+        'Client': (order as any).client_name || order.client,
       'Branch': order.branch,
       'SKU': order.sku,
       'Number of Cases': order.number_of_cases,
@@ -606,7 +614,7 @@ const OrderManagement = () => {
                 <TableBody>
                   {orders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell>{order.client}</TableCell>
+                      <TableCell>{(order as any).client_name || order.client}</TableCell>
                       <TableCell>{order.branch}</TableCell>
                       <TableCell>{order.sku}</TableCell>
                       <TableCell>{order.number_of_cases}</TableCell>
