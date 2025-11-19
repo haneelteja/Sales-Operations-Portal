@@ -618,7 +618,7 @@ const OrderManagement = () => {
                 <TableBody>
                   {orders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell>{(order as any).client_name || order.client}</TableCell>
+                      <TableCell>{order.client || (order as any).client_name || ''}</TableCell>
                       <TableCell>{order.branch}</TableCell>
                       <TableCell>{order.sku}</TableCell>
                       <TableCell>{order.number_of_cases}</TableCell>
