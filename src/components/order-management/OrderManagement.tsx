@@ -91,6 +91,7 @@ const OrderManagement = () => {
           .from('orders')
           .select(`
             id,
+            client_name,
             client,
             branch,
             sku,
@@ -105,8 +106,14 @@ const OrderManagement = () => {
         
         if (fallbackError) throw fallbackError;
         
+        // Map client_name to client for compatibility
+        const mappedData = (fallbackData as any[]).map(order => ({
+          ...order,
+          client: order.client_name || order.client || ''
+        }));
+        
         // Apply the exact sorting logic in JavaScript as fallback
-        return (fallbackData as Order[]).sort((a, b) => {
+        return mappedData.sort((a, b) => {
           // First priority: pending status (pending = 1, dispatched = 2)
           const statusA = a.status === 'pending' ? 1 : 2;
           const statusB = b.status === 'pending' ? 1 : 2;
@@ -170,20 +177,33 @@ const OrderManagement = () => {
   // Create order mutation
   const createOrderMutation = useMutation({
     mutationFn: async (formData: OrderForm) => {
+      // Map form data to database schema
+      // Check if database uses 'client' or 'client_name' column
+      const orderData: any = {
+        branch: formData.branch,
+        sku: formData.sku,
+        number_of_cases: parseInt(formData.number_of_cases),
+        tentative_delivery_date: formData.tentative_delivery_time,
+        status: 'pending'
+      };
+      
+      // Use client_name as that's what the database expects (based on error message)
+      if (formData.client) {
+        orderData.client_name = formData.client;
+      }
+      
+      console.log('Inserting order data:', orderData);
+      
       const { data, error } = await supabase
         .from('orders')
-        .insert({
-          client: formData.client,
-          branch: formData.branch,
-          sku: formData.sku,
-          number_of_cases: parseInt(formData.number_of_cases),
-          tentative_delivery_date: formData.tentative_delivery_time,
-          status: 'pending'
-        })
+        .insert(orderData)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Order insert error:', error);
+        throw error;
+      }
       return data;
     },
     onSuccess: () => {
@@ -242,21 +262,32 @@ const OrderManagement = () => {
   // Update order details mutation
   const updateOrderDetailsMutation = useMutation({
     mutationFn: async ({ id, orderData }: { id: string; orderData: OrderForm }) => {
+      const updateData: any = {
+        branch: orderData.branch,
+        sku: orderData.sku,
+        number_of_cases: parseInt(orderData.number_of_cases),
+        tentative_delivery_date: orderData.tentative_delivery_time,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Use client_name as that's what the database expects
+      if (orderData.client) {
+        updateData.client_name = orderData.client;
+      }
+      
+      console.log('Updating order data:', updateData);
+      
       const { data, error } = await supabase
         .from('orders')
-        .update({
-          client: orderData.client,
-          branch: orderData.branch,
-          sku: orderData.sku,
-          number_of_cases: parseInt(orderData.number_of_cases),
-          tentative_delivery_date: orderData.tentative_delivery_time,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', id)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Order update error:', error);
+        throw error;
+      }
       return data;
     },
     onSuccess: () => {
@@ -373,7 +404,7 @@ const OrderManagement = () => {
     if (!orders) return;
 
     const exportData = orders.map(order => ({
-      'Client': order.client,
+        'Client': (order as any).client_name || order.client,
       'Branch': order.branch,
       'SKU': order.sku,
       'Number of Cases': order.number_of_cases,
@@ -544,7 +575,7 @@ const OrderManagement = () => {
                 <TableBody>
                   {orders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell>{order.client}</TableCell>
+                      <TableCell>{(order as any).client_name || order.client}</TableCell>
                       <TableCell>{order.branch}</TableCell>
                       <TableCell>{order.sku}</TableCell>
                       <TableCell>{order.number_of_cases}</TableCell>
