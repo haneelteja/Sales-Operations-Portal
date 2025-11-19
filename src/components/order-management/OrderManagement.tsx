@@ -91,7 +91,6 @@ const OrderManagement = () => {
           .from('orders')
           .select(`
             id,
-            client_name,
             client,
             branch,
             sku,
@@ -106,14 +105,8 @@ const OrderManagement = () => {
         
         if (fallbackError) throw fallbackError;
         
-        // Map client_name to client for compatibility
-        const mappedData = (fallbackData as any[]).map(order => ({
-          ...order,
-          client: order.client_name || order.client || ''
-        }));
-        
         // Apply the exact sorting logic in JavaScript as fallback
-        return mappedData.sort((a, b) => {
+        return (fallbackData as Order[]).sort((a, b) => {
           // First priority: pending status (pending = 1, dispatched = 2)
           const statusA = a.status === 'pending' ? 1 : 2;
           const statusB = b.status === 'pending' ? 1 : 2;
@@ -178,19 +171,15 @@ const OrderManagement = () => {
   const createOrderMutation = useMutation({
     mutationFn: async (formData: OrderForm) => {
       // Map form data to database schema
-      // Check if database uses 'client' or 'client_name' column
+      // The orders table uses 'client' column (not 'client_name')
       const orderData: any = {
+        client: formData.client, // Use 'client' column as per schema
         branch: formData.branch,
         sku: formData.sku,
         number_of_cases: parseInt(formData.number_of_cases),
         tentative_delivery_date: formData.tentative_delivery_time,
         status: 'pending'
       };
-      
-      // Use client_name as that's what the database expects (based on error message)
-      if (formData.client) {
-        orderData.client_name = formData.client;
-      }
       
       console.log('Inserting order data:', orderData);
       
@@ -263,17 +252,13 @@ const OrderManagement = () => {
   const updateOrderDetailsMutation = useMutation({
     mutationFn: async ({ id, orderData }: { id: string; orderData: OrderForm }) => {
       const updateData: any = {
+        client: orderData.client, // Use 'client' column as per schema
         branch: orderData.branch,
         sku: orderData.sku,
         number_of_cases: parseInt(orderData.number_of_cases),
         tentative_delivery_date: orderData.tentative_delivery_time,
         updated_at: new Date().toISOString()
       };
-      
-      // Use client_name as that's what the database expects
-      if (orderData.client) {
-        updateData.client_name = orderData.client;
-      }
       
       console.log('Updating order data:', updateData);
       
@@ -355,14 +340,14 @@ const OrderManagement = () => {
 
   const handleEdit = (order: Order) => {
     setEditingOrder(order);
-    setEditForm({
-      date: new Date(order.created_at).toISOString().split('T')[0],
-      client: (order as any).client_name || order.client,
-      branch: order.branch,
-      sku: order.sku,
-      number_of_cases: order.number_of_cases.toString(),
-      tentative_delivery_time: order.tentative_delivery_date
-    });
+      setEditForm({
+        date: new Date(order.created_at).toISOString().split('T')[0],
+        client: order.client,
+        branch: order.branch,
+        sku: order.sku,
+        number_of_cases: order.number_of_cases.toString(),
+        tentative_delivery_time: order.tentative_delivery_date
+      });
     setIsEditDialogOpen(true);
   };
 
@@ -386,12 +371,58 @@ const OrderManagement = () => {
     }
   };
 
-  const handleDispatch = (id: string) => {
-    updateOrderMutation.mutate({ id, status: 'dispatched' });
-  };
+  // Dispatch order mutation - moves order from orders to orders_dispatch
+  const dispatchOrderMutation = useMutation({
+    mutationFn: async (order: Order) => {
+      // First, insert into orders_dispatch with current date as delivery_date
+      const dispatchData = {
+        client: order.client,
+        branch: order.branch,
+        sku: order.sku,
+        cases: order.number_of_cases,
+        delivery_date: new Date().toISOString().split('T')[0], // Current date
+        order_id: order.id
+      };
+      
+      const { error: dispatchError } = await supabase
+        .from('orders_dispatch')
+        .insert(dispatchData);
+      
+      if (dispatchError) {
+        console.error('Error inserting into orders_dispatch:', dispatchError);
+        throw dispatchError;
+      }
+      
+      // Then, delete from orders table
+      const { error: deleteError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', order.id);
+      
+      if (deleteError) {
+        console.error('Error deleting from orders:', deleteError);
+        throw deleteError;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['orders-dispatch'] });
+      toast({
+        title: "Success",
+        description: "Order dispatched successfully and moved to dispatch report.",
+      });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to dispatch order.",
+        variant: "destructive",
+      });
+    },
+  });
 
-  const handleRevertDispatch = (id: string) => {
-    updateOrderMutation.mutate({ id, status: 'pending' });
+  const handleDispatch = (order: Order) => {
+    dispatchOrderMutation.mutate(order);
   };
 
   const handleDelete = (id: string) => {
@@ -404,7 +435,7 @@ const OrderManagement = () => {
     if (!orders) return;
 
     const exportData = orders.map(order => ({
-        'Client': (order as any).client_name || order.client,
+        'Client': order.client,
       'Branch': order.branch,
       'SKU': order.sku,
       'Number of Cases': order.number_of_cases,
@@ -575,7 +606,7 @@ const OrderManagement = () => {
                 <TableBody>
                   {orders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell>{(order as any).client_name || order.client}</TableCell>
+                      <TableCell>{order.client}</TableCell>
                       <TableCell>{order.branch}</TableCell>
                       <TableCell>{order.sku}</TableCell>
                       <TableCell>{order.number_of_cases}</TableCell>
@@ -615,14 +646,13 @@ const OrderManagement = () => {
                               Edit
                             </DropdownMenuItem>
                             {order.status === 'pending' ? (
-                              <DropdownMenuItem onClick={() => handleDispatch(order.id)}>
+                              <DropdownMenuItem 
+                                onClick={() => handleDispatch(order)}
+                                disabled={dispatchOrderMutation.isPending}
+                              >
                                 Dispatch
                               </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem onClick={() => handleRevertDispatch(order.id)}>
-                                Revert to Pending
-                              </DropdownMenuItem>
-                            )}
+                            ) : null}
                             <DropdownMenuItem 
                               onClick={() => handleDelete(order.id)}
                               className="text-red-600"

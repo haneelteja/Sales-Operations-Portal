@@ -14,6 +14,52 @@ import {
 } from "lucide-react";
 
 const Dashboard = () => {
+  // Fetch profit data for Profitability Summary
+  const { data: profitData } = useQuery({
+    queryKey: ["dashboard-profit"],
+    queryFn: async () => {
+      // Get client transactions
+      const { data: clientTransactions } = await supabase
+        .from("sales_transactions")
+        .select("amount, transaction_type");
+      
+      const totalSales = clientTransactions?.filter(t => t.transaction_type === 'sale')
+        .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+      
+      // Get factory payables
+      const { data: factoryTransactions } = await supabase
+        .from("factory_payables")
+        .select("amount, transaction_type");
+      
+      const factoryPayables = factoryTransactions?.filter(t => t.transaction_type === 'production')
+        .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+      
+      // Get transport expenses
+      const { data: transportExpenses } = await supabase
+        .from("transport_expenses")
+        .select("amount");
+      
+      const transportTotal = transportExpenses?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+      
+      // Get label expenses
+      const { data: labelPurchases } = await supabase
+        .from("label_purchases")
+        .select("total_amount");
+      
+      const labelExpenses = labelPurchases?.reduce((sum, p) => sum + (p.total_amount || 0), 0) || 0;
+      
+      const profit = totalSales - (factoryPayables + transportTotal + labelExpenses);
+      
+      return {
+        totalSales,
+        factoryPayables,
+        transportExpenses: transportTotal,
+        labelExpenses,
+        profit
+      };
+    },
+  });
+
   // Fetch client receivables data
   const { data: receivables } = useQuery({
     queryKey: ["receivables"],
@@ -150,6 +196,45 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
+      {/* Profitability Summary - Moved from Reports */}
+      <Card className="bg-white/95 backdrop-blur-sm border-0 shadow-2xl">
+        <CardHeader className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 text-blue-800 rounded-t-lg border-b-2 border-blue-200">
+          <CardTitle className="text-xl font-bold">Profitability Summary</CardTitle>
+          <CardDescription className="text-blue-600">
+            Overall profit calculation for Aamodha Enterprises
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <h3 className="font-semibold text-green-900">Total Sales</h3>
+              <p className="text-xl font-bold text-green-600">₹{profitData?.totalSales.toLocaleString() || 0}</p>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <h3 className="font-semibold text-red-900">Factory Costs</h3>
+              <p className="text-xl font-bold text-red-600">₹{profitData?.factoryPayables.toLocaleString() || 0}</p>
+            </div>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <h3 className="font-semibold text-orange-900">Transport</h3>
+              <p className="text-xl font-bold text-orange-600">₹{profitData?.transportExpenses.toLocaleString() || 0}</p>
+            </div>
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <h3 className="font-semibold text-purple-900">Labels</h3>
+              <p className="text-xl font-bold text-purple-600">₹{profitData?.labelExpenses.toLocaleString() || 0}</p>
+            </div>
+            <div className={`border rounded-lg p-4 ${
+              (profitData?.profit || 0) >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
+            }`}>
+              <h3 className={`font-semibold ${(profitData?.profit || 0) >= 0 ? 'text-blue-900' : 'text-red-900'}`}>
+                Net Profit
+              </h3>
+              <p className={`text-xl font-bold ${(profitData?.profit || 0) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                ₹{profitData?.profit.toLocaleString() || 0}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Key Metrics Cards */}
       <div className="grid gap-6 md:grid-cols-2 mb-8">

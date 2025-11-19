@@ -233,56 +233,113 @@ const Reports = () => {
   
   profitData.profit = profitData.totalSales - (profitData.factoryPayables + profitData.transportExpenses + profitData.labelExpenses);
 
+  // Orders Dispatch report
+  const { data: ordersDispatch } = useQuery({
+    queryKey: ["orders-dispatch"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("orders_dispatch")
+        .select("*")
+        .order("delivery_date", { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching orders dispatch:", error);
+        return [];
+      }
+      
+      return data || [];
+    },
+  });
+
+  // Export orders dispatch to Excel
+  const exportOrdersDispatchToExcel = () => {
+    if (!ordersDispatch || ordersDispatch.length === 0) {
+      alert("No dispatch data to export");
+      return;
+    }
+
+    const exportData = ordersDispatch.map((order) => ({
+      'Client': order.client,
+      'Branch': order.branch,
+      'SKU': order.sku,
+      'Cases': order.cases,
+      'Delivery Date': order.delivery_date,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Orders Dispatch');
+    
+    const fileName = `Orders_Dispatch_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    
+    alert(`Exported ${exportData.length} dispatch records to ${fileName}`);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Profit Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Profitability Summary</CardTitle>
-          <CardDescription>
-            Overall profit calculation for Aamodha Enterprises
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <h3 className="font-semibold text-green-900">Total Sales</h3>
-              <p className="text-xl font-bold text-green-600">₹{profitData.totalSales.toLocaleString()}</p>
-            </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <h3 className="font-semibold text-red-900">Factory Costs</h3>
-              <p className="text-xl font-bold text-red-600">₹{profitData.factoryPayables.toLocaleString()}</p>
-            </div>
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <h3 className="font-semibold text-orange-900">Transport</h3>
-              <p className="text-xl font-bold text-orange-600">₹{profitData.transportExpenses.toLocaleString()}</p>
-            </div>
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <h3 className="font-semibold text-purple-900">Labels</h3>
-              <p className="text-xl font-bold text-purple-600">₹{profitData.labelExpenses.toLocaleString()}</p>
-            </div>
-            <div className={`border rounded-lg p-4 ${
-              profitData.profit >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
-            }`}>
-              <h3 className={`font-semibold ${profitData.profit >= 0 ? 'text-blue-900' : 'text-red-900'}`}>
-                Net Profit
-              </h3>
-              <p className={`text-xl font-bold ${profitData.profit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                ₹{profitData.profit.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="factory" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+      <Tabs defaultValue="dispatch" className="w-full">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="dispatch">Orders Dispatch</TabsTrigger>
           <TabsTrigger value="factory">Factory Report</TabsTrigger>
           <TabsTrigger value="clients">Client Report</TabsTrigger>
           <TabsTrigger value="receivables">Receivables</TabsTrigger>
           <TabsTrigger value="transport">Transport Report</TabsTrigger>
           <TabsTrigger value="labels">Labels Report</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dispatch" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Orders Dispatch Report</CardTitle>
+                  <CardDescription>
+                    All dispatched orders for all clients
+                  </CardDescription>
+                </div>
+                <Button onClick={exportOrdersDispatchToExcel} variant="outline">
+                  <Download className="mr-2 h-4 w-4" />
+                  Export to Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Branch</TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead className="text-right">Cases</TableHead>
+                      <TableHead>Delivery Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {ordersDispatch && ordersDispatch.length > 0 ? (
+                      ordersDispatch.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-medium">{order.client}</TableCell>
+                          <TableCell>{order.branch}</TableCell>
+                          <TableCell>{order.sku}</TableCell>
+                          <TableCell className="text-right">{order.cases}</TableCell>
+                          <TableCell>{new Date(order.delivery_date).toLocaleDateString()}</TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          No dispatched orders found
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="factory" className="space-y-4">
           <Card>
