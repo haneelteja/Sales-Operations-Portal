@@ -395,6 +395,7 @@ const OrderManagement = () => {
     setIsSubmitting(true);
     try {
       await createOrderMutation.mutateAsync(orderForm);
+      // Dialog will be closed in onSuccess callback
     } finally {
       setIsSubmitting(false);
     }
@@ -762,128 +763,153 @@ const OrderManagement = () => {
     <div className="space-y-6 p-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Order Management</h1>
-      </div>
-
-      {/* Create Order Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
-            Create New Order
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="date">Date *</Label>
-                <Input
-                  id="date"
-                  type="date"
-                  value={orderForm.date}
-                  onChange={(e) => setOrderForm({ ...orderForm, date: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="client">Client *</Label>
-                <Select
-                  value={orderForm.client}
-                  onValueChange={(value) => setOrderForm({ 
-                    ...orderForm, 
-                    client: value, 
-                    branch: '', 
-                    sku: '' 
-                  })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getUniqueClients().map((client) => (
-                      <SelectItem key={client} value={client}>
-                        {client}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="branch">Branch *</Label>
-                <Select
-                  value={orderForm.branch}
-                  onValueChange={(value) => setOrderForm({ 
-                    ...orderForm, 
-                    branch: value, 
-                    sku: '' 
-                  })}
-                  disabled={!orderForm.client}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getBranchesForClient(orderForm.client).map((branch) => (
-                      <SelectItem key={branch} value={branch}>
-                        {branch}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="sku">SKU *</Label>
-                <Select
-                  value={orderForm.sku}
-                  onValueChange={(value) => setOrderForm({ ...orderForm, sku: value })}
-                  disabled={!orderForm.branch}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select SKU" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getSKUsForClientBranch(orderForm.client, orderForm.branch).map((sku) => (
-                      <SelectItem key={sku} value={sku}>
-                        {sku}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="number_of_cases">Number of Cases *</Label>
-                <Input
-                  id="number_of_cases"
-                  type="number"
-                  value={orderForm.number_of_cases}
-                  onChange={(e) => setOrderForm({ ...orderForm, number_of_cases: e.target.value })}
-                  placeholder="Enter number of cases"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tentative_delivery_time">Tentative Delivery Date *</Label>
-                <Input
-                  id="tentative_delivery_time"
-                  type="date"
-                  value={orderForm.tentative_delivery_time}
-                  onChange={(e) => setOrderForm({ ...orderForm, tentative_delivery_time: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-
-            <Button type="submit" disabled={isSubmitting} className="w-full">
-              {isSubmitting ? 'Creating...' : 'Create Order'}
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Create new order
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </DialogTrigger>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Plus className="h-5 w-5" />
+                Create New Order
+              </DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="date">Date *</Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={orderForm.date}
+                    onChange={(e) => setOrderForm({ ...orderForm, date: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="client">Client *</Label>
+                  <Select
+                    value={orderForm.client}
+                    onValueChange={(value) => setOrderForm({ 
+                      ...orderForm, 
+                      client: value, 
+                      branch: '', 
+                      sku: '' 
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getUniqueClients().map((client) => (
+                        <SelectItem key={client} value={client}>
+                          {client}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="branch">Branch *</Label>
+                  <Select
+                    value={orderForm.branch}
+                    onValueChange={(value) => setOrderForm({ 
+                      ...orderForm, 
+                      branch: value, 
+                      sku: '' 
+                    })}
+                    disabled={!orderForm.client}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getBranchesForClient(orderForm.client).map((branch) => (
+                        <SelectItem key={branch} value={branch}>
+                          {branch}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sku">SKU *</Label>
+                  <Select
+                    value={orderForm.sku}
+                    onValueChange={(value) => setOrderForm({ ...orderForm, sku: value })}
+                    disabled={!orderForm.branch}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select SKU" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getSKUsForClientBranch(orderForm.client, orderForm.branch).map((sku) => (
+                        <SelectItem key={sku} value={sku}>
+                          {sku}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="number_of_cases">Number of Cases *</Label>
+                  <Input
+                    id="number_of_cases"
+                    type="number"
+                    value={orderForm.number_of_cases}
+                    onChange={(e) => setOrderForm({ ...orderForm, number_of_cases: e.target.value })}
+                    placeholder="Enter number of cases"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="tentative_delivery_time">Tentative Delivery Date *</Label>
+                  <Input
+                    id="tentative_delivery_time"
+                    type="date"
+                    value={orderForm.tentative_delivery_time}
+                    onChange={(e) => setOrderForm({ ...orderForm, tentative_delivery_time: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsCreateDialogOpen(false);
+                    // Reset form when canceling
+                    setOrderForm({
+                      date: new Date().toISOString().split('T')[0],
+                      client: '',
+                      branch: '',
+                      sku: '',
+                      number_of_cases: '',
+                      tentative_delivery_time: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                    });
+                  }}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? 'Creating...' : 'Create Order'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       {/* Current Orders Table */}
       <Card>
