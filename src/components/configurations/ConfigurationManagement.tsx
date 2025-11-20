@@ -1018,17 +1018,11 @@ const ConfigurationManagement = () => {
 
         <TabsContent value="customers" className="space-y-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Add Customer</CardTitle>
-              <CardDescription>
-                Add new customers with their pricing details
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
               <form onSubmit={handleCustomerSubmit} className="flex items-end gap-2">
                 <div className="flex-1 grid grid-cols-5 gap-2">
                   <div>
-                    <Label htmlFor="pricing-date" className="text-xs">Date *</Label>
+                    <Label htmlFor="pricing-date" className="text-xs mb-1 block">Date *</Label>
                     <Input
                       id="pricing-date"
                       type="date"
@@ -1038,7 +1032,7 @@ const ConfigurationManagement = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="client-name" className="text-xs">Client Name *</Label>
+                    <Label htmlFor="client-name" className="text-xs mb-1 block">Client Name *</Label>
                     <Input
                       id="client-name"
                       value={customerForm.client_name}
@@ -1048,7 +1042,7 @@ const ConfigurationManagement = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="branch" className="text-xs">Branch *</Label>
+                    <Label htmlFor="branch" className="text-xs mb-1 block">Branch *</Label>
                     <Input
                       id="branch"
                       value={customerForm.branch}
@@ -1058,7 +1052,7 @@ const ConfigurationManagement = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="customer-sku" className="text-xs">SKU</Label>
+                    <Label htmlFor="customer-sku" className="text-xs mb-1 block">SKU</Label>
                     <Select 
                       value={customerForm.sku} 
                       onValueChange={(value) => setCustomerForm({...customerForm, sku: value})}
@@ -1083,7 +1077,7 @@ const ConfigurationManagement = () => {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="customer-price-per-bottle" className="text-xs">Price/Bottle (₹)</Label>
+                    <Label htmlFor="customer-price-per-bottle" className="text-xs mb-1 block">Price/Bottle (₹)</Label>
                     <Input
                       id="customer-price-per-bottle"
                       type="number"
