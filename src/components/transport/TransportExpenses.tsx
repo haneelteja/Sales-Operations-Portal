@@ -90,42 +90,94 @@ const TransportExpenses = () => {
         `)
         .order("created_at", { ascending: false });
       
-      // Enrich with SKU and No of cases from sales_transactions
-      if (data) {
-        const enrichedData = await Promise.all(data.map(async (expense: any) => {
-          if (expense.client_id && expense.branch) {
-            // Find the most recent sale transaction for this client_id and branch
-            const { data: saleTransaction } = await supabase
+      if (!data || data.length === 0) return [];
+      
+      // OPTIMIZED: Batch query instead of N+1 queries
+      // Collect all unique client_id + branch pairs
+      const clientBranchPairs = data
+        .filter((e: any) => e.client_id && e.branch)
+        .map((e: any) => ({
+          customer_id: e.client_id,
+          branch: e.branch
+        }));
+      
+      // Remove duplicates
+      const uniquePairs = Array.from(
+        new Map(clientBranchPairs.map(p => [`${p.customer_id}_${p.branch}`, p])).values()
+      );
+      
+      let salesMap = new Map<string, { sku: string; quantity: number }>();
+      
+      if (uniquePairs.length > 0) {
+        // Try to use RPC function for batch query (more efficient)
+        try {
+          const { data: recentSales, error: rpcError } = await supabase
+            .rpc('get_latest_sales_by_client_branch', {
+              client_branch_pairs: uniquePairs
+            });
+          
+          if (!rpcError && recentSales) {
+            recentSales.forEach((sale: any) => {
+              const key = `${sale.customer_id}_${sale.branch}`;
+              salesMap.set(key, {
+                sku: sale.sku || '',
+                quantity: sale.quantity || 0
+              });
+            });
+          } else {
+            // Fallback: Single query with IN clause (still better than N+1)
+            const customerIds = [...new Set(uniquePairs.map(p => p.customer_id))];
+            const branches = [...new Set(uniquePairs.map(p => p.branch))];
+            
+            const { data: allSales } = await supabase
               .from("sales_transactions")
-              .select("sku, quantity")
-              .eq("customer_id", expense.client_id)
-              .eq("branch", expense.branch)
+              .select("customer_id, branch, sku, quantity, transaction_date")
+              .in("customer_id", customerIds)
+              .in("branch", branches)
               .eq("transaction_type", "sale")
               .order("transaction_date", { ascending: false })
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .single();
+              .order("created_at", { ascending: false });
             
-            if (saleTransaction) {
-              return {
-                ...expense,
-                sku: saleTransaction.sku || expense.sku || '',
-                no_of_cases: saleTransaction.quantity || expense.no_of_cases || 0
-              };
-            }
+            // Group by customer_id + branch and get latest
+            const salesByKey = new Map<string, any>();
+            allSales?.forEach((sale: any) => {
+              const key = `${sale.customer_id}_${sale.branch}`;
+              if (!salesByKey.has(key)) {
+                salesByKey.set(key, sale);
+              }
+            });
+            
+            salesByKey.forEach((sale, key) => {
+              salesMap.set(key, {
+                sku: sale.sku || '',
+                quantity: sale.quantity || 0
+              });
+            });
           }
-          return {
-            ...expense,
-            sku: expense.sku || '',
-            no_of_cases: expense.no_of_cases || 0
-          };
-        }));
-        
-        return enrichedData;
+        } catch (error) {
+          console.warn('Error fetching sales data for transport expenses:', error);
+        }
       }
       
-      return data || [];
+      // Enrich expenses with sales data
+      return data.map((expense: any) => {
+        if (expense.client_id && expense.branch) {
+          const key = `${expense.client_id}_${expense.branch}`;
+          const saleData = salesMap.get(key);
+          return {
+            ...expense,
+            sku: saleData?.sku || expense.sku || '',
+            no_of_cases: saleData?.quantity || expense.no_of_cases || 0
+          };
+        }
+        return {
+          ...expense,
+          sku: expense.sku || '',
+          no_of_cases: expense.no_of_cases || 0
+        };
+      });
     },
+    staleTime: 2 * 60 * 1000, // 2 minutes cache
   });
 
 
