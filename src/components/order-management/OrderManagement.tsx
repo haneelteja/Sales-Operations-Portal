@@ -267,6 +267,7 @@ const OrderManagement = () => {
         number_of_cases: '',
         tentative_delivery_time: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       });
+      setIsCreateDialogOpen(false); // Close dialog on success
       toast({
         title: "Success",
         description: "Order created successfully.",
