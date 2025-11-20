@@ -80,8 +80,9 @@ CREATE INDEX IF NOT EXISTS idx_factory_payables_customer
   ON factory_payables(customer_id) WHERE customer_id IS NOT NULL;
 
 -- Label Purchases Indexes
-CREATE INDEX IF NOT EXISTS idx_label_purchases_client_sku 
-  ON label_purchases(client, sku);
+-- Note: label_purchases uses 'client_name' column, not 'client'
+CREATE INDEX IF NOT EXISTS idx_label_purchases_client_name_sku 
+  ON label_purchases(client_name, sku) WHERE client_name IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_label_purchases_date 
   ON label_purchases(purchase_date DESC);

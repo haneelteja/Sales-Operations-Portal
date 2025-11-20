@@ -3,7 +3,6 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import Dashboard from "@/components/dashboard/Dashboard";
 import SalesEntry from "@/components/sales/SalesEntry";
-import Receivables from "@/components/receivables/Receivables";
 import FactoryPayables from "@/components/factory/FactoryPayables";
 import TransportExpenses from "@/components/transport/TransportExpenses";
 import Labels from "@/components/labels/Labels";
