@@ -436,36 +436,36 @@ const Dashboard = () => {
         </Card>
 
         {/* Client Outstanding */}
-        <Card className="bg-green-50 border border-green-200 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-green-900 mb-1">Client Outstanding - Pending receivables</h3>
-                <p className="text-2xl font-bold text-green-600">₹{metrics?.totalOutstanding?.toLocaleString() || 0}</p>
+                <h3 className="text-sm font-semibold text-rose-800 mb-1">Client Outstanding - Pending receivables</h3>
+                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString() || 0}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Factory Outstanding */}
-        <Card className="bg-red-50 border border-red-200 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-red-900 mb-1">Factory Outstanding - Due to Elma Industries</h3>
-                <p className="text-2xl font-bold text-red-600">₹{metrics?.factoryOutstanding?.toLocaleString() || 0}</p>
+                <h3 className="text-sm font-semibold text-purple-800 mb-1">Elma Factory Outstanding</h3>
+                <p className="text-2xl font-bold text-purple-600">₹{metrics?.factoryOutstanding?.toLocaleString() || 0}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Critical Alerts */}
-        <Card className="bg-orange-50 border border-orange-200 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 shadow-lg hover:shadow-xl transition-all duration-300">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-orange-900 mb-1">Critical Alerts - Outstanding &gt; ₹1L</h3>
-                <p className="text-2xl font-bold text-orange-600">{receivables?.filter(r => r.outstanding > 100000).length || 0}</p>
+                <h3 className="text-sm font-semibold text-amber-800 mb-1">Critical Alerts - Outstanding &gt; ₹1L</h3>
+                <p className="text-2xl font-bold text-amber-600">{receivables?.filter(r => r.outstanding > 100000).length || 0}</p>
               </div>
             </div>
           </CardContent>
@@ -474,11 +474,11 @@ const Dashboard = () => {
         {/* Collection Rate */}
         <Card className={`border shadow-lg hover:shadow-xl transition-all duration-300 ${
           (() => {
-            if (!receivables || receivables.length === 0 || !metrics) return 'bg-blue-50 border-blue-200';
+            if (!receivables || receivables.length === 0 || !metrics) return 'bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200';
             const totalSales = receivables.reduce((sum, r) => sum + (r.totalSales || 0), 0);
             const totalOutstanding = metrics.totalOutstanding || 0;
             const collectionRate = totalSales > 0 ? ((totalSales - totalOutstanding) / totalSales) * 100 : 0;
-            return collectionRate >= 70 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200';
+            return collectionRate >= 70 ? 'bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200' : 'bg-gradient-to-br from-rose-50 to-pink-50 border-rose-200';
           })()
         }`}>
           <CardContent className="p-6">
@@ -486,22 +486,22 @@ const Dashboard = () => {
               <div>
                 <h3 className={`text-sm font-semibold mb-1 ${
                   (() => {
-                    if (!receivables || receivables.length === 0 || !metrics) return 'text-blue-900';
+                    if (!receivables || receivables.length === 0 || !metrics) return 'text-sky-800';
                     const totalSales = receivables.reduce((sum, r) => sum + (r.totalSales || 0), 0);
                     const totalOutstanding = metrics.totalOutstanding || 0;
                     const collectionRate = totalSales > 0 ? ((totalSales - totalOutstanding) / totalSales) * 100 : 0;
-                    return collectionRate >= 70 ? 'text-blue-900' : 'text-red-900';
+                    return collectionRate >= 70 ? 'text-sky-800' : 'text-rose-800';
                   })()
                 }`}>
                   Collection Rate - Payment efficiency
                 </h3>
                 <p className={`text-2xl font-bold ${
                   (() => {
-                    if (!receivables || receivables.length === 0 || !metrics) return 'text-blue-600';
+                    if (!receivables || receivables.length === 0 || !metrics) return 'text-sky-600';
                     const totalSales = receivables.reduce((sum, r) => sum + (r.totalSales || 0), 0);
                     const totalOutstanding = metrics.totalOutstanding || 0;
                     const collectionRate = totalSales > 0 ? ((totalSales - totalOutstanding) / totalSales) * 100 : 0;
-                    return collectionRate >= 70 ? 'text-blue-600' : 'text-red-600';
+                    return collectionRate >= 70 ? 'text-sky-600' : 'text-rose-600';
                   })()
                 }`}>
                   {receivables && receivables.length > 0 && metrics ? 
@@ -522,13 +522,13 @@ const Dashboard = () => {
         <CardHeader className="bg-gradient-to-r from-red-50 via-rose-50 to-red-50 text-red-800 rounded-t-lg border-b-2 border-red-200">
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle className="text-xl font-bold flex items-center space-x-2">
-                <CreditCard className="h-6 w-6 text-red-600" />
-                <span>Client Receivables Outstanding</span>
-              </CardTitle>
-              <CardDescription className="text-red-600">
+          <CardTitle className="text-xl font-bold flex items-center space-x-2">
+            <CreditCard className="h-6 w-6 text-red-600" />
+            <span>Client Receivables Outstanding</span>
+          </CardTitle>
+          <CardDescription className="text-red-600">
                 Priority collection targets - {filteredAndSortedReceivables?.length || 0} clients with outstanding balances
-              </CardDescription>
+          </CardDescription>
             </div>
             <div className="flex gap-2">
               <Button onClick={clearAllReceivablesFilters} variant="outline" size="sm">
