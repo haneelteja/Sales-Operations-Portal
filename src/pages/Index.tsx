@@ -24,8 +24,6 @@ const Index = () => {
         return <OrderManagement />;
       case "client-transactions":
         return <SalesEntry />;
-      case "client-receivables":
-        return <Receivables />;
       case "factory":
         return <FactoryPayables />;
       case "transport":

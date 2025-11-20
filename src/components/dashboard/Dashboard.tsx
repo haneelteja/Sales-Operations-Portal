@@ -1,7 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ColumnFilter } from "@/components/ui/column-filter";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   DollarSign, 
@@ -10,10 +14,36 @@ import {
   Building2, 
   CreditCard,
   Eye,
-  Phone
+  Phone,
+  Download
 } from "lucide-react";
+import * as XLSX from 'xlsx';
+import { useToast } from "@/hooks/use-toast";
 
 const Dashboard = () => {
+  const { toast } = useToast();
+  
+  // Filter and sort states for Client Receivables Outstanding table
+  const [receivablesSearchTerm, setReceivablesSearchTerm] = useState("");
+  const [receivablesColumnFilters, setReceivablesColumnFilters] = useState({
+    client: "",
+    branch: "",
+    totalSales: "",
+    payments: "",
+    outstanding: "",
+    priority: "",
+  });
+  const [receivablesColumnSorts, setReceivablesColumnSorts] = useState<{
+    [key: string]: 'asc' | 'desc' | null;
+  }>({
+    client: null,
+    branch: null,
+    totalSales: null,
+    payments: null,
+    outstanding: null,
+    priority: null,
+  });
+
   // Fetch profit data for Profitability Summary
   const { data: profitData } = useQuery({
     queryKey: ["dashboard-profit"],
@@ -193,6 +223,159 @@ const Dashboard = () => {
     enabled: receivables !== undefined, // Only run when receivables is loaded
   });
 
+  // Filter and sort handlers for Client Receivables Outstanding
+  const handleReceivablesColumnFilterChange = (columnKey: string, value: string) => {
+    setReceivablesColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: value
+    }));
+  };
+
+  const handleReceivablesColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
+    setReceivablesColumnSorts(prev => {
+      const newSorts = { ...prev };
+      // Clear other sorts
+      Object.keys(newSorts).forEach(key => {
+        if (key !== columnKey) newSorts[key] = null;
+      });
+      newSorts[columnKey] = direction;
+      return newSorts;
+    });
+  };
+
+  const clearAllReceivablesFilters = () => {
+    setReceivablesSearchTerm("");
+    setReceivablesColumnFilters({
+      client: "",
+      branch: "",
+      totalSales: "",
+      payments: "",
+      outstanding: "",
+      priority: "",
+    });
+    setReceivablesColumnSorts({
+      client: null,
+      branch: null,
+      totalSales: null,
+      payments: null,
+      outstanding: null,
+      priority: null,
+    });
+  };
+
+  // Filtered and sorted Client Receivables Outstanding
+  const filteredAndSortedReceivables = useMemo(() => {
+    if (!receivables) return [];
+
+    return receivables.filter(receivable => {
+      // Global search
+      if (receivablesSearchTerm) {
+        const searchLower = receivablesSearchTerm.toLowerCase();
+        const matchesGlobalSearch = (
+          receivable.customer.client_name?.toLowerCase().includes(searchLower) ||
+          receivable.customer.branch?.toLowerCase().includes(searchLower) ||
+          receivable.totalSales?.toString().includes(searchLower) ||
+          receivable.totalPayments?.toString().includes(searchLower) ||
+          receivable.outstanding?.toString().includes(searchLower) ||
+          (receivable.outstanding > 100000 ? "critical" : receivable.outstanding > 50000 ? "high" : "medium").includes(searchLower)
+        );
+        if (!matchesGlobalSearch) return false;
+      }
+
+      // Column filters
+      if (receivablesColumnFilters.client && !receivable.customer.client_name?.toLowerCase().includes(receivablesColumnFilters.client.toLowerCase())) return false;
+      if (receivablesColumnFilters.branch && !receivable.customer.branch?.toLowerCase().includes(receivablesColumnFilters.branch.toLowerCase())) return false;
+      if (receivablesColumnFilters.totalSales && receivable.totalSales?.toString() !== receivablesColumnFilters.totalSales) return false;
+      if (receivablesColumnFilters.payments && receivable.totalPayments?.toString() !== receivablesColumnFilters.payments) return false;
+      if (receivablesColumnFilters.outstanding && receivable.outstanding?.toString() !== receivablesColumnFilters.outstanding) return false;
+      if (receivablesColumnFilters.priority) {
+        const priority = receivable.outstanding > 100000 ? "critical" : receivable.outstanding > 50000 ? "high" : "medium";
+        if (!priority.includes(receivablesColumnFilters.priority.toLowerCase())) return false;
+      }
+
+      return true;
+    }).sort((a, b) => {
+      const activeSort = Object.entries(receivablesColumnSorts).find(([_, direction]) => direction !== null);
+      if (!activeSort) {
+        // Default sort by outstanding descending
+        return (b.outstanding || 0) - (a.outstanding || 0);
+      }
+
+      const [columnKey, direction] = activeSort;
+      let aValue: any, bValue: any;
+
+      switch (columnKey) {
+        case 'client':
+          aValue = a.customer.client_name || '';
+          bValue = b.customer.client_name || '';
+          break;
+        case 'branch':
+          aValue = a.customer.branch || '';
+          bValue = b.customer.branch || '';
+          break;
+        case 'totalSales':
+          aValue = a.totalSales || 0;
+          bValue = b.totalSales || 0;
+          break;
+        case 'payments':
+          aValue = a.totalPayments || 0;
+          bValue = b.totalPayments || 0;
+          break;
+        case 'outstanding':
+          aValue = a.outstanding || 0;
+          bValue = b.outstanding || 0;
+          break;
+        case 'priority':
+          aValue = a.outstanding > 100000 ? 3 : a.outstanding > 50000 ? 2 : 1;
+          bValue = b.outstanding > 100000 ? 3 : b.outstanding > 50000 ? 2 : 1;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue === null || aValue === undefined) return 1;
+      if (bValue === null || bValue === undefined) return -1;
+
+      if (direction === 'asc') {
+        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+      } else {
+        return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
+      }
+    });
+  }, [receivables, receivablesSearchTerm, receivablesColumnFilters, receivablesColumnSorts]);
+
+  // Export Client Receivables Outstanding to Excel
+  const exportReceivablesToExcel = () => {
+    if (!filteredAndSortedReceivables || filteredAndSortedReceivables.length === 0) {
+      toast({
+        title: "No Data",
+        description: "No receivables to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const exportData = filteredAndSortedReceivables.map(receivable => ({
+      'Client': receivable.customer.client_name || '',
+      'Branch': receivable.customer.branch || 'N/A',
+      'Total Sales': receivable.totalSales || 0,
+      'Payments': receivable.totalPayments || 0,
+      'Outstanding': receivable.outstanding || 0,
+      'Priority': receivable.outstanding > 100000 ? 'Critical' : receivable.outstanding > 50000 ? 'High' : 'Medium',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Client Receivables');
+    
+    const fileName = `Client_Receivables_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    
+    toast({
+      title: "Success",
+      description: `Exported ${exportData.length} receivables to ${fileName}`,
+    });
+  };
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
@@ -335,30 +518,137 @@ const Dashboard = () => {
       {/* Client Receivables Outstanding Table */}
       <Card className="bg-white/95 backdrop-blur-sm border-0 shadow-2xl">
         <CardHeader className="bg-gradient-to-r from-red-50 via-rose-50 to-red-50 text-red-800 rounded-t-lg border-b-2 border-red-200">
-          <CardTitle className="text-xl font-bold flex items-center space-x-2">
-            <CreditCard className="h-6 w-6 text-red-600" />
-            <span>Client Receivables Outstanding</span>
-          </CardTitle>
-          <CardDescription className="text-red-600">
-            Priority collection targets - {receivables?.length || 0} clients with outstanding balances
-          </CardDescription>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle className="text-xl font-bold flex items-center space-x-2">
+                <CreditCard className="h-6 w-6 text-red-600" />
+                <span>Client Receivables Outstanding</span>
+              </CardTitle>
+              <CardDescription className="text-red-600">
+                Priority collection targets - {filteredAndSortedReceivables?.length || 0} clients with outstanding balances
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={clearAllReceivablesFilters} variant="outline" size="sm">
+                Clear Filters
+              </Button>
+              <Button onClick={exportReceivablesToExcel} variant="outline" size="sm">
+                <Download className="mr-2 h-4 w-4" />
+                Export to Excel
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
+          {/* Search and Filters */}
+          <div className="p-4 border-b border-red-200">
+            <Input
+              placeholder="Search receivables..."
+              value={receivablesSearchTerm}
+              onChange={(e) => setReceivablesSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gradient-to-r from-red-50 via-rose-50 to-red-50 border-b-2 border-red-200 hover:bg-gradient-to-r hover:from-red-100 hover:via-rose-100 hover:to-red-100 transition-all duration-200">
-                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-red-200/50">Client</TableHead>
-                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-red-200/50">Branch</TableHead>
-                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-right border-r border-red-200/50">Total Sales</TableHead>
-                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-right border-r border-red-200/50">Payments</TableHead>
-                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-right border-r border-red-200/50">Outstanding</TableHead>
-                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-center border-r border-red-200/50">Priority</TableHead>
+                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-red-200/50">
+                    <div className="flex items-center gap-2">
+                      Client
+                      <ColumnFilter
+                        columnKey="client"
+                        columnName="Client"
+                        filterValue={receivablesColumnFilters.client}
+                        onFilterChange={(value) => handleReceivablesColumnFilterChange('client', value as string)}
+                        onClearFilter={() => handleReceivablesColumnFilterChange('client', '')}
+                        sortDirection={receivablesColumnSorts.client}
+                        onSortChange={(direction) => handleReceivablesColumnSortChange('client', direction)}
+                        dataType="text"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-red-200/50">
+                    <div className="flex items-center gap-2">
+                      Branch
+                      <ColumnFilter
+                        columnKey="branch"
+                        columnName="Branch"
+                        filterValue={receivablesColumnFilters.branch}
+                        onFilterChange={(value) => handleReceivablesColumnFilterChange('branch', value as string)}
+                        onClearFilter={() => handleReceivablesColumnFilterChange('branch', '')}
+                        sortDirection={receivablesColumnSorts.branch}
+                        onSortChange={(direction) => handleReceivablesColumnSortChange('branch', direction)}
+                        dataType="text"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-right border-r border-red-200/50">
+                    <div className="flex items-center gap-2 justify-end">
+                      Total Sales
+                      <ColumnFilter
+                        columnKey="totalSales"
+                        columnName="Total Sales"
+                        filterValue={receivablesColumnFilters.totalSales}
+                        onFilterChange={(value) => handleReceivablesColumnFilterChange('totalSales', value as string)}
+                        onClearFilter={() => handleReceivablesColumnFilterChange('totalSales', '')}
+                        sortDirection={receivablesColumnSorts.totalSales}
+                        onSortChange={(direction) => handleReceivablesColumnSortChange('totalSales', direction)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-right border-r border-red-200/50">
+                    <div className="flex items-center gap-2 justify-end">
+                      Payments
+                      <ColumnFilter
+                        columnKey="payments"
+                        columnName="Payments"
+                        filterValue={receivablesColumnFilters.payments}
+                        onFilterChange={(value) => handleReceivablesColumnFilterChange('payments', value as string)}
+                        onClearFilter={() => handleReceivablesColumnFilterChange('payments', '')}
+                        sortDirection={receivablesColumnSorts.payments}
+                        onSortChange={(direction) => handleReceivablesColumnSortChange('payments', direction)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-right border-r border-red-200/50">
+                    <div className="flex items-center gap-2 justify-end">
+                      Outstanding
+                      <ColumnFilter
+                        columnKey="outstanding"
+                        columnName="Outstanding"
+                        filterValue={receivablesColumnFilters.outstanding}
+                        onFilterChange={(value) => handleReceivablesColumnFilterChange('outstanding', value as string)}
+                        onClearFilter={() => handleReceivablesColumnFilterChange('outstanding', '')}
+                        sortDirection={receivablesColumnSorts.outstanding}
+                        onSortChange={(direction) => handleReceivablesColumnSortChange('outstanding', direction)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-center border-r border-red-200/50">
+                    <div className="flex items-center gap-2 justify-center">
+                      Priority
+                      <ColumnFilter
+                        columnKey="priority"
+                        columnName="Priority"
+                        filterValue={receivablesColumnFilters.priority}
+                        onFilterChange={(value) => handleReceivablesColumnFilterChange('priority', value as string)}
+                        onClearFilter={() => handleReceivablesColumnFilterChange('priority', '')}
+                        sortDirection={receivablesColumnSorts.priority}
+                        onSortChange={(direction) => handleReceivablesColumnSortChange('priority', direction)}
+                        dataType="text"
+                      />
+                    </div>
+                  </TableHead>
                   <TableHead className="font-semibold text-red-800 text-xs uppercase tracking-widest py-6 px-6 text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {receivables?.slice(0, 10).map((receivable, index) => (
+                {filteredAndSortedReceivables.map((receivable, index) => (
                   <TableRow 
                     key={receivable.customer.id} 
                     className={`hover:bg-red-50 transition-colors ${
@@ -406,11 +696,10 @@ const Dashboard = () => {
             </Table>
           </div>
           
-          {receivables && receivables.length > 10 && (
+          {filteredAndSortedReceivables.length === 0 && (
             <div className="bg-gradient-to-r from-red-50 to-pink-50 px-6 py-4 text-center border-t border-red-200">
               <p className="text-red-600 text-sm">
-                Showing top 10 clients by outstanding amount. 
-                <span className="font-semibold text-red-800"> {receivables.length - 10} more clients</span> with outstanding balances.
+                No receivables found matching the current filters.
               </p>
             </div>
           )}

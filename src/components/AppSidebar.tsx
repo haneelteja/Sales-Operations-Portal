@@ -38,7 +38,6 @@ interface AppSidebarProps {
 const menuItems = [
   { id: "dashboard", title: "Dashboard", icon: BarChart3 },
   { id: "order-management", title: "Order Management", icon: ShoppingCart },
-  { id: "client-receivables", title: "Client Receivables", icon: DollarSign },
   { id: "client-transactions", title: "Client Transactions", icon: DollarSign },
   { id: "factory", title: "Factory Payables", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
