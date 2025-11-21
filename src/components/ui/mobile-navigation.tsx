@@ -43,7 +43,7 @@ interface MobileNavigationProps {
 
 const navigationItems: NavigationItem[] = [
   { id: 'dashboard', title: 'Dashboard', icon: Home },
-  { id: 'order-management', title: 'Orders', icon: ShoppingCart },
+  { id: 'order-management', title: 'Orders Management', icon: ShoppingCart },
   { id: 'client-transactions', title: 'Transactions', icon: DollarSign },
   { id: 'factory', title: 'Factory', icon: Factory },
   { id: 'transport', title: 'Transport', icon: Truck },

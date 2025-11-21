@@ -383,7 +383,7 @@ const ConfigurationManagement = () => {
   });
 
   // Factory Pricing queries and mutations
-  const { data: factoryPricing, error: factoryPricingError } = useQuery({
+  const { data: factoryPricing, error: factoryPricingError, isLoading: factoryPricingLoading } = useQuery({
     queryKey: ["factory-pricing"],
     queryFn: async () => {
       try {
@@ -394,20 +394,25 @@ const ConfigurationManagement = () => {
         
         if (error) {
           console.error('Error fetching factory pricing:', error);
-          throw new Error(handleSupabaseError(error));
+          const errorMessage = handleSupabaseError(error);
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive"
+          });
+          throw new Error(errorMessage);
         }
         
         return data || [];
       } catch (error) {
         console.error('Error fetching factory pricing:', error);
-        toast({
-          title: "Error",
-          description: error instanceof Error ? error.message : "Failed to fetch factory pricing",
-          variant: "destructive"
-        });
-        throw error;
+        // Don't throw error here to prevent breaking the component
+        // Return empty array instead
+        return [];
       }
     },
+    retry: 2,
+    retryDelay: 1000,
     retry: 2,
     retryDelay: 1000,
   });

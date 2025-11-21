@@ -763,7 +763,7 @@ const OrderManagement = () => {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">Order Management</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Orders Management</h1>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button className="flex items-center gap-2">
