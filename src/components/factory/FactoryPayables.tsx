@@ -921,10 +921,6 @@ const FactoryPayables = () => {
                   })()}
                 </TableCell>
                 <TableCell className="text-right">
-                </TableCell>
-              </TableRow>
-                );
-              })
                   <div className="flex justify-end gap-2">
                     <Dialog>
                       <DialogTrigger asChild>
@@ -1028,7 +1024,8 @@ const FactoryPayables = () => {
                   </div>
                 </TableCell>
               </TableRow>
-              ))
+                );
+              })
             ) : (
               <TableRow>
                 <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
