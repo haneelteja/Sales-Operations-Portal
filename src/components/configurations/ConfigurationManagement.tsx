@@ -785,6 +785,9 @@ const ConfigurationManagement = () => {
     
     return true;
   }).sort((a, b) => {
+    // Safety check: handle null/undefined values
+    if (!a || !b) return 0;
+    
     const activeSort = Object.entries(pricingColumnSorts).find(([_, direction]) => direction !== null);
     
     if (!activeSort) {
@@ -803,8 +806,8 @@ const ConfigurationManagement = () => {
         valueB = new Date(b.pricing_date || 0).getTime();
         break;
       case 'sku':
-        valueA = (a.sku || '').toLowerCase();
-        valueB = (b.sku || '').toLowerCase();
+        valueA = String(a.sku || '').toLowerCase();
+        valueB = String(b.sku || '').toLowerCase();
         break;
       case 'bottles_per_case':
         valueA = a.bottles_per_case || 0;
@@ -823,8 +826,8 @@ const ConfigurationManagement = () => {
         valueB = b.tax || 0;
         break;
       case 'created_at':
-        valueA = new Date(a.created_at).getTime();
-        valueB = new Date(b.created_at).getTime();
+        valueA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        valueB = b.created_at ? new Date(b.created_at).getTime() : 0;
         break;
       default:
         return 0;
