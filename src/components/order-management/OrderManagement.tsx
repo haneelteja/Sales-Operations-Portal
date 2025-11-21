@@ -591,24 +591,27 @@ const OrderManagement = () => {
     if (!orders) return [];
 
     return orders.filter(order => {
+      // Safety check: skip if order is null/undefined
+      if (!order) return false;
+      
       // Global search
       if (ordersSearchTerm) {
         const searchLower = ordersSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
-          order.client?.toLowerCase().includes(searchLower) ||
-          order.branch?.toLowerCase().includes(searchLower) ||
-          order.sku?.toLowerCase().includes(searchLower) ||
-          order.number_of_cases?.toString().includes(searchLower) ||
-          order.tentative_delivery_date?.includes(searchLower) ||
-          order.status?.toLowerCase().includes(searchLower)
+          (order.client || '').toLowerCase().includes(searchLower) ||
+          (order.branch || '').toLowerCase().includes(searchLower) ||
+          (order.sku || '').toLowerCase().includes(searchLower) ||
+          (order.number_of_cases?.toString() || '').includes(searchLower) ||
+          (order.tentative_delivery_date || '').includes(searchLower) ||
+          (order.status || '').toLowerCase().includes(searchLower)
         );
         if (!matchesGlobalSearch) return false;
       }
 
       // Column filters
-      if (ordersColumnFilters.client && !order.client?.toLowerCase().includes(ordersColumnFilters.client.toLowerCase())) return false;
-      if (ordersColumnFilters.branch && !order.branch?.toLowerCase().includes(ordersColumnFilters.branch.toLowerCase())) return false;
-      if (ordersColumnFilters.sku && !order.sku?.toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
+      if (ordersColumnFilters.client && !(order.client || '').toLowerCase().includes(ordersColumnFilters.client.toLowerCase())) return false;
+      if (ordersColumnFilters.branch && !(order.branch || '').toLowerCase().includes(ordersColumnFilters.branch.toLowerCase())) return false;
+      if (ordersColumnFilters.sku && !(order.sku || '').toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
       if (ordersColumnFilters.number_of_cases && order.number_of_cases?.toString() !== ordersColumnFilters.number_of_cases) return false;
       if (ordersColumnFilters.tentative_delivery_date && order.tentative_delivery_date !== ordersColumnFilters.tentative_delivery_date) return false;
       if (ordersColumnFilters.status && order.status !== ordersColumnFilters.status) return false;
@@ -643,23 +646,26 @@ const OrderManagement = () => {
     if (!ordersDispatch) return [];
 
     return ordersDispatch.filter((order: any) => {
+      // Safety check: skip if order is null/undefined
+      if (!order) return false;
+      
       // Global search
       if (dispatchSearchTerm) {
         const searchLower = dispatchSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
-          order.client?.toLowerCase().includes(searchLower) ||
-          order.branch?.toLowerCase().includes(searchLower) ||
-          order.sku?.toLowerCase().includes(searchLower) ||
-          order.cases?.toString().includes(searchLower) ||
-          order.delivery_date?.includes(searchLower)
+          (order.client || '').toLowerCase().includes(searchLower) ||
+          (order.branch || '').toLowerCase().includes(searchLower) ||
+          (order.sku || '').toLowerCase().includes(searchLower) ||
+          (order.cases?.toString() || '').includes(searchLower) ||
+          (order.delivery_date || '').includes(searchLower)
         );
         if (!matchesGlobalSearch) return false;
       }
 
       // Column filters
-      if (dispatchColumnFilters.client && !order.client?.toLowerCase().includes(dispatchColumnFilters.client.toLowerCase())) return false;
-      if (dispatchColumnFilters.branch && !order.branch?.toLowerCase().includes(dispatchColumnFilters.branch.toLowerCase())) return false;
-      if (dispatchColumnFilters.sku && !order.sku?.toLowerCase().includes(dispatchColumnFilters.sku.toLowerCase())) return false;
+      if (dispatchColumnFilters.client && !(order.client || '').toLowerCase().includes(dispatchColumnFilters.client.toLowerCase())) return false;
+      if (dispatchColumnFilters.branch && !(order.branch || '').toLowerCase().includes(dispatchColumnFilters.branch.toLowerCase())) return false;
+      if (dispatchColumnFilters.sku && !(order.sku || '').toLowerCase().includes(dispatchColumnFilters.sku.toLowerCase())) return false;
       if (dispatchColumnFilters.cases && order.cases?.toString() !== dispatchColumnFilters.cases) return false;
       if (dispatchColumnFilters.delivery_date && order.delivery_date !== dispatchColumnFilters.delivery_date) return false;
 

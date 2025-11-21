@@ -749,13 +749,16 @@ const ConfigurationManagement = () => {
 
   // Filter and sort factory pricing
   const filteredAndSortedFactoryPricing = factoryPricing?.filter((pricing) => {
-    const sku = pricing.sku || '';
+    // Safety check: skip if pricing is null/undefined
+    if (!pricing) return false;
+    
+    const sku = (pricing.sku || '').toString();
     const pricingDate = pricing.pricing_date ? new Date(pricing.pricing_date).toLocaleDateString() : '';
     const bottlesPerCase = pricing.bottles_per_case?.toString() || '';
     const pricePerBottle = pricing.price_per_bottle?.toString() || '';
     const costPerCase = pricing.cost_per_case?.toString() || '';
     const tax = pricing.tax?.toString() || '';
-    const createdDate = new Date(pricing.created_at).toLocaleDateString();
+    const createdDate = pricing.created_at ? new Date(pricing.created_at).toLocaleDateString() : '';
     
     // Global search filter
     if (pricingSearchTerm) {
