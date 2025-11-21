@@ -13,10 +13,12 @@ import {
 
 interface ColumnFilterProps {
   columnKey: string;
-  columnName: string;
-  filterValue: string | string[];
+  columnName?: string;
+  label?: string; // Alternative to columnName for backward compatibility
+  filterValue?: string | string[];
+  value?: string | string[]; // Alternative to filterValue
   onFilterChange: (value: string | string[]) => void;
-  onClearFilter: () => void;
+  onClearFilter?: () => void;
   sortDirection?: 'asc' | 'desc' | null;
   onSortChange: (direction: 'asc' | 'desc' | null) => void;
   dataType?: 'text' | 'date' | 'number' | 'multiselect';
@@ -26,7 +28,9 @@ interface ColumnFilterProps {
 export const ColumnFilter: React.FC<ColumnFilterProps> = ({
   columnKey,
   columnName,
+  label,
   filterValue,
+  value,
   onFilterChange,
   onClearFilter,
   sortDirection,
@@ -34,6 +38,12 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
   dataType = 'text',
   options = []
 }) => {
+  // Use label if provided, otherwise use columnName, fallback to empty string
+  const displayName = label || columnName || '';
+  // Use value if provided, otherwise use filterValue, fallback to empty string/array
+  const currentFilterValue = value !== undefined ? value : (filterValue !== undefined ? filterValue : '');
+  // Default onClearFilter to empty function if not provided
+  const handleClearFilter = onClearFilter || (() => {});
   const [isOpen, setIsOpen] = useState(false);
 
   const handleFilterChange = (value: string | string[]) => {
@@ -41,7 +51,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
   };
 
   const handleMultiSelectChange = (option: string, checked: boolean) => {
-    const currentValues = Array.isArray(filterValue) ? filterValue : [];
+    const currentValues = Array.isArray(currentFilterValue) ? currentFilterValue : [];
     let newValues: string[];
     
     if (checked) {
@@ -53,8 +63,8 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
     onFilterChange(newValues);
   };
 
-  const handleClearFilter = () => {
-    onClearFilter();
+  const handleClearFilterClick = () => {
+    handleClearFilter();
     setIsOpen(false);
   };
 
@@ -75,7 +85,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
           <Input
             id={`${columnKey}-filter`}
             type="date"
-            value={filterValue}
+            value={Array.isArray(currentFilterValue) ? '' : (currentFilterValue || '')}
             onChange={(e) => handleFilterChange(e.target.value)}
             placeholder="Select date"
             className="w-full"
@@ -130,11 +140,11 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
         <div className="space-y-2">
           <select
             id={`${columnKey}-filter`}
-          value={Array.isArray(filterValue) ? '' : (filterValue || '')}
-          onChange={(e) => handleFilterChange(e.target.value)}
+            value={Array.isArray(currentFilterValue) ? '' : (currentFilterValue || '')}
+            onChange={(e) => handleFilterChange(e.target.value)}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           >
-            <option value="">All {columnName}</option>
+            <option value="">All {displayName}</option>
             {options.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -150,9 +160,9 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
         <Input
           id={`${columnKey}-filter`}
           type="text"
-          value={Array.isArray(filterValue) ? '' : (filterValue || '')}
+          value={Array.isArray(currentFilterValue) ? '' : (currentFilterValue || '')}
           onChange={(e) => handleFilterChange(e.target.value)}
-          placeholder={`Search ${(columnName || '').toLowerCase()}...`}
+          placeholder={`Search ${displayName.toLowerCase()}...`}
           className="w-full"
         />
       </div>
@@ -174,7 +184,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
         <div className="p-4 space-y-4">
           {/* Sorting Section */}
           <div className="space-y-2">
-            <Label>Sort {columnName}</Label>
+            <Label>Sort {displayName}</Label>
             <div className="flex space-x-2">
               <Button
                 variant={sortDirection === 'asc' ? 'default' : 'outline'}
@@ -201,19 +211,19 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
 
           {/* Filtering Section */}
           <div className="space-y-2">
-            <Label>Filter {columnName}</Label>
+            <Label>Filter {displayName}</Label>
             {renderFilterInput()}
           </div>
 
-          {((Array.isArray(filterValue) ? filterValue.length > 0 : filterValue) || sortDirection) && (
+          {((Array.isArray(currentFilterValue) ? currentFilterValue.length > 0 : currentFilterValue) || sortDirection) && (
             <>
               <DropdownMenuSeparator />
               <div className="flex space-x-2">
-                {(Array.isArray(filterValue) ? filterValue.length > 0 : filterValue) && (
+                {(Array.isArray(currentFilterValue) ? currentFilterValue.length > 0 : currentFilterValue) && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleClearFilter}
+                    onClick={handleClearFilterClick}
                     className="flex-1 flex items-center space-x-2"
                   >
                     <X className="h-4 w-4" />
