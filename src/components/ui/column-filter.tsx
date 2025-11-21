@@ -100,7 +100,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
           <Input
             id={`${columnKey}-filter`}
             type="number"
-            value={Array.isArray(filterValue) ? '' : (filterValue || '')}
+            value={Array.isArray(currentFilterValue) ? '' : (currentFilterValue || '')}
             onChange={(e) => handleFilterChange(e.target.value)}
             placeholder="Enter amount"
             className="w-full"
@@ -110,7 +110,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
     }
 
     if (dataType === 'multiselect' && options.length > 0) {
-      const selectedValues = Array.isArray(filterValue) ? filterValue : [];
+      const selectedValues = Array.isArray(currentFilterValue) ? currentFilterValue : [];
       return (
         <div className="space-y-2">
           <div className="max-h-48 overflow-y-auto border rounded-md p-2">
