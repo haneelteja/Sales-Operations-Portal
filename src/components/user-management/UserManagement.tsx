@@ -50,12 +50,6 @@ const UserManagement = () => {
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof UserManagementRecord | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [welcomeEmailDetails, setWelcomeEmailDetails] = useState<{
-    email: string;
-    username: string;
-    password: string;
-    appUrl: string;
-  } | null>(null);
   const [filters, setFilters] = useState({
     username: '',
     email: '',
@@ -304,18 +298,25 @@ const UserManagement = () => {
       }
 
       console.log('Current user record in user_management:', currentUserRecord);
+      console.log('Creating user with role:', formData.role);
+      console.log('Associated clients:', associatedClients);
+      console.log('Associated branches:', associatedBranches);
 
       // Create user using server-side function to skip email confirmation
+      const requestBody = {
+        email: formData.email,
+        username: formData.username,
+        password: tempPassword,
+        role: formData.role, // Ensure role is explicitly set
+        associatedClients: associatedClients,
+        associatedBranches: associatedBranches,
+        createdBy: currentUserRecord?.id || null
+      };
+      
+      console.log('Sending request to create-user function:', { ...requestBody, password: '***' });
+      
       const { data: createUserResponse, error: createUserError } = await supabase.functions.invoke('create-user', {
-        body: {
-          email: formData.email,
-          username: formData.username,
-          password: tempPassword,
-          role: formData.role,
-          associatedClients: associatedClients,
-          associatedBranches: associatedBranches,
-          createdBy: currentUserRecord?.id || null
-        }
+        body: requestBody
       });
 
       if (createUserError) {
@@ -351,14 +352,13 @@ const UserManagement = () => {
       }
 
       console.log('User created successfully:', userRecord);
+      console.log('Created user role:', userRecord?.role);
+      console.log('Expected role was:', formData.role);
       
-      // Store welcome email details for display
-      setWelcomeEmailDetails({
-        email: formData.email,
-        username: formData.username,
-        password: tempPassword,
-        appUrl: window.location.origin
-      });
+      // Verify the role matches what was requested
+      if (userRecord?.role !== formData.role) {
+        console.error('ROLE MISMATCH! Expected:', formData.role, 'Got:', userRecord?.role);
+      }
       
       return userRecord;
     },
@@ -372,7 +372,7 @@ const UserManagement = () => {
       });
       toast({
         title: "Success",
-        description: "User created successfully. Please send welcome email manually with the credentials shown below.",
+        description: "User created successfully. Welcome email has been sent automatically.",
       });
     },
     onError: (error: unknown) => {
@@ -1019,60 +1019,6 @@ const UserManagement = () => {
         </CardContent>
       </Card>
 
-      {/* Welcome Email Details */}
-      {welcomeEmailDetails && (
-        <Card className="border-green-200 bg-green-50">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2 text-green-800">
-              <Mail className="h-5 w-5" />
-              <span>Welcome Email Details - Send Manually</span>
-            </CardTitle>
-            <CardDescription className="text-green-700">
-              Please send this welcome email to the user with their login credentials.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="bg-white p-4 rounded-lg border border-green-200">
-                <h4 className="font-semibold text-gray-800 mb-3">Email Content:</h4>
-                <div className="space-y-2 text-sm">
-                  <p><strong>To:</strong> {welcomeEmailDetails.email}</p>
-                  <p><strong>Subject:</strong> Welcome to Elma Operations Portal - Your Login Credentials</p>
-                  <div className="mt-4 p-3 bg-gray-50 rounded border">
-                    <p className="mb-2">Dear <strong>{welcomeEmailDetails.username}</strong>,</p>
-                    <p className="mb-2">Your account has been successfully created in the Elma Operations Portal. Below are your login credentials:</p>
-                    <div className="bg-red-50 border border-red-200 rounded p-3 my-3">
-                      <p className="mb-1"><strong>Username:</strong> {welcomeEmailDetails.username}</p>
-                      <p className="mb-1"><strong>Password:</strong></p>
-                      <div className="bg-red-100 border border-red-300 rounded p-2 text-center">
-                        <span className="font-mono text-lg font-bold text-red-800">{welcomeEmailDetails.password}</span>
-                      </div>
-                    </div>
-                    <p className="mb-2">Please log in at: <a href={welcomeEmailDetails.appUrl} className="text-blue-600 underline">{welcomeEmailDetails.appUrl}</a></p>
-                    <p className="mb-2"><strong>Important:</strong> Please change your password after your first login for security purposes.</p>
-                    <p className="mb-0">If you have any issues logging in, please contact support at nalluruhaneel@gmail.com</p>
-                    <p className="mt-4 mb-0"><strong>Best regards,<br/>Elma Manufacturing Pvt. Ltd.</strong></p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex space-x-2">
-                <Button 
-                  onClick={() => navigator.clipboard.writeText(`To: ${welcomeEmailDetails.email}\nSubject: Welcome to Elma Operations Portal - Your Login Credentials\n\nDear ${welcomeEmailDetails.username},\n\nYour account has been successfully created in the Elma Operations Portal. Below are your login credentials:\n\nUsername: ${welcomeEmailDetails.username}\nPassword: ${welcomeEmailDetails.password}\n\nPlease log in at: ${welcomeEmailDetails.appUrl}\n\nImportant: Please change your password after your first login for security purposes.\n\nIf you have any issues logging in, please contact support at nalluruhaneel@gmail.com\n\nBest regards,\nElma Manufacturing Pvt. Ltd.`)}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  📋 Copy Email Content
-                </Button>
-                <Button 
-                  onClick={() => setWelcomeEmailDetails(null)}
-                  variant="outline"
-                >
-                  ✕ Close
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Users Table */}
       <Card>

@@ -59,11 +59,27 @@ serve(async (req) => {
     } = requestData
 
     console.log('Parsed data:', { email, username, role, associatedClients, associatedBranches, createdBy })
+    console.log('Role received:', role, 'Type:', typeof role)
+    console.log('Role validation - is admin?', role === 'admin')
+    console.log('Role validation - is manager?', role === 'manager')
+    console.log('Role validation - is client?', role === 'client')
 
     if (!email || !username || !password || !role) {
       console.log('Missing required fields')
       return new Response(
         JSON.stringify({ error: 'Missing required fields: email, username, password, role' }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+    
+    // Validate role is one of the allowed values
+    if (!['admin', 'manager', 'client'].includes(role)) {
+      console.error('Invalid role provided:', role)
+      return new Response(
+        JSON.stringify({ error: `Invalid role: ${role}. Must be one of: admin, manager, client` }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -155,20 +171,31 @@ serve(async (req) => {
     await new Promise(resolve => setTimeout(resolve, 1000))
 
     // Create user management record
+    console.log('Inserting user_management record with role:', role)
+    console.log('Associated clients:', associatedClients)
+    console.log('Associated branches:', associatedBranches)
+    
+    const insertData = {
+      user_id: authData.user.id,
+      username: username,
+      email: email,
+      associated_clients: associatedClients || [],
+      associated_branches: associatedBranches || [],
+      role: role, // Explicitly set role from request
+      status: 'active',
+      created_by: createdBy
+    };
+    
+    console.log('Insert data:', { ...insertData, createdBy: createdBy || 'null' })
+    
     const { data: userRecord, error: userError } = await supabase
       .from("user_management")
-      .insert({
-        user_id: authData.user.id,
-        username: username,
-        email: email,
-        associated_clients: associatedClients || [],
-        associated_branches: associatedBranches || [],
-        role: role,
-        status: 'active',
-        created_by: createdBy
-      })
+      .insert(insertData)
       .select()
       .single()
+    
+    console.log('User record created:', userRecord)
+    console.log('Created user role:', userRecord?.role)
 
     if (userError) {
       console.error('User management creation error:', userError)
