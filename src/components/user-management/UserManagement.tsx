@@ -69,6 +69,7 @@ const UserManagement = () => {
   const { data: userRecords, isLoading } = useQuery({
     queryKey: ["user-management"],
     queryFn: async () => {
+      console.log('Fetching user management records...');
       const { data, error } = await supabase
         .from("user_management")
         .select("*")
@@ -76,12 +77,19 @@ const UserManagement = () => {
       
       if (error) {
         console.error('Error fetching user management records:', error);
-        if (error.code === 'PGRST116' || error.message.includes('relation "user_management" does not exist')) {
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Error details:', error.details);
+        if (error.code === 'PGRST116' || error.message?.includes('relation "user_management" does not exist')) {
+          console.warn('Table does not exist or is empty');
           return []; // Return empty array if table doesn't exist
         }
-        throw error;
+        // Don't throw error, return empty array to show helpful message
+        console.warn('Query failed, returning empty array');
+        return [];
       }
-      return data as UserManagementRecord[];
+      console.log('User records fetched:', data?.length || 0, 'users');
+      return (data || []) as UserManagementRecord[];
     },
   });
 
@@ -1366,9 +1374,12 @@ const UserManagement = () => {
                 <p className="text-sm text-blue-800 font-medium mb-2">To get started:</p>
                 <ol className="text-sm text-blue-700 text-left space-y-1">
                   <li>1. Go to Supabase SQL Editor</li>
-                  <li>2. Run the create_and_populate_user_management.sql script</li>
+                  <li>2. Run the CREATE_AND_SETUP_USER_MANAGEMENT.sql script</li>
                   <li>3. Refresh this page</li>
                 </ol>
+                <p className="text-xs text-blue-600 mt-2">
+                  File location: sql/fixes/CREATE_AND_SETUP_USER_MANAGEMENT.sql
+                </p>
               </div>
             </div>
           )}
