@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ interface UserForm {
 }
 
 const UserManagement = () => {
+  const { user: authUser } = useAuth();
   const [userForm, setUserForm] = useState<UserForm>({
     username: '',
     email: '',
@@ -265,24 +267,32 @@ const UserManagement = () => {
         associatedBranches = formData.associated_client_branches.map(combo => combo.split(' - ')[1]);
       }
 
-      // Check if user is authenticated
-      const { data: { user }, error: userAuthError } = await supabase.auth.getUser()
-      console.log('Current user:', user)
-      console.log('Auth error:', userAuthError)
+      // Check if user is authenticated using AuthContext (works with mock auth)
+      const user = authUser;
+      console.log('Current user from AuthContext:', user);
       
       if (!user) {
         throw new Error('User not authenticated. Please log in again.');
       }
 
       // Check if current user exists in user_management table
-      const { data: currentUserRecord, error: currentUserError } = await supabase
-        .from('user_management')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (currentUserError && currentUserError.code !== 'PGRST116') {
-        console.warn('Current user not found in user_management:', currentUserError);
+      // Note: This might fail with RLS in development, so we'll handle errors gracefully
+      let currentUserRecord = null;
+      try {
+        const { data, error: currentUserError } = await supabase
+          .from('user_management')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (!currentUserError) {
+          currentUserRecord = data;
+        } else if (currentUserError.code !== 'PGRST116') {
+          console.warn('Current user not found in user_management:', currentUserError);
+        }
+      } catch (error) {
+        console.warn('Could not fetch current user record (may be due to RLS):', error);
+        // Continue without currentUserRecord - Edge Function will handle it
       }
 
       console.log('Current user record in user_management:', currentUserRecord);
