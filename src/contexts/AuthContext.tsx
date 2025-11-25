@@ -201,38 +201,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Development: Mock authentication
     console.log('🔐 Bypassing authentication for development...');
     
-    // Check if this is a new user (check user_management for temp password flag)
-    try {
-      const { data: userData } = await supabase
-        .from('user_management')
-        .select('*')
-        .eq('email', email)
-        .single();
-      
-      // If user exists and was recently created (within last hour), require password reset
-      if (userData) {
-        const createdAt = new Date(userData.created_at);
-        const now = new Date();
-        const hoursSinceCreation = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
-        
-        // Require password reset if user was created in last hour (new user)
-        const requiresReset = hoursSinceCreation < 1;
-        setRequiresPasswordReset(requiresReset);
-        
-        if (requiresReset) {
-          console.log('⚠️ New user detected - password reset required');
-        }
-      }
-    } catch (error) {
-      console.warn('Could not check user creation date:', error);
-    }
+    // For mock auth, don't require password reset (development only)
+    // In production, this will be handled by real Supabase auth
+    setRequiresPasswordReset(false);
     
     // Create a mock user
     const mockUser = {
       id: '6e2e740b-57c6-4468-b073-b379aed3c6a6',
-      email: 'nalluruhaneel@gmail.com',
+      email: email || 'nalluruhaneel@gmail.com',
       user_metadata: {
-        full_name: 'Haneel Nalluru'
+        full_name: 'Haneel Nalluru',
+        requires_password_reset: false, // Mock auth doesn't require reset
+        password_changed_at: new Date().toISOString() // Assume password already changed
       }
     };
     

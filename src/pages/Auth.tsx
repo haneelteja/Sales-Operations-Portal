@@ -50,8 +50,9 @@ const Auth = () => {
     confirmPassword: '',
   });
 
-  // Redirect if already authenticated
-  if (user && !loading) {
+  // Redirect if already authenticated AND password reset is not required
+  // If password reset is required, stay on Auth page to show the dialog
+  if (user && !loading && !requiresPasswordReset) {
     return <Navigate to="/" replace />;
   }
 
