@@ -69,6 +69,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session);
         setUser(session?.user ?? null);
         
+        // Check if user requires password reset
+        if (session?.user) {
+          const requiresReset = session.user.user_metadata?.requires_password_reset === true || 
+                                session.user.user_metadata?.first_login === true ||
+                                !session.user.user_metadata?.password_changed_at;
+          setRequiresPasswordReset(requiresReset);
+        } else {
+          setRequiresPasswordReset(false);
+        }
+        
         // Fetch user profile when user signs in
         if (session?.user) {
           setTimeout(async () => {
@@ -166,13 +176,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.user) {
-        // Check if user requires password reset
-        const requiresReset = data.user.user_metadata?.requires_password_reset === true;
-        setRequiresPasswordReset(requiresReset);
+        // Check if user requires password reset (first login with temporary password)
+        const requiresReset = data.user.user_metadata?.requires_password_reset === true || 
+                            data.user.user_metadata?.first_login === true;
+        
+        // Also check if password_changed_at is null (user hasn't changed password yet)
+        const passwordNotChanged = !data.user.user_metadata?.password_changed_at;
+        
+        const shouldForceReset = requiresReset || passwordNotChanged;
+        
+        if (shouldForceReset) {
+          setRequiresPasswordReset(true);
+        }
         
         return { 
           error: null, 
-          requiresPasswordReset: requiresReset 
+          requiresPasswordReset: shouldForceReset 
         };
       }
 

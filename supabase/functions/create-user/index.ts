@@ -134,12 +134,13 @@ serve(async (req) => {
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: email,
       password: password,
-      email_confirm: true,
+      email_confirm: true, // Email is confirmed, but password reset is still required
       user_metadata: {
         full_name: username,
         temp_password: password,
         requires_password_reset: true, // Flag to force password reset on first login
-        password_changed_at: null // Will be set when user changes password
+        password_changed_at: null, // Will be set when user changes password
+        first_login: true // Track if this is first login
       }
     })
 
@@ -222,26 +223,53 @@ serve(async (req) => {
     // Send welcome email with username and password
     try {
       console.log('Attempting to send welcome email to:', email)
+      const appUrl = Deno.env.get('APP_URL') || 'https://sales-operations-portal.vercel.app'
+      
+      // Try sending via Resend Edge Function
       const { data: emailResponse, error: emailError } = await supabase.functions.invoke('send-welcome-email-resend', {
         body: {
           email: email,
           username: username,
           tempPassword: password,
-          appUrl: Deno.env.get('APP_URL') || 'https://sales-operations-portal.vercel.app'
+          appUrl: appUrl
         }
       })
       
       console.log('Email function response:', emailResponse)
 
       if (emailError) {
-        console.warn('Failed to send welcome email:', emailError)
-        // Don't throw error, user creation was successful
+        console.error('Failed to send welcome email via Resend:', emailError)
+        // Log email details for manual sending
+        console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
+        console.log('To:', email)
+        console.log('Subject: Welcome to Elma Operations Portal - Your Login Credentials')
+        console.log('Username:', username)
+        console.log('Temporary Password:', password)
+        console.log('App URL:', appUrl)
+        console.log('=== END EMAIL DETAILS ===')
+      } else if (emailResponse?.success) {
+        console.log('Welcome email sent successfully via Resend to:', email)
       } else {
-        console.log('Welcome email sent successfully to:', email)
+        console.warn('Email function returned but may not have sent:', emailResponse)
+        // Log email details for manual sending
+        console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
+        console.log('To:', email)
+        console.log('Subject: Welcome to Elma Operations Portal - Your Login Credentials')
+        console.log('Username:', username)
+        console.log('Temporary Password:', password)
+        console.log('App URL:', appUrl)
+        console.log('=== END EMAIL DETAILS ===')
       }
     } catch (emailError) {
-      console.warn('Failed to send welcome email:', emailError)
-      // Don't throw error, user creation was successful
+      console.error('Exception sending welcome email:', emailError)
+      // Log email details for manual sending
+      console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
+      console.log('To:', email)
+      console.log('Subject: Welcome to Elma Operations Portal - Your Login Credentials')
+      console.log('Username:', username)
+      console.log('Temporary Password:', password)
+      console.log('App URL:', Deno.env.get('APP_URL') || 'https://sales-operations-portal.vercel.app')
+      console.log('=== END EMAIL DETAILS ===')
     }
 
     console.log('User created successfully:', userRecord)

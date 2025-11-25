@@ -6,7 +6,7 @@ import ResetPassword from '@/pages/ResetPassword';
 import { Loader2 } from 'lucide-react';
 
 const PortalRouter: React.FC = () => {
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading, requiresPasswordReset } = useAuth();
   const [isPasswordReset, setIsPasswordReset] = useState(false);
   const [isCheckingReset, setIsCheckingReset] = useState(true);
 
@@ -43,6 +43,12 @@ const PortalRouter: React.FC = () => {
 
   // If not authenticated, show login page
   if (!user) {
+    return <Auth />;
+  }
+
+  // If user requires password reset (first login with temporary password), redirect to Auth page
+  // The Auth page will show the forced password reset dialog
+  if (requiresPasswordReset) {
     return <Auth />;
   }
 
