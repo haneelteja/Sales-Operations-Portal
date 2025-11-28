@@ -95,8 +95,8 @@ const TransportExpenses = () => {
       // OPTIMIZED: Batch query instead of N+1 queries
       // Collect all unique client_id + branch pairs
       const clientBranchPairs = data
-        .filter((e: any) => e.client_id && e.branch)
-        .map((e: any) => ({
+        .filter((e: { client_id?: string; branch?: string }) => e.client_id && e.branch)
+        .map((e: { client_id: string; branch: string }) => ({
           customer_id: e.client_id,
           branch: e.branch
         }));
@@ -106,7 +106,7 @@ const TransportExpenses = () => {
         new Map(clientBranchPairs.map(p => [`${p.customer_id}_${p.branch}`, p])).values()
       );
       
-      let salesMap = new Map<string, { sku: string; quantity: number }>();
+      const salesMap = new Map<string, { sku: string; quantity: number }>();
       
       if (uniquePairs.length > 0) {
         // Try to use RPC function for batch query (more efficient)
@@ -117,7 +117,7 @@ const TransportExpenses = () => {
             });
           
           if (!rpcError && recentSales) {
-            recentSales.forEach((sale: any) => {
+            recentSales.forEach((sale: { customer_id: string; branch: string; sku?: string; quantity?: number }) => {
               const key = `${sale.customer_id}_${sale.branch}`;
               salesMap.set(key, {
                 sku: sale.sku || '',
@@ -139,8 +139,8 @@ const TransportExpenses = () => {
               .order("created_at", { ascending: false });
             
             // Group by customer_id + branch and get latest
-            const salesByKey = new Map<string, any>();
-            allSales?.forEach((sale: any) => {
+            const salesByKey = new Map<string, { customer_id: string; branch: string; sku?: string; quantity?: number }>();
+            allSales?.forEach((sale: { customer_id: string; branch: string; sku?: string; quantity?: number }) => {
               const key = `${sale.customer_id}_${sale.branch}`;
               if (!salesByKey.has(key)) {
                 salesByKey.set(key, sale);
@@ -160,7 +160,7 @@ const TransportExpenses = () => {
       }
       
       // Enrich expenses with sales data
-      return data.map((expense: any) => {
+      return data.map((expense: { client_id?: string; branch?: string; sku?: string }) => {
         if (expense.client_id && expense.branch) {
           const key = `${expense.client_id}_${expense.branch}`;
           const saleData = salesMap.get(key);

@@ -39,17 +39,18 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
           signal: AbortSignal.timeout(30000), // 30 second timeout
         });
         return response;
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Enhanced error logging
+        const errorObj = error as { message?: string; name?: string; cause?: unknown };
         console.error('Supabase fetch error:', {
           url,
-          error: error.message,
-          type: error.name,
-          cause: error.cause
+          error: errorObj.message,
+          type: errorObj.name,
+          cause: errorObj.cause
         });
         
         // If it's a network error, provide helpful message
-        if (error.name === 'AbortError' || error.message?.includes('Failed to fetch')) {
+        if (errorObj.name === 'AbortError' || errorObj.message?.includes('Failed to fetch')) {
           throw new Error('Network error: Unable to connect to Supabase. Please check your internet connection and try again.');
         }
         
@@ -60,39 +61,41 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
 });
 
 // Helper function to handle Supabase errors with better messages
-export const handleSupabaseError = (error: any): string => {
+export const handleSupabaseError = (error: unknown): string => {
   if (!error) return 'An unknown error occurred';
   
+  const errorObj = error as { message?: string; name?: string; code?: string };
+  
   // Handle network/fetch errors
-  if (error.message?.includes('Failed to fetch') || 
-      error.message?.includes('Network error') ||
-      error.message?.includes('network') ||
-      error.name === 'TypeError') {
+  if (errorObj.message?.includes('Failed to fetch') || 
+      errorObj.message?.includes('Network error') ||
+      errorObj.message?.includes('network') ||
+      errorObj.name === 'TypeError') {
     return 'Network error: Unable to connect to Supabase. Please check your internet connection and try again. If the problem persists, the Supabase service may be temporarily unavailable.';
   }
   
   // Handle timeout errors
-  if (error.message?.includes('timeout') || error.name === 'AbortError') {
+  if (errorObj.message?.includes('timeout') || errorObj.name === 'AbortError') {
     return 'Request timeout: The server took too long to respond. Please try again.';
   }
   
   // Handle network/SSL errors
-  if (error.message?.includes('ERR_CERT_AUTHORITY_INVALID') || 
-      error.message?.includes('certificate') ||
-      error.message?.includes('SSL')) {
+  if (errorObj.message?.includes('ERR_CERT_AUTHORITY_INVALID') || 
+      errorObj.message?.includes('certificate') ||
+      errorObj.message?.includes('SSL')) {
     return 'SSL certificate error. Please check your network connection or contact support.';
   }
   
   // Handle 400 Bad Request errors
-  if (error.code === 'PGRST116' || error.message?.includes('400')) {
+  if (errorObj.code === 'PGRST116' || errorObj.message?.includes('400')) {
     return 'Invalid request. Please check your query parameters and try again.';
   }
   
   // Handle RLS (Row Level Security) errors
-  if (error.code === '42501' || error.message?.includes('permission') || error.message?.includes('RLS')) {
+  if (errorObj.code === '42501' || errorObj.message?.includes('permission') || errorObj.message?.includes('RLS')) {
     return 'Permission denied. Please check your access rights.';
   }
   
   // Return the error message if available
-  return error.message || 'An error occurred while processing your request';
+  return errorObj.message || 'An error occurred while processing your request';
 };

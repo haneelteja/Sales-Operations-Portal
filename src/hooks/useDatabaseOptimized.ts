@@ -231,7 +231,7 @@ export const useDashboardMetricsOptimized = () => {
         .eq("is_active", true);
 
       const { data: receivables } = await CacheService.getReceivables();
-      const totalOutstanding = receivables?.reduce((sum: number, r: any) => sum + (r.outstanding || 0), 0) || 0;
+      const totalOutstanding = receivables?.reduce((sum: number, r: { outstanding?: number }) => sum + (r.outstanding || 0), 0) || 0;
 
       const { data: factory } = await supabase
         .from("factory_payables")
@@ -247,7 +247,7 @@ export const useDashboardMetricsOptimized = () => {
 
       const factoryOutstanding = totalProduction - totalFactoryPayments;
 
-      const highValueCustomers = receivables?.filter((r: any) => r.outstanding > 50000).length || 0;
+      const highValueCustomers = receivables?.filter((r: { outstanding?: number }) => (r.outstanding || 0) > 50000).length || 0;
 
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -323,8 +323,8 @@ export const useCreateSalesTransactionOptimized = () => {
       await queryClient.cancelQueries({ queryKey: ["sales-transactions"] });
       const previousTransactions = queryClient.getQueryData(["sales-transactions"]);
       
-      queryClient.setQueryData(["sales-transactions"], (old: any) => [
-        { ...newTransaction, id: 'temp-' + Date.now() },
+      queryClient.setQueryData(["sales-transactions"], (old: SalesTransaction[] | undefined): SalesTransaction[] => [
+        { ...newTransaction, id: 'temp-' + Date.now() } as SalesTransaction,
         ...(old || [])
       ]);
       
@@ -382,7 +382,7 @@ export const useFactoryPricingBatch = (skus: string[]) => {
         if (error) throw error;
 
         // Group by SKU and get latest
-        const latestBySku = new Map<string, any>();
+        const latestBySku = new Map<string, { sku: string; [key: string]: unknown }>();
         data?.forEach(p => {
           if (!latestBySku.has(p.sku)) {
             latestBySku.set(p.sku, p);

@@ -1079,7 +1079,16 @@ const SalesEntry = () => {
       // Create sale transaction for Aamodha
       const amountValue = parseFloat(data.amount);
       
-      const saleData: any = {
+      const saleData: {
+        customer_id: string;
+        transaction_type: string;
+        amount: number;
+        total_amount: number;
+        quantity: number | null;
+        sku: string;
+        description?: string;
+        transaction_date?: string;
+      } = {
         customer_id: data.customer_id,
         transaction_type: "sale",
         amount: amountValue,

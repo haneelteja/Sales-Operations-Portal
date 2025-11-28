@@ -283,7 +283,14 @@ const ConfigurationManagement = () => {
         }
       }
 
-      const updateData: any = {};
+      const updateData: Partial<{
+        client_name: string;
+        branch: string;
+        sku: string | null;
+        price_per_case: number | null;
+        price_per_bottle: number | null;
+        pricing_date: string | null;
+      }> = {};
       
       // Only include fields that are provided
       if (data.client_name) updateData.client_name = data.client_name;
@@ -328,7 +335,7 @@ const ConfigurationManagement = () => {
     onError: (error) => {
       toast({ 
         title: "Error", 
-        description: error instanceof Error ? error.message : "Failed to update customer: " + (error as any).message,
+        description: error instanceof Error ? error.message : "Failed to update customer: " + (error as { message?: string }).message,
         variant: "destructive"
       });
     },
@@ -411,8 +418,6 @@ const ConfigurationManagement = () => {
         return [];
       }
     },
-    retry: 2,
-    retryDelay: 1000,
     retry: 2,
     retryDelay: 1000,
   });
@@ -523,7 +528,12 @@ const ConfigurationManagement = () => {
 
   const updatePricingMutation = useMutation({
     mutationFn: async (data: { id: string } & Partial<FactoryPricing>) => {
-      const updateData: any = {};
+      const updateData: Partial<{
+        pricing_date: string | null;
+        sku: string;
+        bottles_per_case: number;
+        price_per_bottle: number;
+      }> = {};
       
       if (data.pricing_date) updateData.pricing_date = data.pricing_date;
       if (data.sku) updateData.sku = data.sku;

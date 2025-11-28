@@ -81,7 +81,7 @@ export const filtersReducer = (state: FilterState, action: FilterAction): Filter
 export const useFilteredData = <T>(
   data: T[],
   filterFn: (item: T) => boolean,
-  dependencies: any[] = []
+  dependencies: unknown[] = []
 ) => {
   return useMemo(() => {
     return data.filter(filterFn);
@@ -94,7 +94,7 @@ export const useFilteredData = <T>(
 export const useSortedData = <T>(
   data: T[],
   sortFn: (a: T, b: T) => number,
-  dependencies: any[] = []
+  dependencies: unknown[] = []
 ) => {
   return useMemo(() => {
     return [...data].sort(sortFn);
@@ -107,7 +107,7 @@ export const useSortedData = <T>(
 export const useGroupedData = <T, K extends string | number>(
   data: T[],
   groupBy: (item: T) => K,
-  dependencies: any[] = []
+  dependencies: unknown[] = []
 ) => {
   return useMemo(() => {
     const groups = new Map<K, T[]>();
@@ -167,9 +167,9 @@ export const useDebounce = <T>(value: T, delay: number): T => {
  * Stable callback creator
  * Returns a memoized callback that doesn't change unless dependencies change
  */
-export const useStableCallback = <T extends (...args: any[]) => any>(
+export const useStableCallback = <T extends (...args: unknown[]) => unknown>(
   callback: T,
-  dependencies: any[]
+  dependencies: unknown[]
 ): T => {
   return useCallback(callback, dependencies) as T;
 };
@@ -321,40 +321,10 @@ export const useSafeInterval = () => {
 /**
  * Example: Optimized table row component
  * Memoized to prevent unnecessary re-renders
+ * 
+ * Note: This is a TypeScript file, so JSX components should be in separate .tsx files
+ * This example is kept for reference but should be moved to a .tsx file for actual use
  */
-import React from 'react';
-
-export const OptimizedTableRow = React.memo<{
-  data: any;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-}>(({ data, onEdit, onDelete }) => {
-  const handleEdit = useCallback(() => {
-    onEdit(data.id);
-  }, [data.id, onEdit]);
-
-  const handleDelete = useCallback(() => {
-    onDelete(data.id);
-  }, [data.id, onDelete]);
-
-  return (
-    <tr>
-      {/* Table cells */}
-      <td>
-        <button onClick={handleEdit}>Edit</button>
-        <button onClick={handleDelete}>Delete</button>
-      </td>
-    </tr>
-  );
-}, (prevProps, nextProps) => {
-  // Custom comparison function
-  return (
-    prevProps.data.id === nextProps.data.id &&
-    prevProps.data.updated_at === nextProps.data.updated_at
-  );
-});
-
-OptimizedTableRow.displayName = 'OptimizedTableRow';
 
 // ==============================================
 // 9. Data Transformation Utilities
@@ -366,7 +336,7 @@ OptimizedTableRow.displayName = 'OptimizedTableRow';
 export const useTransformedData = <T, R>(
   data: T[],
   transformFn: (item: T) => R,
-  dependencies: any[] = []
+  dependencies: unknown[] = []
 ) => {
   return useMemo(() => {
     return data.map(transformFn);
@@ -380,7 +350,7 @@ export const useAggregatedData = <T>(
   data: T[],
   aggregator: (acc: number, item: T) => number,
   initialValue: number = 0,
-  dependencies: any[] = []
+  dependencies: unknown[] = []
 ) => {
   return useMemo(() => {
     return data.reduce(aggregator, initialValue);

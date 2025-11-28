@@ -302,7 +302,8 @@ const Dashboard = () => {
       }
 
       const [columnKey, direction] = activeSort;
-      let aValue: any, bValue: any;
+      let aValue: string | number | undefined;
+      let bValue: string | number | undefined;
 
       switch (columnKey) {
         case 'client':

@@ -291,10 +291,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/verify`,
-    });
-    return { error };
+    try {
+      // Use custom Edge Function with Resend for beautiful email design
+      // Determine production URL - use environment variable or detect from current origin
+      const productionUrl = import.meta.env.VITE_APP_URL || 
+                          (window.location.hostname === 'localhost' 
+                            ? 'https://sales-operations-portal.vercel.app'
+                            : window.location.origin);
+      
+      const resetUrl = `${productionUrl}/reset-password`;
+
+      const { data, error: functionError } = await supabase.functions.invoke(
+        'send-password-reset-email-resend',
+        {
+          body: { 
+            email,
+            resetUrl: resetUrl
+          }
+        }
+      );
+
+      if (functionError) {
+        console.error('Edge Function error:', functionError);
+        return { error: functionError as Error };
+      }
+
+      if (data?.success) {
+        // Clear password reset requirement if user is logged in
+        if (user) {
+          await supabase.auth.updateUser({
+            data: {
+              requires_password_reset: false,
+            }
+          });
+          setRequiresPasswordReset(false);
+        }
+        return { error: null };
+      } else {
+        // Edge Function returned error
+        console.error('Edge Function returned error:', data?.error);
+        return { error: new Error(data?.error || 'Failed to send password reset email') };
+      }
+    } catch (error: unknown) {
+      const errorObj = error as Error;
+      console.error('Password reset error:', errorObj);
+      return { error: errorObj };
+    }
   };
 
   const updatePassword = async (newPassword: string) => {

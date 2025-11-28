@@ -87,7 +87,7 @@ export class CacheService {
   /**
    * Set cached data with TTL
    */
-  static async set(key: string, value: any, ttl: number): Promise<void> {
+  static async set(key: string, value: unknown, ttl: number): Promise<void> {
     try {
       await redis.setex(key, ttl, JSON.stringify(value));
     } catch (error) {
@@ -150,7 +150,7 @@ export class CacheService {
   /**
    * Set multiple keys at once
    */
-  static async mset(items: Array<{ key: string; value: any; ttl: number }>): Promise<void> {
+  static async mset(items: Array<{ key: string; value: unknown; ttl: number }>): Promise<void> {
     try {
       await Promise.all(items.map(({ key, value, ttl }) => this.set(key, value, ttl)));
     } catch (error) {
@@ -169,7 +169,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.customers.all);
   }
 
-  static async setCustomers(customers: any[]) {
+  static async setCustomers(customers: unknown[]) {
     return this.set(CACHE_KEYS.customers.all, customers, CACHE_TTL.CUSTOMERS);
   }
 
@@ -177,7 +177,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.customers.byId(id));
   }
 
-  static async setCustomerById(id: string, customer: any) {
+  static async setCustomerById(id: string, customer: unknown) {
     return this.set(CACHE_KEYS.customers.byId(id), customer, CACHE_TTL.CUSTOMERS);
   }
 
@@ -188,7 +188,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.receivables.all);
   }
 
-  static async setReceivables(receivables: any[]) {
+  static async setReceivables(receivables: unknown[]) {
     return this.set(CACHE_KEYS.receivables.all, receivables, CACHE_TTL.RECEIVABLES);
   }
 
@@ -199,7 +199,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.transactions.all);
   }
 
-  static async setTransactions(transactions: any[]) {
+  static async setTransactions(transactions: unknown[]) {
     return this.set(CACHE_KEYS.transactions.all, transactions, CACHE_TTL.TRANSACTIONS);
   }
 
@@ -210,7 +210,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.orders.all);
   }
 
-  static async setOrders(orders: any[]) {
+  static async setOrders(orders: unknown[]) {
     return this.set(CACHE_KEYS.orders.all, orders, CACHE_TTL.ORDERS);
   }
 
@@ -221,7 +221,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.dashboard.metrics);
   }
 
-  static async setDashboardMetrics(metrics: any) {
+  static async setDashboardMetrics(metrics: unknown) {
     return this.set(CACHE_KEYS.dashboard.metrics, metrics, CACHE_TTL.DASHBOARD_METRICS);
   }
 
@@ -232,7 +232,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.skuConfig.all);
   }
 
-  static async setSKUConfig(config: any[]) {
+  static async setSKUConfig(config: unknown[]) {
     return this.set(CACHE_KEYS.skuConfig.all, config, CACHE_TTL.SKU_CONFIG);
   }
 
@@ -243,7 +243,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.pricing.bySku(sku));
   }
 
-  static async setPricingBySku(sku: string, pricing: any[]) {
+  static async setPricingBySku(sku: string, pricing: unknown[]) {
     return this.set(CACHE_KEYS.pricing.bySku(sku), pricing, CACHE_TTL.PRICING);
   }
 
@@ -251,7 +251,7 @@ export class CacheService {
     return this.get(CACHE_KEYS.pricing.latest(sku));
   }
 
-  static async setLatestPricing(sku: string, pricing: any) {
+  static async setLatestPricing(sku: string, pricing: unknown) {
     return this.set(CACHE_KEYS.pricing.latest(sku), pricing, CACHE_TTL.PRICING);
   }
 

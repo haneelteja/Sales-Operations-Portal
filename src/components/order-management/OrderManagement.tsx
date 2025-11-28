@@ -27,6 +27,12 @@ interface Order {
   updated_at: string;
 }
 
+// Database order type (may have client_name instead of client)
+interface DatabaseOrder extends Partial<Order> {
+  client_name?: string;
+  client?: string;
+}
+
 interface OrderForm {
   date: string;
   client: string;
@@ -127,7 +133,7 @@ const OrderManagement = () => {
       const { data, error } = await supabase
         .rpc('get_orders_sorted');
       
-      let ordersData: any[] = [];
+      let ordersData: DatabaseOrder[] = [];
       
       if (error) {
         // Fallback to direct table query with SQL ORDER BY if function doesn't exist
@@ -157,7 +163,7 @@ const OrderManagement = () => {
       // Always map client_name to client for compatibility with Order interface
       // This ensures the Client column displays correctly regardless of data source
       // The RPC function returns 'client' (mapped from client_name), so prioritize that
-      const mappedData = ordersData.map((order: any) => {
+      const mappedData = ordersData.map((order: DatabaseOrder): Order => {
         // RPC function returns 'client' field (mapped from client_name)
         // Fallback query returns 'client_name' field
         const clientValue = order.client || order.client_name || '';
@@ -234,7 +240,7 @@ const OrderManagement = () => {
     mutationFn: async (formData: OrderForm) => {
       // Map form data to database schema
       // The orders table uses 'client_name' column (NOT 'client')
-      const orderData: any = {
+      const orderData: Partial<DatabaseOrder> = {
         client_name: formData.client, // Use 'client_name' column as per actual database schema
         branch: formData.branch,
         sku: formData.sku,
@@ -314,7 +320,7 @@ const OrderManagement = () => {
   // Update order details mutation
   const updateOrderDetailsMutation = useMutation({
     mutationFn: async ({ id, orderData }: { id: string; orderData: OrderForm }) => {
-      const updateData: any = {
+      const updateData: Partial<DatabaseOrder> = {
         client_name: orderData.client, // Use 'client_name' column as per actual database schema
         branch: orderData.branch,
         sku: orderData.sku,
@@ -406,7 +412,7 @@ const OrderManagement = () => {
     setEditingOrder(order);
       setEditForm({
         date: new Date(order.created_at).toISOString().split('T')[0],
-        client: (order as any).client_name || order.client,
+        client: (order as DatabaseOrder).client_name || order.client,
         branch: order.branch,
         sku: order.sku,
         number_of_cases: order.number_of_cases.toString(),
@@ -441,7 +447,7 @@ const OrderManagement = () => {
       // First, insert into orders_dispatch with current date as delivery_date
       // orders_dispatch uses 'client' column, orders uses 'client_name'
       const dispatchData = {
-        client: (order as any).client_name || order.client, // Get client_name from order, fallback to client
+        client: (order as DatabaseOrder).client_name || order.client, // Get client_name from order, fallback to client
         branch: order.branch,
         sku: order.sku,
         cases: order.number_of_cases,
@@ -625,8 +631,8 @@ const OrderManagement = () => {
       if (!activeSort) return 0;
 
       const [columnKey, direction] = activeSort;
-      let aValue: any = a[columnKey as keyof Order];
-      let bValue: any = b[columnKey as keyof Order];
+      let aValue: string | number | undefined = a[columnKey as keyof Order] as string | number | undefined;
+      let bValue: string | number | undefined = b[columnKey as keyof Order] as string | number | undefined;
 
       // Handle null/undefined values
       if (aValue === null || aValue === undefined) return 1;
@@ -655,7 +661,7 @@ const OrderManagement = () => {
   const filteredAndSortedDispatch = useMemo(() => {
     if (!ordersDispatch) return [];
 
-    return ordersDispatch.filter((order: any) => {
+    return ordersDispatch.filter((order: Order) => {
       // Safety check: skip if order is null/undefined
       if (!order) return false;
       
@@ -680,7 +686,7 @@ const OrderManagement = () => {
       if (dispatchColumnFilters.delivery_date && order.delivery_date !== dispatchColumnFilters.delivery_date) return false;
 
       return true;
-    }).sort((a: any, b: any) => {
+    }).sort((a: Order, b: Order) => {
       // Safety check: handle null/undefined values
       if (!a || !b) return 0;
       
@@ -688,8 +694,8 @@ const OrderManagement = () => {
       if (!activeSort) return 0;
 
       const [columnKey, direction] = activeSort;
-      let aValue: any = a[columnKey];
-      let bValue: any = b[columnKey];
+      let aValue: string | number | undefined = a[columnKey as keyof Order] as string | number | undefined;
+      let bValue: string | number | undefined = b[columnKey as keyof Order] as string | number | undefined;
 
       // Handle null/undefined values
       if (aValue === null || aValue === undefined) return 1;
@@ -726,7 +732,7 @@ const OrderManagement = () => {
     }
 
     const exportData = filteredAndSortedOrders.map(order => ({
-      'Client': order.client || (order as any).client_name || '',
+      'Client': order.client || (order as DatabaseOrder).client_name || '',
       'Branch': order.branch,
       'SKU': order.sku,
       'Number of Cases': order.number_of_cases,
@@ -759,7 +765,7 @@ const OrderManagement = () => {
       return;
     }
 
-    const exportData = filteredAndSortedDispatch.map((order: any) => ({
+    const exportData = filteredAndSortedDispatch.map((order: Order) => ({
       'Client': order.client,
       'Branch': order.branch,
       'SKU': order.sku,
@@ -1070,7 +1076,7 @@ const OrderManagement = () => {
                 <TableBody>
                   {filteredAndSortedOrders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell>{order.client || (order as any).client_name || ''}</TableCell>
+                      <TableCell>{order.client || (order as DatabaseOrder).client_name || ''}</TableCell>
                       <TableCell>{order.branch}</TableCell>
                       <TableCell>{order.sku}</TableCell>
                       <TableCell>{order.number_of_cases}</TableCell>
@@ -1250,7 +1256,7 @@ const OrderManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAndSortedDispatch.map((order: any) => (
+                  {filteredAndSortedDispatch.map((order: Order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-medium">{order.client}</TableCell>
                       <TableCell>{order.branch}</TableCell>

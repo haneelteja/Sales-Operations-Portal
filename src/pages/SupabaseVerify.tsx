@@ -17,68 +17,99 @@ const SupabaseVerify: React.FC = () => {
 
   useEffect(() => {
     const handleVerification = async () => {
-      const token = searchParams.get('token');
-      const type = searchParams.get('type');
-      const redirectTo = searchParams.get('redirect_to');
+      // Check for hash fragments first (Supabase redirects with hash)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const type = hashParams.get('type');
+      const errorParam = hashParams.get('error');
+      const errorDescription = hashParams.get('error_description');
 
-      if (!token || type !== 'recovery') {
-        setError('Invalid verification link');
-        setIsProcessing(false);
-        return;
-      }
-
-      try {
-        // Verify the token with Supabase
-        const { data, error } = await supabase.auth.verifyOtp({
-          token_hash: token,
-          type: 'recovery'
-        });
-
-        if (error) {
-          console.error('Verification error:', error);
-          setError(error.message);
-          toast({
-            title: "Verification Failed",
-            description: error.message,
-            variant: "destructive",
+      // If we have hash fragments with tokens, this is a recovery link
+      if (type === 'recovery' && accessToken) {
+        try {
+          // Set the session directly with the tokens from hash
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || '',
           });
-        } else {
-          console.log('Verification successful:', data);
-          setSuccess(true);
-          
-          // If there's a redirect_to parameter, use it
-          if (redirectTo) {
-            // Decode the redirect URL
-            const decodedRedirect = decodeURIComponent(redirectTo);
-            toast({
-              title: "Verification Successful",
-              description: "Redirecting to password reset...",
-            });
+
+          if (error) {
+            console.error('Session error:', error);
+            const errorMessage = error.message.includes('expired') 
+              ? 'This reset link has expired. Please request a new one.'
+              : error.message.includes('invalid') 
+              ? 'This reset link is invalid. Please request a new one.'
+              : error.message || 'Invalid or expired reset link.';
             
-            // Redirect to the decoded URL
-            setTimeout(() => {
-              window.location.href = decodedRedirect;
-            }, 1000);
+            setError(errorMessage);
+            toast({
+              title: "Verification Failed",
+              description: errorMessage,
+              variant: "destructive",
+            });
           } else {
-            // Default redirect to reset password page
+            console.log('Session set successfully:', data);
+            setSuccess(true);
+            
+            // Clear the URL hash
+            window.history.replaceState({}, document.title, '/reset-password');
+            
             toast({
               title: "Verification Successful",
               description: "Redirecting to password reset...",
             });
             
+            // Redirect to reset password page
             setTimeout(() => {
               navigate('/reset-password');
             }, 1000);
           }
+        } catch (err: any) {
+          console.error('Verification error:', err);
+          setError(err.message || 'An unexpected error occurred during verification');
+          toast({
+            title: "Verification Error",
+            description: err.message || "An unexpected error occurred. Please try again.",
+            variant: "destructive",
+          });
         }
-      } catch (err) {
-        console.error('Verification error:', err);
-        setError('An unexpected error occurred during verification');
+      } 
+      // Check for error in hash (expired token, etc.)
+      else if (errorParam) {
+        const errorMsg = errorDescription 
+          ? decodeURIComponent(errorDescription)
+          : errorParam === 'otp_expired' 
+          ? 'This reset link has expired. Please request a new one.'
+          : errorParam === 'access_denied'
+          ? 'This reset link is invalid or has expired. Please request a new one.'
+          : 'Invalid verification link';
+        setError(errorMsg);
         toast({
-          title: "Verification Error",
-          description: "An unexpected error occurred. Please try again.",
+          title: "Verification Failed",
+          description: errorMsg,
           variant: "destructive",
         });
+      }
+      // Check for query parameters (direct link access with token)
+      else {
+        const token = searchParams.get('token');
+        const queryType = searchParams.get('type');
+        const redirectTo = searchParams.get('redirect_to');
+
+        if (token && queryType === 'recovery') {
+          // For query parameter tokens, redirect to reset-password
+          // Supabase will handle the token verification and redirect back with hash
+          const resetUrl = redirectTo && redirectTo.includes('/reset-password') 
+            ? redirectTo 
+            : '/reset-password';
+          window.location.href = resetUrl;
+          return;
+        } else {
+          setError('Invalid verification link');
+          setIsProcessing(false);
+          return;
+        }
       }
       
       setIsProcessing(false);

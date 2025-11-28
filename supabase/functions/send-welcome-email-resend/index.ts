@@ -114,6 +114,11 @@ serve(async (req) => {
 </html>
     `.trim()
 
+    // Check if email is the account owner (for Resend free tier limitation)
+    // On free tier, Resend only allows sending to your own verified email
+    const accountOwnerEmail = Deno.env.get('RESEND_ACCOUNT_OWNER_EMAIL') || 'nalluruhaneel@gmail.com'
+    const isAccountOwner = email.toLowerCase() === accountOwnerEmail.toLowerCase()
+    
     // Send email using Resend
     const emailResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -122,7 +127,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Elma Operations <onboarding@resend.dev>', // Using Resend's verified domain
+        from: 'Elma Operations <onboarding@resend.dev>', // Using Resend's verified domain (free tier limitation)
         to: [email],
         subject: 'Welcome to Elma Operations Portal - Your Login Credentials',
         html: emailHtml,
