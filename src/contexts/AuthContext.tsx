@@ -392,6 +392,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (authError) {
           console.error('❌ Supabase Auth email error:', authError);
+          
+          // Handle rate limiting with user-friendly message
+          const errorMessage = authError.message || '';
+          if (errorMessage.includes('only request this after') || 
+              errorMessage.includes('Too Many Requests') ||
+              authError.status === 429) {
+            // Extract wait time if available
+            const waitMatch = errorMessage.match(/(\d+)\s+seconds?/);
+            const waitTime = waitMatch ? waitMatch[1] : '60';
+            return { 
+              error: new Error(`Please wait ${waitTime} seconds before requesting another password reset. This is a security measure to prevent abuse.`) 
+            };
+          }
+          
           return { error: authError as Error };
         }
 
