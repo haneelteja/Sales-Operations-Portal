@@ -301,22 +301,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const resetUrl = `${productionUrl}/reset-password`;
 
-      const { data, error: functionError } = await supabase.functions.invoke(
-        'send-password-reset-email-resend',
-        {
-          body: { 
-            email,
-            resetUrl: resetUrl
+      let functionData, functionError;
+      try {
+        const result = await supabase.functions.invoke(
+          'send-password-reset-email-resend',
+          {
+            body: { 
+              email,
+              resetUrl: resetUrl
+            }
           }
-        }
-      );
-
-      if (functionError) {
-        console.error('Edge Function error:', functionError);
-        return { error: functionError as Error };
+        );
+        functionData = result.data;
+        functionError = result.error;
+      } catch (err) {
+        console.error('Exception calling Edge Function:', err);
+        // Don't return error here - fall through to Supabase Auth email fallback
+        functionError = err as Error;
+        functionData = null;
       }
 
-      if (data?.success) {
+      if (functionError) {
+        console.warn('⚠️ Edge Function error (will fallback to Supabase Auth):', functionError);
+        console.warn('Error details:', {
+          message: functionError.message,
+          context: functionError.context,
+          status: functionError.status,
+          statusCode: functionError.statusCode,
+          data: functionData
+        });
+        
+        // Extract error message from response if available
+        let errorMessage = functionError.message || 'Failed to send password reset email';
+        
+        // Try to extract error from response data
+        if (functionData) {
+          if (typeof functionData === 'object') {
+            if ('error' in functionData) {
+              errorMessage = String(functionData.error);
+              if ('details' in functionData && functionData.details) {
+                errorMessage += `: ${String(functionData.details)}`;
+              }
+            } else if ('message' in functionData) {
+              errorMessage = String(functionData.message);
+            }
+            
+            // Check for troubleshooting info
+            if ('troubleshooting' in functionData && functionData.troubleshooting) {
+              const troubleshooting = functionData.troubleshooting as { issue?: string; solution?: string };
+              console.info('ℹ️ Troubleshooting info:', troubleshooting);
+            }
+          }
+        }
+        
+        // Also check error context
+        if (functionError.context && typeof functionError.context === 'object') {
+          if ('error' in functionError.context) {
+            errorMessage = String(functionError.context.error);
+          }
+        }
+        
+        console.info('ℹ️ Edge Function failed:', errorMessage);
+        console.info('🔄 Proceeding to Supabase Auth email fallback...');
+        // Don't return error - fall through to Supabase Auth email fallback
+      }
+
+      // Check if Edge Function succeeded
+      if (!functionError && functionData?.success) {
         // Clear password reset requirement if user is logged in
         if (user) {
           await supabase.auth.updateUser({
@@ -327,10 +378,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setRequiresPasswordReset(false);
         }
         return { error: null };
-      } else {
-        // Edge Function returned error
-        console.error('Edge Function returned error:', data?.error);
-        return { error: new Error(data?.error || 'Failed to send password reset email') };
+      }
+
+      // Fallback to Supabase Auth email (works without domain verification)
+      console.log('🔄 Falling back to Supabase Auth email service for password reset');
+      console.log('Email:', email);
+      console.log('Reset URL:', resetUrl);
+      
+      try {
+        const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: resetUrl
+        });
+
+        if (authError) {
+          console.error('❌ Supabase Auth email error:', authError);
+          return { error: authError as Error };
+        }
+
+        console.log('✅ Password reset email sent successfully via Supabase Auth');
+
+        // Clear password reset requirement if user is logged in
+        if (user) {
+          await supabase.auth.updateUser({
+            data: {
+              requires_password_reset: false,
+            }
+          });
+          setRequiresPasswordReset(false);
+        }
+
+        return { error: null };
+      } catch (fallbackError) {
+        console.error('❌ Fallback to Supabase Auth also failed:', fallbackError);
+        return { error: fallbackError as Error };
       }
     } catch (error: unknown) {
       const errorObj = error as Error;
