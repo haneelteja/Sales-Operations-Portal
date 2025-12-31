@@ -148,3 +148,15 @@ Value: v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com
 - **Domain Verification:** https://resend.com/domains
 - **Resend Dashboard:** https://resend.com
 
+
+
+
+
+
+
+
+
+
+
+
+

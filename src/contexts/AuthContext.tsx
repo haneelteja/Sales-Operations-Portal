@@ -397,12 +397,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Reset URL:', resetUrl);
       
       try {
-        const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+        // IMPORTANT: Supabase resetPasswordForEmail returns success even if user doesn't exist
+        // This is a security feature to prevent email enumeration attacks
+        // We need to check if user exists first (optional but helpful)
+        
+        const { data: authData, error: authError } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: resetUrl
+        });
+
+        // Log the full response for debugging
+        console.log('📧 Supabase Auth response:', {
+          data: authData,
+          error: authError,
+          email: email,
+          redirectTo: resetUrl,
+          note: 'Supabase returns success even if user does not exist (security feature)'
         });
 
         if (authError) {
           console.error('❌ Supabase Auth email error:', authError);
+          console.error('Error details:', {
+            message: authError.message,
+            status: authError.status,
+            name: authError.name
+          });
           
           // Handle rate limiting with user-friendly message
           const errorMessage = authError.message || '';
@@ -420,7 +438,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { error: authError as Error };
         }
 
-        console.log('✅ Password reset email sent successfully via Supabase Auth');
+        // Supabase returns null/undefined on success for resetPasswordForEmail
+        // This doesn't guarantee email was sent - Supabase silently succeeds even if user doesn't exist
+        console.log('✅ Supabase Auth accepted password reset request');
+        console.log('⚠️ Note: If email is not received, check:');
+        console.log('   1. User exists in Supabase (Dashboard → Auth → Users)');
+        console.log('   2. Email confirmation is not required');
+        console.log('   3. Check spam folder');
+        console.log('   4. Supabase email logs (Dashboard → Auth → Logs)');
 
         // Clear password reset requirement if user is logged in
         if (user) {

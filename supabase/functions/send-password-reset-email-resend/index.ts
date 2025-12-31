@@ -13,32 +13,11 @@ serve(async (req) => {
   }
 
   try {
-    // Parse request body with error handling
-    let requestBody
-    try {
-      requestBody = await req.json()
-    } catch (parseError) {
-      console.error('Error parsing request body:', parseError)
-      return new Response(
-        JSON.stringify({ 
-          error: 'Invalid request body',
-          details: parseError instanceof Error ? parseError.message : 'Failed to parse JSON'
-        }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
+    const { email, resetUrl, username } = await req.json()
 
-    const { email, resetUrl, username } = requestBody
-
-    if (!email || typeof email !== 'string' || email.trim() === '') {
+    if (!email) {
       return new Response(
-        JSON.stringify({ 
-          error: 'Missing or invalid email',
-          details: 'Email is required and must be a non-empty string'
-        }),
+        JSON.stringify({ error: 'Missing required field: email' }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -64,25 +43,8 @@ serve(async (req) => {
     }
 
     // Create Supabase client with service role key
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('Missing Supabase environment variables:', {
-        hasUrl: !!supabaseUrl,
-        hasServiceKey: !!supabaseServiceKey
-      })
-      return new Response(
-        JSON.stringify({ 
-          error: 'Server configuration error',
-          message: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variable is missing'
-        }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
@@ -93,41 +55,20 @@ serve(async (req) => {
     
     // Generate password reset token using Supabase Admin API
     // This creates a proper reset link that Supabase will recognize
-    let resetData
-    let resetError
-    
-    try {
-      const result = await supabase.auth.admin.generateLink({
-        type: 'recovery',
-        email: email,
-        options: {
-          redirectTo: appResetUrl // This should be /reset-password
-        }
-      })
-      resetData = result.data
-      resetError = result.error
-    } catch (err) {
-      console.error('Exception generating reset link:', err)
-      resetError = err as Error
-    }
+    const { data: resetData, error: resetError } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: email,
+      options: {
+        redirectTo: appResetUrl // This should be /reset-password
+      }
+    })
 
     if (resetError || !resetData) {
       console.error('Error generating reset link:', resetError)
-      const errorMessage = resetError instanceof Error 
-        ? resetError.message 
-        : typeof resetError === 'object' && resetError !== null && 'message' in resetError
-        ? String(resetError.message)
-        : 'Unknown error generating reset link'
-      
       return new Response(
         JSON.stringify({ 
           error: 'Failed to generate reset link',
-          details: errorMessage,
-          debug: {
-            email: email,
-            appResetUrl: appResetUrl,
-            errorType: resetError?.constructor?.name || typeof resetError
-          }
+          details: resetError?.message 
         }),
         { 
           status: 500, 
@@ -485,7 +426,7 @@ serve(async (req) => {
                     <h3 class="security-notice-title">Security Reminder</h3>
                 </div>
                 <p class="security-notice-text">
-                    <strong>Important:</strong> This password reset link will expire in <strong>1 hour</strong> for your security. 
+                    <strong>Important:</strong> This password reset link will expire in <strong>24 hours</strong> for your security. 
                     For your protection, please do not share this link with anyone.
                 </p>
                 <p class="security-notice-text" style="margin-top: 12px;">
@@ -566,39 +507,26 @@ serve(async (req) => {
     if (!emailResponse.ok) {
       console.error('Resend API error:', emailData)
       
-      // Check for specific Resend errors
-      const isDomainVerificationError = emailData.statusCode === 403 && 
-        emailData.message?.includes('verify a domain')
-      const isAccountOwnerOnlyError = emailData.message?.includes('only send testing emails to your own email')
-      
-      let errorMessage = 'Failed to send password reset email'
-      let errorDetails = emailData.message || 'Unknown Resend API error'
-      
-      if (isDomainVerificationError || isAccountOwnerOnlyError) {
-        errorMessage = 'Email service configuration required'
-        errorDetails = 'Resend requires domain verification to send emails to recipients. Please verify your domain at resend.com/domains or contact your administrator.'
-        
-        // Log email details for manual sending
-        console.log('=== PASSWORD RESET EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
-        console.log('To:', email)
-        console.log('Subject: 🔐 Reset Your Password - Elma Operations Portal')
-        console.log('Reset URL:', finalResetUrl)
-        console.log('HTML Length:', emailHtml.length)
-        console.log('===========================================================')
-      }
-      
+      // Log email details for manual sending if Resend fails
+      console.log('=== PASSWORD RESET EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
+      console.log('To:', email)
+      console.log('Subject: 🔐 Reset Your Password - Elma Operations Portal')
+      console.log('Reset URL:', finalResetUrl)
+      console.log('HTML Length:', emailHtml.length)
+      console.log('===========================================================')
+
       return new Response(
         JSON.stringify({ 
           success: false,
-          error: errorMessage,
-          details: errorDetails,
-          resendError: emailData,
-          resetUrl: finalResetUrl, // Include reset URL so it can be manually sent
-          troubleshooting: isDomainVerificationError || isAccountOwnerOnlyError ? {
-            issue: 'Resend domain verification required',
-            solution: 'Verify your domain at https://resend.com/domains and update the FROM address in the Edge Function',
-            temporaryWorkaround: 'The reset link has been generated. You can manually send it to the user or use Supabase Auth email instead.'
-          } : undefined
+          error: 'Failed to send email',
+          details: emailData,
+          emailDetails: {
+            to: email,
+            subject: '🔐 Reset Your Password - Elma Operations Portal',
+            resetUrl: finalResetUrl,
+            html: emailHtml
+          },
+          note: 'Email details logged above. Check Resend API key configuration.'
         }),
         { 
           status: 500, 
@@ -627,20 +555,10 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Function error:', error)
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : typeof error === 'object' && error !== null && 'message' in error
-      ? String(error.message)
-      : 'Unknown error occurred'
-    
-    const errorStack = error instanceof Error ? error.stack : undefined
-    
     return new Response(
       JSON.stringify({ 
         error: 'Internal server error', 
-        details: errorMessage,
-        stack: errorStack,
-        type: error?.constructor?.name || typeof error
+        details: error.message 
       }),
       { 
         status: 500, 

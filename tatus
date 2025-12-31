@@ -1,0 +1,35 @@
+warning: in the working copy of 'src/components/AppSidebar.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/factory/FactoryPayables.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ui/column-filter.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ui/mobile-navigation.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/redis.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/send-welcome-email-resend/index.ts', LF will be replaced by CRLF the next time Git touches it
+RESEND_DOMAIN_SETUP.md
+package-lock.json
+package.json
+src/components/configurations/ConfigurationManagement.tsx
+src/components/dashboard/Dashboard.tsx
+src/components/order-management/OrderManagement.tsx
+src/components/sales/SalesEntry.tsx
+src/components/transport/TransportExpenses.tsx
+src/contexts/AuthContext.tsx
+src/hooks/useDatabaseOptimized.ts
+src/integrations/supabase/client.ts
+src/lib/cache.ts
+src/lib/code-optimizations.ts
+src/lib/redis.ts
+src/pages/SupabaseVerify.tsx
+src/test/components/Button.test.tsx
+src/test/integrations/supabase-client.test.ts
+src/test/lib/form-utils.test.ts
+src/test/setup.ts
+src/test/utils.tsx
+supabase/.temp/cli-latest
+supabase/.temp/gotrue-version
+supabase/.temp/pooler-url
+supabase/.temp/postgres-version
+supabase/.temp/project-ref
+supabase/.temp/storage-version
+supabase/functions/send-password-reset-email-resend/index.ts
+supabase/functions/send-welcome-email-resend/index.ts
+vitest.config.ts

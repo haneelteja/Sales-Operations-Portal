@@ -65,12 +65,15 @@ const SupabaseVerify: React.FC = () => {
               navigate('/reset-password');
             }, 1000);
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Verification error:', err);
-          setError(err.message || 'An unexpected error occurred during verification');
+          const errorMessage = err instanceof Error 
+            ? err.message 
+            : 'An unexpected error occurred during verification';
+          setError(errorMessage);
           toast({
             title: "Verification Error",
-            description: err.message || "An unexpected error occurred. Please try again.",
+            description: errorMessage,
             variant: "destructive",
           });
         }
