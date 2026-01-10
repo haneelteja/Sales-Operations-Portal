@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/lib/logger';
+import { useSessionManagement } from '@/hooks/useSessionManagement';
 
 interface UserProfile {
   id: string;
@@ -31,6 +32,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   clearPasswordResetRequirement: () => Promise<void>;
+  refreshSession: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -289,7 +291,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
+    setProfile(null);
   };
+
+  // Session management with keep-alive (defined after signOut)
+  const { refreshSession: refreshSessionToken } = useSessionManagement(session, {
+    enableKeepAlive: true,
+    refreshInterval: 300000, // 5 minutes
+    warningThreshold: 300, // 5 minutes
+    criticalThreshold: 60, // 1 minute
+    onSessionExpired: async () => {
+      logger.warn('Session expired, signing out...');
+      await signOut();
+    },
+  });
 
   const changePassword = async (currentPassword: string, newPassword: string) => {
     try {
@@ -525,6 +542,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshSession = async (): Promise<boolean> => {
+    if (!session) return false;
+    return await refreshSessionToken();
+  };
+
   const value = {
     user,
     session,
@@ -538,6 +560,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     resetPassword,
     updatePassword,
     clearPasswordResetRequirement,
+    refreshSession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

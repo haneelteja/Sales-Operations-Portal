@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Edit, Download } from "lucide-react";
 import * as XLSX from 'xlsx';
 import { ColumnFilter } from '@/components/ui/column-filter';
+import { useAutoSave } from "@/hooks/useAutoSave";
 
 const SalesEntry = () => {
   const { isMobileDevice } = useMobileDetection();
@@ -98,6 +99,68 @@ const SalesEntry = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Auto-save form data to prevent data loss from session timeouts
+  const { loadData: loadSaleFormData, clearSavedData: clearSaleFormData } = useAutoSave({
+    storageKey: 'sales_entry_sale_form_autosave',
+    data: saleForm,
+    enabled: true,
+    debounceDelay: 2000,
+    onLoad: (savedData) => {
+      if (savedData && Object.values(savedData).some(v => v !== '')) {
+        setSaleForm(savedData);
+        toast({
+          title: "Form data restored",
+          description: "Your previous sale form data has been restored.",
+        });
+      }
+    },
+  });
+
+  const { loadData: loadPaymentFormData, clearSavedData: clearPaymentFormData } = useAutoSave({
+    storageKey: 'sales_entry_payment_form_autosave',
+    data: paymentForm,
+    enabled: true,
+    debounceDelay: 2000,
+    onLoad: (savedData) => {
+      if (savedData && Object.values(savedData).some(v => v !== '')) {
+        setPaymentForm(savedData);
+        toast({
+          title: "Form data restored",
+          description: "Your previous payment form data has been restored.",
+        });
+      }
+    },
+  });
+
+  const { loadData: loadSalesItemsData, clearSavedData: clearSalesItemsData } = useAutoSave({
+    storageKey: 'sales_entry_items_autosave',
+    data: { items: salesItems, currentItem, isSingleSKUMode },
+    enabled: true,
+    debounceDelay: 2000,
+    onLoad: (savedData) => {
+      if (savedData?.items && savedData.items.length > 0) {
+        setSalesItems(savedData.items);
+        if (savedData.currentItem) {
+          setCurrentItem(savedData.currentItem);
+        }
+        if (savedData.isSingleSKUMode !== undefined) {
+          setIsSingleSKUMode(savedData.isSingleSKUMode);
+        }
+        toast({
+          title: "Sales items restored",
+          description: "Your previous sales items have been restored.",
+        });
+      }
+    },
+  });
+
+  // Load saved data on mount
+  useEffect(() => {
+    loadSaleFormData();
+    loadPaymentFormData();
+    loadSalesItemsData();
+  }, [loadSaleFormData, loadPaymentFormData, loadSalesItemsData]);
 
   // Fetch customers for dropdown (must be before functions that use it)
   const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
@@ -1259,6 +1322,17 @@ const SalesEntry = () => {
         branch: "",
         price_per_case: ""
       });
+      // Clear auto-saved data after successful submission
+      clearSaleFormData();
+      clearSalesItemsData();
+      setSalesItems([]);
+      setCurrentItem({
+        sku: "",
+        quantity: "",
+        price_per_case: "",
+        amount: "",
+        description: ""
+      });
       queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
       queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
@@ -1324,6 +1398,8 @@ const SalesEntry = () => {
         description: "",
         transaction_date: new Date().toISOString().split('T')[0]
       });
+      // Clear auto-saved data after successful submission
+      clearPaymentFormData();
       queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
       queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });

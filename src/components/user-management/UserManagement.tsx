@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, Search, X, Shield } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import * as XLSX from 'xlsx';
+import { useAutoSave } from "@/hooks/useAutoSave";
 
 interface UserManagementRecord {
   id: string;
@@ -23,6 +24,7 @@ interface UserManagementRecord {
   associated_clients: string[];
   associated_branches: string[];
   status: 'active' | 'inactive' | 'pending';
+  role: 'admin' | 'manager' | 'client';
   created_by: string;
   last_login: string | null;
   created_at: string;
@@ -45,6 +47,34 @@ const UserManagement = () => {
     role: 'client'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  // Auto-save form data to prevent data loss
+  const { loadData, clearSavedData } = useAutoSave({
+    storageKey: 'user_management_form_autosave',
+    data: userForm,
+    enabled: true,
+    debounceDelay: 2000,
+    onLoad: (savedData) => {
+      if (savedData && !editingUserId) {
+        setUserForm(savedData);
+        toast({
+          title: "Form data restored",
+          description: "Your previous form data has been restored.",
+        });
+      }
+    },
+  });
+
+  // Load saved data on mount (only if not editing)
+  useEffect(() => {
+    if (!editingUserId) {
+      const saved = loadData();
+      if (saved) {
+        setUserForm(saved);
+      }
+    }
+  }, [loadData, editingUserId]);
   const [clientBranchSearch, setClientBranchSearch] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
@@ -57,7 +87,6 @@ const UserManagement = () => {
     role: 'all',
     status: 'all'
   });
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   // Fetch user management records
@@ -266,8 +295,29 @@ const UserManagement = () => {
         }
       } else {
         // For client roles, use the selected client-branch combinations
-        associatedClients = formData.associated_client_branches.map(combo => combo.split(' - ')[0]);
-        associatedBranches = formData.associated_client_branches.map(combo => combo.split(' - ')[1]);
+        // Parse "Client - Branch" format safely
+        associatedClients = formData.associated_client_branches
+          .map(combo => {
+            const parts = combo.split(' - ');
+            return parts[0]?.trim() || '';
+          })
+          .filter(Boolean);
+        
+        associatedBranches = formData.associated_client_branches
+          .map(combo => {
+            const parts = combo.split(' - ');
+            return parts[1]?.trim() || 'All Branches';
+          })
+          .filter(Boolean);
+        
+        // Ensure arrays are the same length
+        const maxLength = Math.max(associatedClients.length, associatedBranches.length);
+        while (associatedClients.length < maxLength) {
+          associatedClients.push('');
+        }
+        while (associatedBranches.length < maxLength) {
+          associatedBranches.push('All Branches');
+        }
       }
 
       // Check if user is authenticated using AuthContext (works with mock auth)
@@ -371,6 +421,7 @@ const UserManagement = () => {
         associated_client_branches: [],
         role: 'client'
       });
+      clearSavedData(); // Clear auto-saved data after successful submission
       toast({
         title: "Success",
         description: "User created successfully. Welcome email has been sent automatically.",
@@ -601,8 +652,29 @@ const UserManagement = () => {
         }
       } else {
         // For client roles, use the selected client-branch combinations
-        associatedClients = associated_client_branches.map(combo => combo.split(' - ')[0]);
-        associatedBranches = associated_client_branches.map(combo => combo.split(' - ')[1]);
+        // Parse "Client - Branch" format safely
+        associatedClients = associated_client_branches
+          .map(combo => {
+            const parts = combo.split(' - ');
+            return parts[0]?.trim() || '';
+          })
+          .filter(Boolean);
+        
+        associatedBranches = associated_client_branches
+          .map(combo => {
+            const parts = combo.split(' - ');
+            return parts[1]?.trim() || 'All Branches';
+          })
+          .filter(Boolean);
+        
+        // Ensure arrays are the same length
+        const maxLength = Math.max(associatedClients.length, associatedBranches.length);
+        while (associatedClients.length < maxLength) {
+          associatedClients.push('');
+        }
+        while (associatedBranches.length < maxLength) {
+          associatedBranches.push('All Branches');
+        }
       }
 
       const { error } = await supabase
@@ -621,6 +693,7 @@ const UserManagement = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user-management"] });
+      clearSavedData(); // Clear auto-saved data after successful update
       toast({
         title: "Success",
         description: "User details updated successfully.",
@@ -759,6 +832,22 @@ const UserManagement = () => {
   };
 
   const renderClientBranchAccess = (user: UserManagementRecord) => {
+    // For admin/manager roles, show "All Clients" if they have access to all
+    if (user.role === 'admin' || user.role === 'manager') {
+      // Check if they have all available clients (or a large number indicating all access)
+      const allClientBranches = getUniqueClientBranches();
+      const hasAllAccess = allClientBranches.length > 0 && 
+        (user.associated_clients?.length || 0) >= allClientBranches.length;
+      
+      if (hasAllAccess || (user.associated_clients?.length || 0) > 5) {
+        return (
+          <Badge variant="secondary" className="text-xs px-1 py-0 bg-blue-100 text-blue-800">
+            All Clients & Branches
+          </Badge>
+        );
+      }
+    }
+    
     const clientBranches = user.associated_clients && user.associated_clients.length > 0 ? 
       user.associated_clients.map((client, idx) => {
         const branch = user.associated_branches && user.associated_branches[idx] ? user.associated_branches[idx] : 'All';
@@ -798,13 +887,13 @@ const UserManagement = () => {
     );
   };
 
-  // Role-based access control - only managers can access
-  if (profile?.role !== 'manager') {
+  // Role-based access control - only managers and admins can access
+  if (profile?.role !== 'manager' && profile?.role !== 'admin') {
     return (
       <Alert className="m-6" variant="destructive">
         <Shield className="h-4 w-4" />
         <AlertDescription>
-          Access denied. This page is only available to users with Manager role.
+          Access denied. This page is only available to users with Manager or Admin role.
           Your current role: {profile?.role || 'Unknown'}
         </AlertDescription>
       </Alert>
@@ -1290,13 +1379,32 @@ const UserManagement = () => {
                             variant="outline"
                             onClick={() => {
                               // Set form data for editing
+                              // For admin/manager roles, get all available client-branch combinations
+                              // For client roles, use the user's assigned combinations
+                              let clientBranches: string[] = [];
+                              
+                              if (user.role === 'admin' || user.role === 'manager') {
+                                // For admin/manager, get all available combinations
+                                clientBranches = getUniqueClientBranches();
+                              } else {
+                                // For client role, map the arrays to combinations
+                                // Handle cases where arrays might be different lengths
+                                const maxLength = Math.max(
+                                  user.associated_clients?.length || 0,
+                                  user.associated_branches?.length || 0
+                                );
+                                
+                                clientBranches = Array.from({ length: maxLength }, (_, idx) => {
+                                  const client = user.associated_clients?.[idx] || '';
+                                  const branch = user.associated_branches?.[idx] || 'All Branches';
+                                  return `${client} - ${branch}`;
+                                }).filter(cb => cb.trim() !== ' - ' && cb.trim() !== '');
+                              }
+                              
                               setUserForm({
                                 username: user.username,
                                 email: user.email,
-                                associated_client_branches: user.associated_clients.map((client, idx) => {
-                                  const branch = user.associated_branches && user.associated_branches[idx] ? user.associated_branches[idx] : 'All Branches';
-                                  return `${client} - ${branch}`;
-                                }),
+                                associated_client_branches: clientBranches,
                                 role: user.role
                               });
                               setEditingUserId(user.user_id);

@@ -4,6 +4,7 @@ import Auth from '@/pages/Auth';
 import Index from '@/pages/Index';
 import ResetPassword from '@/pages/ResetPassword';
 import { Loader2 } from 'lucide-react';
+import { SessionWarning } from '@/components/SessionWarning';
 
 const PortalRouter: React.FC = () => {
   const { user, session, loading: authLoading, requiresPasswordReset } = useAuth();
@@ -66,7 +67,12 @@ const PortalRouter: React.FC = () => {
 
   // Show the main application interface
   console.log('Rendering Index component');
-  return <Index />;
+  return (
+    <>
+      <SessionWarning />
+      <Index />
+    </>
+  );
 };
 
 export default PortalRouter;
