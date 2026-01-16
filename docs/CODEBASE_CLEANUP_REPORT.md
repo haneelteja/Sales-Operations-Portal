@@ -1,5 +1,5 @@
 # Codebase Cleanup Report
-## Aamodha Operations Portal - Cleanup Summary
+## Comprehensive Cleanup Summary
 
 **Date:** January 2025  
 **Cleanup Type:** Unused Code Removal & File Cleanup  
@@ -9,302 +9,276 @@
 
 ## Executive Summary
 
-This report documents the comprehensive cleanup of the Aamodha Operations Portal codebase, including removal of unused code, temporary files, duplicate documentation, and obsolete scripts. All deletions are tracked in Git for full traceability.
+This report documents the comprehensive cleanup of the Aamodha Operations Portal codebase, including removal of unused code, temporary files, backup files, and obsolete scripts. All deletions are tracked in Git for full traceability.
 
 ---
 
-## 1. Unused Code Removed
+## 1. Files Removed from Root Directory
 
-### 1.1 Unused Imports
+### 1.1 Suspicious/Typo Files ✅
+- **`tatus`** - Accidental git status output saved as file
+  - **Reason:** Appears to be a typo/incomplete file from git status command
+  - **Impact:** None - file contained only git status output
+  - **Status:** ✅ Removed
 
-#### File: `src/pages/Index.tsx`
-- **Removed:** `import Receivables from "@/components/receivables/Receivables";`
-- **Reason:** Component is imported but never used in the renderContent() switch statement
-- **Impact:** No functional impact - component exists but is not routed
-- **Status:** ✅ Removed
+- **`yntax error in FactoryPayables - Actions column content moved inside TableRow`** - Error note saved as file
+  - **Reason:** Appears to be a note/error message accidentally saved as a file
+  - **Impact:** None - not a valid code file
+  - **Status:** ✅ Removed
 
-**Note:** The Receivables component file itself is kept as it may be used in the future or referenced elsewhere.
+### 1.2 Test Files ✅
+- **`test_database_final.html`** - Test HTML file
+  - **Reason:** Test file containing hardcoded Supabase credentials, should not be in root
+  - **Impact:** None - test file, not used in application
+  - **Security Note:** File contained hardcoded API keys (now removed)
+  - **Status:** ✅ Removed
 
----
-
-## 2. Temporary Scripts Removed
-
-### 2.1 Authentication Bypass Scripts
-- **Files:**
-  - `bypass_auth_fix.js`
-  - `bypass_auth_fix.cjs`
-- **Reason:** Temporary development scripts for bypassing authentication. No longer needed in production codebase.
-- **Impact:** None - these were one-time use scripts
-
-### 2.2 Cleanup Scripts
-- **Files:**
-  - `cleanup_temp_files.js`
-- **Reason:** Meta-cleanup script that was itself temporary
-- **Impact:** None - script was for one-time cleanup
-
-### 2.3 User Management Scripts
-- **Files:**
-  - `create_user_management_record.js`
-  - `create_user_management_record.cjs`
-  - `final_user_setup.cjs`
-  - `update_user_management.js`
-- **Reason:** One-time setup scripts that have already been executed
-- **Impact:** None - database setup is complete
-
-### 2.4 Foreign Key Setup Scripts
-- **Files:**
-  - `bypass_foreign_key_setup.cjs`
-- **Reason:** Temporary script for development setup
-- **Impact:** None
+### 1.3 Setup Scripts ✅
+- **`setup_new_repo.ps1`** - One-time repository setup script
+  - **Reason:** One-time setup script for V2 repository, no longer needed
+  - **Impact:** None - script was for initial setup only
+  - **Status:** ✅ Removed
 
 ---
 
-## 3. Temporary Shell Scripts Removed
+## 2. Backup Files Removed
 
-### 3.1 Startup/Fix Scripts
-- **Files:**
-  - `fix_and_start.sh`
-  - `fix_auth_and_start.sh`
-  - `quick_fix.sh`
-  - `startup_fix.sh`
-- **Reason:** Temporary scripts for fixing issues during development
-- **Impact:** None - issues are resolved
+### 2.1 Source Code Backups ✅
+- **`src/contexts/AuthContext.tsx.backup`** - Backup of AuthContext
+  - **Reason:** Backup file, original is in version control
+  - **Impact:** None - backup file, original preserved in git
+  - **Status:** ✅ Removed
 
-### 3.2 Setup Scripts
-- **Files:**
-  - `setup_email_sending.sh`
-  - `setup-redis.sh`
-  - `setup-github-vercel.sh`
-- **Reason:** One-time setup scripts that have been executed
-- **Impact:** None - setup is complete
+### 2.2 Migration Backups ✅
+- **`supabase/migrations/20250103140000_add_rls_policies_for_user_access.sql.bak`** - Backup migration file
+  - **Reason:** Backup of migration file, original is in version control
+  - **Impact:** None - backup file, original preserved in git
+  - **Status:** ✅ Removed
 
 ---
 
-## 4. Duplicate/Obsolete SQL Files Removed
+## 3. Unused Code Files Removed
 
-### 4.1 Factory Pricing Fixes (Consolidated)
-**Kept:** `FIX_FACTORY_PRICING_SAFE.sql` (most recent and comprehensive)  
-**Removed:**
-- `FIX_FACTORY_PRICING_TABLE.sql`
-- `FIX_FACTORY_PRICING_STEP_BY_STEP.sql`
-- `FIX_FACTORY_PRICING_SINGLE_RUN.sql`
-- **Reason:** Multiple versions of the same fix. Kept the most comprehensive version.
+### 3.1 Unused Hooks ✅
+- **`src/hooks/useDatabaseOptimized.ts`** - Optimized database hooks with Redis caching
+  - **Reason:** File not imported or used anywhere in codebase
+  - **Lines:** ~407 lines
+  - **Impact:** None - code was never integrated
+  - **Note:** Optimization patterns were implemented directly in components instead
+  - **Status:** ✅ Removed
 
-### 4.2 RLS Policy Fixes (Consolidated)
-**Kept:** Latest versions of RLS fixes  
-**Removed:**
-- `FIX_RLS_POLICIES.sql` (superseded by more specific fixes)
-- `FIX_ORDERS_RLS.sql` (superseded by `FIX_ORDERS_RLS_FINAL.sql`)
-- `FIX_ORDERS_RLS_SIMPLIFIED.sql` (superseded by `FIX_ORDERS_RLS_FINAL.sql`)
-- `FIX_FACTORY_PAYABLES_RLS.sql` (superseded by `FIX_FACTORY_PAYABLES_RLS_SIMPLIFIED.sql`)
-- **Reason:** Multiple iterations of fixes. Kept final versions.
-
-### 4.3 Verification/Check Scripts (Consolidated)
-**Kept:** Most comprehensive verification scripts  
-**Removed:**
-- `CHECK_ORDERS_SCHEMA.sql` (duplicate of `CHECK_ORDERS_TABLE_SCHEMA.sql`)
-- `CHECK_CUSTOMERS_CONSTRAINTS.sql` (one-time check, already executed)
-- `CHECK_CUSTOMER_FOREIGN_KEYS.sql` (one-time check, already executed)
-- `CHECK_DUPLICATE_CUSTOMERS.sql` (one-time check, already executed)
-- `CHECK_SALES_TRANSACTIONS_STRUCTURE.sql` (one-time check, already executed)
-- `VERIFY_SALES_TRANSACTIONS_SCHEMA.sql` (one-time check, already executed)
-- `VERIFY_TRANSPORT_EXPENSES_POLICIES.sql` (one-time check, already executed)
-- `VERIFY_FACTORY_PAYABLES_POLICIES.sql` (one-time check, already executed)
-- `VERIFY_ORDERS_POLICIES.sql` (one-time check, already executed)
-- `VERIFY_TABLE_STRUCTURE.sql` (one-time check, already executed)
-- **Reason:** One-time diagnostic queries that have been executed and results reviewed.
-
-### 4.4 Debug/Test SQL Files
-**Removed:**
-- `DEBUG_INSERT_ERROR.sql` (temporary debugging script)
-- `TEST_INSERT_MANUAL.sql` (temporary test script)
-- `TEST_APP_QUERIES.sql` (temporary test queries)
-- `SCHEMA_CHECK_QUERIES.sql` (one-time diagnostic)
-- `SUPABASE_VERIFICATION_QUERIES.sql` (one-time diagnostic)
-- `REFRESH_SUPABASE_SCHEMA_CACHE.sql` (one-time operation)
-- **Reason:** Temporary debugging and testing scripts
-
-### 4.5 User Management SQL Files
-**Removed:**
-- `create_auth_user_direct.sql` (one-time setup)
-- `create_test_user.sql` (temporary test)
-- `fix_user_management_direct.sql` (one-time fix)
-- **Reason:** One-time setup scripts that have been executed
-
-### 4.6 Database Reset Scripts
-**Removed:**
-- `reset_database_completely.sql` (dangerous script, should not be in repo)
-- **Reason:** Destructive script that should not be version controlled
+### 3.2 Unused Utility Files ✅
+- **`src/lib/code-optimizations.ts`** - Code optimization utilities and examples
+  - **Reason:** File not imported or used anywhere in codebase
+  - **Lines:** ~380 lines
+  - **Impact:** None - utilities were never used
+  - **Note:** Similar patterns were implemented directly in components
+  - **Status:** ✅ Removed
 
 ---
 
-## 5. Duplicate Documentation Files Removed
+## 4. Code Quality Improvements
 
-### 5.1 Code Review Summaries (Consolidated)
-**Kept:** `COMPREHENSIVE_CODEBASE_REVIEW_SUMMARY.md` (most complete)  
-**Removed:**
-- `CODEBASE_REVIEW_SUMMARY.md` (duplicate, less comprehensive)
-- `code_quality_improvements.md` (content merged into comprehensive review)
-- **Reason:** Multiple versions of the same documentation
+### 4.1 Console Statements
+- **Found:** 24 files contain console.log/warn/error statements
+- **Status:** ⚠️ Review recommended
+- **Action:** Consider replacing with proper logging service
+- **Files:** See console statement analysis below
 
-### 5.2 Deployment Documentation (Consolidated)
-**Kept:** `DEPLOYMENT_GUIDE.md` (most comprehensive)  
-**Removed:**
-- `DEPLOYMENT_READY.md` (temporary status file)
-- `DEPLOYMENT_ANALYSIS.md` (temporary analysis)
-- `QUICK_DEPLOY.md` (temporary quick reference)
-- **Reason:** Temporary deployment status files, information consolidated into main guide
+### 4.2 Unused Imports
+- **Status:** ✅ No unused imports found
+- **Note:** All imports are actively used in components
 
-### 5.3 Database Documentation (Consolidated)
-**Kept:** `MIGRATION_GUIDE.md`  
-**Removed:**
-- `DATABASE_FIXES_SUMMARY.md` (temporary summary, info in migration guide)
-- `SCHEMA_VERIFICATION.md` (one-time verification, info in migration guide)
-- `PERMANENT_SOLUTION.md` (temporary solution document)
-- **Reason:** Temporary documentation consolidated into main guides
-
-### 5.4 Setup Documentation (Consolidated)
-**Kept:** `README.md` (main documentation)  
-**Removed:**
-- `SETUP_COMPLETE.md` (temporary status file)
-- **Reason:** Temporary status file, information in README
+### 4.3 Dead Code
+- **Status:** ✅ No dead code blocks found
+- **Note:** Codebase is clean of commented-out code blocks
 
 ---
 
-## 6. Backup Migration Files Removed
-
-### 6.1 Supabase Migrations Backup
-**Removed:** Entire `supabase/migrations_backup/` directory
-- `20250902041945_28f3a8cf-66a8-4262-bb5f-ad6a6a7eb9b2.sql`
-- `20250903031703_6fe04d7c-4e15-4988-ae0b-aa3fa4b3123f.sql`
-- `20250905112636_e7a3b944-cd0b-4c89-86da-979fe4e41bb3.sql`
-- `20251004000000_create_label_availabilities.sql`
-- `20251004000005_create_label_payments.sql`
-- **Reason:** Backup files are in Git history. Current migrations are in `supabase/migrations/`
-
----
-
-## 7. Files Kept (Important)
-
-### 7.1 Essential SQL Files
-- `DATABASE_INDEXES_OPTIMIZATION.sql` - Performance optimization
-- `FIX_N_PLUS_ONE_TRANSPORT_EXPENSES.sql` - Performance fix
-- `CREATE_ORDERS_DISPATCH_TABLE.sql` - Table creation
-- `FIX_ORDERS_RLS_FINAL.sql` - Final RLS fix
-- `FIX_FACTORY_PAYABLES_RLS_SIMPLIFIED.sql` - RLS fix
-- `FIX_CUSTOMERS_RLS.sql` - RLS fix
-- `FIX_SALES_TRANSACTIONS_RLS.sql` - RLS fix
-- `FIX_TRANSPORT_EXPENSES_RLS.sql` - RLS fix
-- `FIX_ALL_LABEL_TABLES_RLS.sql` - RLS fix
-- `ADD_CUSTOMERS_UNIQUE_CONSTRAINT.sql` - Schema fix
-- `ADD_SKU_AND_CASES_TO_TRANSPORT_EXPENSES.sql` - Schema update
-- `UPDATE_COST_PER_CASE_WITH_TAX.sql` - Calculation fix
-- `FIX_PRICE_PER_CASE_COLUMN.sql` - Schema fix
-- `FIX_GET_ORDERS_SORTED_FUNCTION.sql` - Function update
-- `CHECK_AND_FIX_ORDERS_CLIENT_NAME.sql` - Diagnostic tool
-- `CHECK_ORDERS_TABLE_SCHEMA.sql` - Diagnostic tool
-- `CLEAR_ORDERS_TABLE.sql` - Utility script
-- `CLEAR_ORDERS_DISPATCH_TABLE.sql` - Utility script
-- `CLEAR_TRANSACTION_TABLES_SAFE.sql` - Utility script
-- `complete_database_setup_safe.sql` - Complete setup reference
-
-### 7.2 Essential Documentation
-- `README.md` - Main documentation
-- `PERFORMANCE_ARCHITECTURE_ANALYSIS.md` - Performance guide
-- `PERFORMANCE_IMPROVEMENT_PLAN.md` - Performance plan
-- `DEPLOYMENT_GUIDE.md` - Deployment instructions
-- `MIGRATION_GUIDE.md` - Database migration guide
-- `REDIS_SETUP_GUIDE.md` - Redis setup guide
-- `EMAIL_SETUP_GUIDE.md` - Email configuration
-- `ENVIRONMENT_VARIABLES.md` - Environment setup
-- `AUTHENTICATION_SETUP.md` - Auth configuration
-- `COMPREHENSIVE_CODEBASE_REVIEW_SUMMARY.md` - Code review summary
-
----
-
-## 8. Summary Statistics
+## 5. Summary Statistics
 
 ### Files Removed
-- **JavaScript/Node.js Scripts:** 6 files
-- **Shell Scripts:** 7 files
-- **SQL Files:** 28 files
-- **Markdown Documentation:** 8 files
-- **Backup Migrations:** 5 files
-- **Unused Imports:** 1 instance
-- **Total Files Removed:** 55 files
+- **Root Directory Files:** 4 files
+- **Backup Files:** 2 files
+- **Unused Code Files:** 2 files
+- **Total Files Removed:** 8 files
 
-### Code Changes
-- **Unused Imports Removed:** 1
-- **Lines of Code Cleaned:** ~2,000+ lines
+### Code Removed
+- **Unused Code Files:** ~787 lines
+- **Total Lines Removed:** ~800+ lines
 
 ### Impact Assessment
 - **Functional Impact:** None - all removed code was unused or temporary
 - **Build Impact:** None - no build dependencies removed
-- **Documentation Impact:** Positive - consolidated into clearer structure
+- **Security Impact:** Positive - removed test file with hardcoded credentials
 - **Maintainability Impact:** Positive - cleaner codebase, easier to navigate
 
 ---
 
-## 9. Prevention Strategies
+## 6. Files Requiring Review
 
-### 9.1 Code Quality
-1. **ESLint Configuration:** Already configured to catch unused imports
-2. **TypeScript:** Strict mode helps identify unused code
-3. **Regular Audits:** Quarterly codebase reviews recommended
+### 6.1 Console Statements (24 files)
+The following files contain console.log/warn/error statements that should be reviewed:
 
-### 9.2 File Management
-1. **Git Ignore:** Ensure `.gitignore` includes temporary files
-2. **Documentation:** Keep single source of truth for each topic
-3. **Scripts:** Use `scripts/` directory for utility scripts, not root
-4. **SQL Files:** Organize into `sql/` directory with subdirectories:
-   - `sql/migrations/` - Applied migrations
-   - `sql/fixes/` - One-time fixes (archive after application)
-   - `sql/utilities/` - Reusable utility scripts
+1. `src/components/configurations/ConfigurationManagement.tsx`
+2. `src/components/order-management/OrderManagement.tsx`
+3. `src/components/labels/LabelPurchases.tsx`
+4. `src/components/factory/FactoryPayables.tsx`
+5. `src/components/sales/SalesEntry.tsx`
+6. `src/components/transport/TransportExpenses.tsx`
+7. `src/hooks/useDatabase.ts`
+8. `src/components/user-management/UserManagement.tsx`
+9. `src/contexts/AuthContext.tsx`
+10. `src/lib/logger.ts` (expected - logging utility)
+11. `src/components/PortalRouter.tsx`
+12. `src/components/search/BulkOperations.tsx`
+13. `src/pages/Auth.tsx`
+14. `src/lib/redis.ts`
+15. `src/pages/SupabaseVerify.tsx`
+16. `src/integrations/supabase/client.ts`
+17. `src/lib/cache.ts`
+18. `src/lib/react-query-config.ts`
+19. `src/components/labels/LabelAvailability.tsx`
+20. `src/pages/ResetPassword.tsx`
+21. `src/pages/NotFound.tsx`
+22. `src/components/labels/LabelPayments.tsx`
 
-### 9.3 Documentation
-1. **Single Source:** One main document per topic
-2. **Version Control:** Use Git for document history, not multiple files
-3. **Status Files:** Avoid temporary status files in repo
-
-### 9.4 Recommendations
-1. **Create `scripts/` directory** for utility scripts
-2. **Create `sql/archive/` directory** for old SQL files (gitignored)
-3. **Create `docs/` directory** for all documentation
-4. **Add pre-commit hooks** to prevent committing temporary files
-5. **Regular cleanup schedule** (monthly or quarterly)
+**Recommendation:** Replace console statements with proper logging service (`src/lib/logger.ts` exists for this purpose)
 
 ---
 
-## 10. Rollback Information
+## 7. Prevention Strategies
 
-All deleted files are preserved in Git history. To recover any file:
+### 7.1 Code Quality
+1. **ESLint Configuration:** Already configured to catch unused imports
+2. **TypeScript:** Strict mode helps identify unused code
+3. **Regular Audits:** Quarterly codebase reviews recommended
+4. **Pre-commit Hooks:** Consider adding hooks to prevent backup files
+
+### 7.2 File Management
+1. **Git Ignore:** Ensure `.gitignore` includes:
+   - `*.bak`, `*.backup`
+   - `*.tmp`, `*.temp`
+   - Test files with credentials
+   - One-time setup scripts
+
+2. **Documentation:** 
+   - Keep single source of truth for each topic
+   - Archive old documentation instead of keeping multiple versions
+
+3. **Scripts:** 
+   - Use `scripts/` directory for utility scripts
+   - Remove one-time setup scripts after use
+   - Document script purpose in header comments
+
+4. **Backup Files:**
+   - Never commit backup files
+   - Use git history for recovery instead
+   - Add `.bak`, `.backup` to `.gitignore`
+
+### 7.3 Code Organization
+1. **Unused Code:**
+   - Remove unused files immediately
+   - Don't keep "just in case" code
+   - Use git history for reference
+
+2. **Console Statements:**
+   - Use logging service instead of console.log
+   - Remove debug console statements before commit
+   - Use proper log levels (info, warn, error)
+
+---
+
+## 8. Recommendations
+
+### Immediate Actions
+1. ✅ **Completed:** Remove backup files
+2. ✅ **Completed:** Remove unused code files
+3. ✅ **Completed:** Remove temporary/test files
+4. ⏳ **Pending:** Review and replace console statements with logger
+5. ⏳ **Pending:** Update `.gitignore` to prevent future backup files
+
+### Long-term Improvements
+1. **Pre-commit Hooks:** Add hooks to prevent committing:
+   - Backup files (*.bak, *.backup)
+   - Console.log statements
+   - Test files with credentials
+
+2. **Code Review:** Establish code review process to catch:
+   - Unused imports
+   - Dead code
+   - Temporary files
+
+3. **Automated Checks:** Consider adding:
+   - Unused import detection
+   - Dead code detection
+   - File naming conventions
+
+---
+
+## 9. Git Commit Information
+
+### Commit Details
+- **Files Changed:** 8 files deleted
+- **Lines Removed:** ~800+ lines
+- **Commit Message:** "chore: Clean up unused code, backup files, and temporary files"
+
+### Files Deleted (Git Tracked)
+1. `tatus`
+2. `test_database_final.html`
+3. `setup_new_repo.ps1`
+4. `src/contexts/AuthContext.tsx.backup`
+5. `supabase/migrations/20250103140000_add_rls_policies_for_user_access.sql.bak`
+6. `src/hooks/useDatabaseOptimized.ts`
+7. `src/lib/code-optimizations.ts`
+8. `yntax error in FactoryPayables - Actions column content moved inside TableRow` (if tracked)
+
+---
+
+## 10. Verification
+
+### Pre-Cleanup
+- ✅ Identified all suspicious files
+- ✅ Verified files are not used
+- ✅ Checked git history for recovery options
+
+### Post-Cleanup
+- ✅ All files removed successfully
+- ✅ No build errors introduced
+- ✅ No functionality broken
+- ✅ Git history preserved for recovery
+
+---
+
+## 11. Recovery Instructions
+
+If any deleted file is needed, it can be recovered from git:
 
 ```bash
 # View deleted files
 git log --diff-filter=D --summary
 
 # Recover a specific file
-git checkout <commit-hash> -- <file-path>
+git checkout <commit-hash>^ -- <file-path>
 
-# Example: Recover bypass_auth_fix.js
-git log --all --full-history -- "bypass_auth_fix.js"
-git checkout <commit-hash> -- bypass_auth_fix.js
+# Example: Recover useDatabaseOptimized.ts
+git checkout HEAD~1 -- src/hooks/useDatabaseOptimized.ts
 ```
 
 ---
 
-## 11. Next Steps
+## 12. Conclusion
 
-1. ✅ **Completed:** Remove unused code and files
-2. ✅ **Completed:** Document all deletions
-3. ✅ **Completed:** Commit changes to Git
-4. **Recommended:** Implement directory structure improvements
-5. **Recommended:** Add pre-commit hooks
-6. **Recommended:** Schedule regular cleanup reviews
+The codebase cleanup was successful, removing 8 files totaling ~800+ lines of unused or temporary code. The cleanup improves:
+
+- **Code Maintainability:** Cleaner codebase, easier to navigate
+- **Security:** Removed test file with hardcoded credentials
+- **Build Performance:** Fewer files to process
+- **Developer Experience:** Less confusion from unused files
+
+All changes are tracked in git and can be recovered if needed. The codebase is now cleaner and more maintainable.
 
 ---
 
-**Report Generated:** January 2025  
-**Cleanup Executed By:** Automated Cleanup Script  
-**Git Commit:** Will be created after cleanup execution
-
+**Last Updated:** January 2025  
+**Status:** ✅ Cleanup Complete
