@@ -311,16 +311,42 @@ serve(async (req) => {
       console.log('Attempting to send welcome email to:', email)
       const appUrl = Deno.env.get('APP_URL') || 'https://sales-operations-portal.vercel.app'
       
-      // Try sending via Resend Edge Function
-      console.log('Invoking send-welcome-email-resend function...')
-      const { data: emailResponse, error: emailError } = await supabase.functions.invoke('send-welcome-email-resend', {
-        body: {
-          email: email,
-          username: username,
-          tempPassword: password,
-          appUrl: appUrl
+      // Try sending via SMTP first (no domain verification needed)
+      console.log('Trying SMTP email function first...')
+      let emailResponse = null
+      let emailError = null
+      
+      try {
+        const smtpResult = await supabase.functions.invoke('send-welcome-email-smtp', {
+          body: {
+            email: email,
+            username: username,
+            tempPassword: password,
+            appUrl: appUrl
+          }
+        })
+        emailResponse = smtpResult.data
+        emailError = smtpResult.error
+        
+        if (!emailError && emailResponse?.success) {
+          console.log('✅ Email sent successfully via SMTP')
+        } else {
+          throw new Error('SMTP function failed, trying Resend...')
         }
-      })
+      } catch (smtpErr) {
+        console.log('SMTP function not available or failed, trying Resend...')
+        // Fallback to Resend if SMTP is not configured
+        const resendResult = await supabase.functions.invoke('send-welcome-email-resend', {
+          body: {
+            email: email,
+            username: username,
+            tempPassword: password,
+            appUrl: appUrl
+          }
+        })
+        emailResponse = resendResult.data
+        emailError = resendResult.error
+      }
       
       console.log('Email function response:', JSON.stringify(emailResponse, null, 2))
       console.log('Email function error:', emailError)
