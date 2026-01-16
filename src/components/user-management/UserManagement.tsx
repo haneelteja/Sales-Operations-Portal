@@ -48,6 +48,8 @@ const UserManagement = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [clientBranchSearch, setClientBranchSearch] = useState('');
 
   // Auto-save form data to prevent data loss
   const { loadData, clearSavedData } = useAutoSave({
@@ -75,8 +77,6 @@ const UserManagement = () => {
       }
     }
   }, [loadData, editingUserId]);
-  const [clientBranchSearch, setClientBranchSearch] = useState('');
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof UserManagementRecord | null>(null);
