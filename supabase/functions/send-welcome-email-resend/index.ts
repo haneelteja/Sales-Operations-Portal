@@ -38,7 +38,7 @@ serve(async (req) => {
       
       return new Response(
         JSON.stringify({ 
-          success: true, 
+          success: false, 
           message: 'Welcome email details logged (RESEND_API_KEY not configured)',
           data: {
             email,
@@ -154,7 +154,7 @@ serve(async (req) => {
       
       return new Response(
         JSON.stringify({ 
-          success: true, 
+          success: false, 
           message: 'Welcome email details logged (Resend API error)',
           data: {
             email,

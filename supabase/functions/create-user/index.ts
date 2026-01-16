@@ -405,14 +405,16 @@ serve(async (req) => {
 
     console.log('User created successfully:', userRecord)
 
-    // Log the welcome email details for manual sending
-    console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
-    console.log('To:', email)
-    console.log('Subject: Welcome to Elma Operations Portal - Your Login Credentials')
-    console.log('Username:', username)
-    console.log('Password:', password)
-    console.log('App URL:', supabaseUrl.replace('/rest/v1', ''))
-    console.log('=== END EMAIL DETAILS ===')
+    // Only log email details if email sending failed
+    if (!emailResponse?.success && emailError) {
+      console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
+      console.log('To:', email)
+      console.log('Subject: Welcome to Elma Operations Portal - Your Login Credentials')
+      console.log('Username:', username)
+      console.log('Password:', password)
+      console.log('App URL:', supabaseUrl.replace('/rest/v1', ''))
+      console.log('=== END EMAIL DETAILS ===')
+    }
 
     return new Response(
       JSON.stringify({ 
