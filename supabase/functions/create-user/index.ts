@@ -110,26 +110,74 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
     console.log('Supabase client created')
 
-    // Check if user already exists
+    // Check if user already exists in user_management table
     const { data: existingUser, error: checkError } = await supabase
       .from('user_management')
-      .select('email, username, role')
+      .select('email, username, role, user_id')
       .eq('email', email)
       .single()
 
     if (existingUser && !checkError) {
-      return new Response(
-        JSON.stringify({ 
-          error: `User with email "${email}" already exists in the system. Username: ${existingUser.username}, Role: ${existingUser.role}` 
-        }),
-        { 
-          status: 409, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      console.log('Found existing user in user_management:', existingUser.email, 'ID:', existingUser.user_id);
+      
+      // Delete existing user from user_management table first
+      try {
+        console.log('Deleting existing user from user_management:', existingUser.user_id);
+        const { error: deleteUserError } = await supabase
+          .from('user_management')
+          .delete()
+          .eq('user_id', existingUser.user_id);
+        
+        if (deleteUserError) {
+          console.error('Failed to delete existing user from user_management:', deleteUserError);
+          return new Response(
+            JSON.stringify({ 
+              error: `User with email "${email}" already exists and could not be deleted from user_management. Please delete the user manually first.`,
+              details: deleteUserError.message
+            }),
+            { 
+              status: 409, 
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+            }
+          );
         }
-      )
+        console.log('Successfully deleted existing user from user_management');
+      } catch (deleteError) {
+        console.error('Exception deleting existing user from user_management:', deleteError);
+        return new Response(
+          JSON.stringify({ 
+            error: `User with email "${email}" already exists and could not be deleted. Please delete the user manually first.`,
+            details: deleteError instanceof Error ? deleteError.message : String(deleteError)
+          }),
+          { 
+            status: 409, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        );
+      }
+      
+      // Also delete the associated auth user if it exists
+      if (existingUser.user_id) {
+        try {
+          console.log('Deleting associated auth user:', existingUser.user_id);
+          const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(existingUser.user_id);
+          if (deleteAuthError) {
+            console.warn('Failed to delete associated auth user (may not exist):', deleteAuthError);
+            // Continue anyway - auth user might not exist
+          } else {
+            console.log('Successfully deleted associated auth user');
+          }
+        } catch (authDeleteError) {
+          console.warn('Exception deleting associated auth user (may not exist):', authDeleteError);
+          // Continue anyway - auth user might not exist
+        }
+      }
+      
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    // Check if user already exists in auth.users
+    // Check if user already exists in auth.users (even if not in user_management)
     let existingAuthUser = null;
     try {
       const { data: authUsers, error: listError } = await supabase.auth.admin.listUsers();
@@ -137,7 +185,7 @@ serve(async (req) => {
         existingAuthUser = authUsers.users.find(u => u.email === email);
         if (existingAuthUser) {
           console.log('Found existing auth user with email:', email, 'ID:', existingAuthUser.id);
-          // Delete the existing user first
+          // Delete the existing auth user first
           try {
             console.log('Deleting existing auth user:', existingAuthUser.id);
             const { error: deleteError } = await supabase.auth.admin.deleteUser(existingAuthUser.id);

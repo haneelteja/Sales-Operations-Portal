@@ -233,42 +233,9 @@ const UserManagement = () => {
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async (formData: UserForm) => {
-      // Check if user already exists in user_management table
-      const { data: existingUser, error: checkError } = await supabase
-        .from('user_management')
-        .select('email, user_id, username, role')
-        .eq('email', formData.email)
-        .single();
-      
-      if (existingUser && !checkError) {
-        throw new Error(`User with email "${formData.email}" already exists in the system. Username: ${existingUser.username}, Role: ${existingUser.role}`);
-      }
-
-      // Check if user exists in auth.users (even if not in user_management)
-      // Note: This requires admin privileges, so we'll skip if it fails
-      try {
-        const { data: authUsers, error: authCheckError } = await supabase.auth.admin.listUsers();
-        if (!authCheckError && authUsers?.users) {
-          const existingAuthUser = authUsers.users.find(u => u.email === formData.email);
-          
-          if (existingAuthUser) {
-            console.log('Found existing auth user, will clean up first:', existingAuthUser.id);
-            // Try to delete the existing auth user first
-            try {
-              await supabase.auth.admin.deleteUser(existingAuthUser.id);
-              console.log('Successfully deleted existing auth user');
-              // Wait a moment for cleanup
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            } catch (deleteError) {
-              console.warn('Failed to delete existing auth user:', deleteError);
-              // Continue anyway, the signup might still work
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('Could not check existing auth users (admin privileges required):', error);
-        // Continue with user creation
-      }
+      // Note: The Edge Function will handle checking and deleting existing users
+      // We don't need to check here - let the Edge Function handle it
+      console.log('Creating user - Edge Function will handle existing user cleanup');
 
       // Use direct database approach with proper error handling (updated)
       console.log('Using direct database approach for user creation');
