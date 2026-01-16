@@ -704,8 +704,8 @@ const SalesEntry = () => {
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
-  // Get unique customer names (no duplicates, case-insensitive)
-  const getUniqueCustomers = () => {
+  // Get unique customer names (no duplicates, case-insensitive) - for form dropdowns
+  const getUniqueCustomersForForm = () => {
     if (!customers) return [];
     
     const seenNames = new Set<string>();
@@ -1157,22 +1157,6 @@ const SalesEntry = () => {
     }));
   };
 
-  // Get unique values for dropdown filters
-
-  const getUniqueBranches = () => {
-    if (!recentTransactions) return [];
-    return [...new Set(recentTransactions.map(t => t.customers?.branch).filter(Boolean))].sort();
-  };
-
-  const getUniqueTypes = () => {
-    if (!recentTransactions) return [];
-    return [...new Set(recentTransactions.map(t => t.transaction_type).filter(Boolean))].sort();
-  };
-
-  const getUniqueSKUs = () => {
-    if (!recentTransactions) return [];
-    return [...new Set(recentTransactions.map(t => t.sku).filter(Boolean))].sort();
-  };
 
   // Export filtered recent transactions to Excel
   const exportRecentTransactionsToExcel = () => {
@@ -1791,7 +1775,7 @@ const SalesEntry = () => {
                         {customersLoading ? (
                           <SelectItem value="loading" disabled>Loading...</SelectItem>
                         ) : (
-                          getUniqueCustomers().map((customerName) => (
+                          getUniqueCustomersForForm().map((customerName) => (
                             <SelectItem key={customerName} value={customerName}>
                               {customerName}
                             </SelectItem>
