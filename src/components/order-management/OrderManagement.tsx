@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,7 @@ const OrderManagement = () => {
 
   // Filter and sort states for Current Orders
   const [ordersSearchTerm, setOrdersSearchTerm] = useState("");
+  const debouncedOrdersSearchTerm = useDebouncedValue(ordersSearchTerm, 300);
   const [ordersColumnFilters, setOrdersColumnFilters] = useState({
     client: "",
     branch: "",
@@ -84,6 +86,7 @@ const OrderManagement = () => {
 
   // Filter and sort states for Orders Dispatch
   const [dispatchSearchTerm, setDispatchSearchTerm] = useState("");
+  const debouncedDispatchSearchTerm = useDebouncedValue(dispatchSearchTerm, 300);
   const [dispatchColumnFilters, setDispatchColumnFilters] = useState({
     client: "",
     branch: "",
@@ -537,14 +540,14 @@ const OrderManagement = () => {
   });
 
   // Filter and sort handlers for Current Orders
-  const handleOrdersColumnFilterChange = (columnKey: string, value: string) => {
+  const handleOrdersColumnFilterChange = useCallback((columnKey: string, value: string) => {
     setOrdersColumnFilters(prev => ({
       ...prev,
       [columnKey]: value
     }));
-  };
+  }, []);
 
-  const handleOrdersColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
+  const handleOrdersColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
     setOrdersColumnSorts(prev => {
       const newSorts = { ...prev };
       // Clear other sorts
@@ -554,9 +557,9 @@ const OrderManagement = () => {
       newSorts[columnKey] = direction;
       return newSorts;
     });
-  };
+  }, []);
 
-  const clearAllOrdersFilters = () => {
+  const clearAllOrdersFilters = useCallback(() => {
     setOrdersSearchTerm("");
     setOrdersColumnFilters({
       client: "",
@@ -577,14 +580,14 @@ const OrderManagement = () => {
   };
 
   // Filter and sort handlers for Orders Dispatch
-  const handleDispatchColumnFilterChange = (columnKey: string, value: string) => {
+  const handleDispatchColumnFilterChange = useCallback((columnKey: string, value: string) => {
     setDispatchColumnFilters(prev => ({
       ...prev,
       [columnKey]: value
     }));
   };
 
-  const handleDispatchColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
+  const handleDispatchColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
     setDispatchColumnSorts(prev => {
       const newSorts = { ...prev };
       // Clear other sorts
@@ -594,9 +597,9 @@ const OrderManagement = () => {
       newSorts[columnKey] = direction;
       return newSorts;
     });
-  };
+  }, []);
 
-  const clearAllDispatchFilters = () => {
+  const clearAllDispatchFilters = useCallback(() => {
     setDispatchSearchTerm("");
     setDispatchColumnFilters({
       client: "",
@@ -622,9 +625,9 @@ const OrderManagement = () => {
       // Safety check: skip if order is null/undefined
       if (!order) return false;
       
-      // Global search
-      if (ordersSearchTerm) {
-        const searchLower = ordersSearchTerm.toLowerCase();
+      // Global search (using debounced value)
+      if (debouncedOrdersSearchTerm) {
+        const searchLower = debouncedOrdersSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
           (order.client || '').toLowerCase().includes(searchLower) ||
           (order.branch || '').toLowerCase().includes(searchLower) ||
@@ -677,7 +680,7 @@ const OrderManagement = () => {
         return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
       }
     });
-  }, [orders, ordersSearchTerm, ordersColumnFilters, ordersColumnSorts]);
+  }, [orders, debouncedOrdersSearchTerm, ordersColumnFilters, ordersColumnSorts]);
 
   // Filtered and sorted Orders Dispatch
   const filteredAndSortedDispatch = useMemo(() => {
@@ -687,9 +690,9 @@ const OrderManagement = () => {
       // Safety check: skip if order is null/undefined
       if (!order) return false;
       
-      // Global search
-      if (dispatchSearchTerm) {
-        const searchLower = dispatchSearchTerm.toLowerCase();
+      // Global search (using debounced value)
+      if (debouncedDispatchSearchTerm) {
+        const searchLower = debouncedDispatchSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
           (order.client || '').toLowerCase().includes(searchLower) ||
           (order.branch || '').toLowerCase().includes(searchLower) ||
@@ -740,10 +743,10 @@ const OrderManagement = () => {
         return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
       }
     });
-  }, [ordersDispatch, dispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts]);
+  }, [ordersDispatch, debouncedDispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts]);
 
-  // Export Current Orders to Excel
-  const exportCurrentOrdersToExcel = () => {
+  // Export Current Orders to Excel (memoized)
+  const exportCurrentOrdersToExcel = useCallback(() => {
     if (!filteredAndSortedOrders || filteredAndSortedOrders.length === 0) {
       toast({
         title: "No Data",
@@ -774,10 +777,10 @@ const OrderManagement = () => {
       title: "Success",
       description: `Exported ${exportData.length} orders to ${fileName}`,
     });
-  };
+  }, [filteredAndSortedOrders, toast]);
 
-  // Export Orders Dispatch to Excel
-  const exportOrdersDispatchToExcel = () => {
+  // Export Orders Dispatch to Excel (memoized)
+  const exportOrdersDispatchToExcel = useCallback(() => {
     if (!filteredAndSortedDispatch || filteredAndSortedDispatch.length === 0) {
       toast({
         title: "No Data",
@@ -806,9 +809,9 @@ const OrderManagement = () => {
       title: "Success",
       description: `Exported ${exportData.length} dispatch records to ${fileName}`,
     });
-  };
+  }, [filteredAndSortedDispatch, toast]);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     if (window.confirm('Are you sure you want to delete this order?')) {
       deleteOrderMutation.mutate(id);
     }

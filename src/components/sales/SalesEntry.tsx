@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { 
@@ -80,6 +81,7 @@ const SalesEntry = () => {
     branch: ""
   });
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState<{
     date: string | string[];
     customer: string | string[];
@@ -779,11 +781,15 @@ const SalesEntry = () => {
     checkSingleSKUMode();
   }, [checkSingleSKUMode]);
 
-  // Fetch all transactions (we'll paginate client-side after filtering)
+  // Fetch transactions (limited for performance, paginated client-side after filtering)
   const { data: allTransactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ["recent-transactions"],
     queryFn: async () => {
       try {
+        // Limit to last 90 days or max 2000 records for performance
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        
         const { data, error, count } = await supabase
           .from("sales_transactions")
           .select(`
@@ -798,7 +804,9 @@ const SalesEntry = () => {
             created_at,
             customers (client_name, branch)
           `, { count: 'exact' })
-          .order("created_at", { ascending: false });
+          .gte("created_at", ninetyDaysAgo.toISOString())
+          .order("created_at", { ascending: false })
+          .limit(2000); // Safety limit
         
         if (error) {
           console.error('Error fetching transactions:', error);
@@ -966,9 +974,9 @@ const SalesEntry = () => {
           const type = transaction.transaction_type || '';
           const outstanding = transaction.outstanding?.toString() || '';
           
-          // Global search filter
-          if (searchTerm) {
-            const searchLower = searchTerm.toLowerCase();
+          // Global search filter (using debounced value)
+          if (debouncedSearchTerm) {
+            const searchLower = debouncedSearchTerm.toLowerCase();
             const matchesGlobalSearch = (
               customerName.toLowerCase().includes(searchLower) ||
               branch.toLowerCase().includes(searchLower) ||
@@ -1088,7 +1096,7 @@ const SalesEntry = () => {
       console.error('Critical error filtering and sorting transactions:', error);
       return [];
     }
-  }, [recentTransactions, searchTerm, columnFilters, columnSorts, calculateCumulativeOutstanding]);
+  }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts, calculateCumulativeOutstanding]);
 
   // Paginate the filtered results
   const totalFilteredTransactions = filteredAndSortedRecentTransactions.length;

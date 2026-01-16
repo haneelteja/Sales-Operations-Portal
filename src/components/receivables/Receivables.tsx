@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,7 @@ const Receivables = () => {
   const { toast } = useToast();
   const { data: salesTransactions, isLoading, error } = useSalesTransactions();
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
 
@@ -40,30 +42,40 @@ const Receivables = () => {
     status: 'pending' as const // Default status, in real app this would come from the database
   })) || [];
 
-  // Filter receivables based on search and filters
-  const filteredReceivables = receivables.filter(receivable => {
-    const matchesSearch = receivable.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         receivable.branch.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         receivable.sku.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || receivable.status === statusFilter;
-    
-    const matchesDate = dateFilter === 'all' || 
-      (dateFilter === 'today' && new Date(receivable.transaction_date).toDateString() === new Date().toDateString()) ||
-      (dateFilter === 'week' && new Date(receivable.transaction_date) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) ||
-      (dateFilter === 'month' && new Date(receivable.transaction_date) >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
-    
-    return matchesSearch && matchesStatus && matchesDate;
-  });
+  // Filter receivables based on search and filters (memoized for performance)
+  const filteredReceivables = useMemo(() => {
+    return receivables.filter(receivable => {
+      const matchesSearch = receivable.customer_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+                           receivable.branch.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+                           receivable.sku.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
+      
+      const matchesStatus = statusFilter === 'all' || receivable.status === statusFilter;
+      
+      const matchesDate = dateFilter === 'all' || 
+        (dateFilter === 'today' && new Date(receivable.transaction_date).toDateString() === new Date().toDateString()) ||
+        (dateFilter === 'week' && new Date(receivable.transaction_date) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) ||
+        (dateFilter === 'month' && new Date(receivable.transaction_date) >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+      
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  }, [receivables, debouncedSearchTerm, statusFilter, dateFilter]);
 
-  // Calculate totals
-  const totalAmount = filteredReceivables.reduce((sum, receivable) => sum + receivable.total_amount, 0);
-  const pendingAmount = filteredReceivables
-    .filter(r => r.status === 'pending')
-    .reduce((sum, receivable) => sum + receivable.total_amount, 0);
-  const paidAmount = filteredReceivables
-    .filter(r => r.status === 'paid')
-    .reduce((sum, receivable) => sum + receivable.total_amount, 0);
+  // Calculate totals (memoized)
+  const totalAmount = useMemo(() => {
+    return filteredReceivables.reduce((sum, receivable) => sum + receivable.total_amount, 0);
+  }, [filteredReceivables]);
+
+  const pendingAmount = useMemo(() => {
+    return filteredReceivables
+      .filter(r => r.status === 'pending')
+      .reduce((sum, receivable) => sum + receivable.total_amount, 0);
+  }, [filteredReceivables]);
+
+  const paidAmount = useMemo(() => {
+    return filteredReceivables
+      .filter(r => r.status === 'paid')
+      .reduce((sum, receivable) => sum + receivable.total_amount, 0);
+  }, [filteredReceivables]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {

@@ -37,7 +37,7 @@ export const useCustomers = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("*")
+        .select("id, client_name, branch, sku, price_per_case, price_per_bottle, contact_person, phone, email, address, is_active, created_at, updated_at")
         .eq("is_active", true)
         .order("client_name", { ascending: true });
       
@@ -57,7 +57,18 @@ export const useSalesTransactions = () => {
       const { data, error } = await supabase
         .from("sales_transactions")
         .select(`
-          *,
+          id,
+          customer_id,
+          transaction_type,
+          amount,
+          quantity,
+          sku,
+          description,
+          transaction_date,
+          branch,
+          total_amount,
+          created_at,
+          updated_at,
           customers (
             id,
             client_name,
@@ -80,7 +91,7 @@ export const useFactoryPayables = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("factory_payables")
-        .select("*")
+        .select("id, customer_id, transaction_type, amount, transaction_date, description, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -97,7 +108,7 @@ export const useTransportExpenses = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("transport_expenses")
-        .select("*")
+        .select("id, client_id, branch, expense_date, amount, expense_group, description, sku, cases, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -114,7 +125,7 @@ export const useLabelPurchases = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_purchases")
-        .select("*")
+        .select("id, client_name, sku, quantity, unit_price, total_amount, purchase_date, vendor_id, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -131,7 +142,7 @@ export const useLabelPayments = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_payments")
-        .select("*")
+        .select("id, vendor_id, amount, payment_date, description, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -148,7 +159,7 @@ export const useOrders = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("*")
+        .select("id, client_name, branch, sku, quantity, status, tentative_delivery_date, tentative_delivery_time, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -165,7 +176,7 @@ export const useUserManagement = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_management")
-        .select("*")
+        .select("id, user_id, username, email, associated_clients, associated_branches, status, role, created_by, last_login, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) {

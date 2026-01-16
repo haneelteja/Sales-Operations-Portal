@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import type { 
@@ -56,6 +57,7 @@ const ConfigurationManagement = () => {
 
   // Filtering and sorting state for customers
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState({
     client_name: "",
     branch: "",
@@ -76,6 +78,7 @@ const ConfigurationManagement = () => {
 
   // Filtering and sorting state for factory pricing
   const [pricingSearchTerm, setPricingSearchTerm] = useState("");
+  const debouncedPricingSearchTerm = useDebouncedValue(pricingSearchTerm, 300);
   const [pricingColumnFilters, setPricingColumnFilters] = useState({
     sku: "",
     pricing_date: "",
@@ -580,8 +583,11 @@ const ConfigurationManagement = () => {
     },
   });
 
-  // Filter and sort customers
-  const filteredAndSortedCustomers = customers?.filter((customer) => {
+  // Filter and sort customers (memoized for performance)
+  const filteredAndSortedCustomers = useMemo(() => {
+    if (!customers) return [];
+    
+    return customers.filter((customer) => {
     const clientName = customer.client_name || '';
     const branch = customer.branch || '';
     const sku = customer.sku || '';
@@ -590,9 +596,9 @@ const ConfigurationManagement = () => {
     const pricePerBottle = customer.price_per_bottle?.toString() || '';
     const createdDate = new Date(customer.created_at).toLocaleDateString();
     
-    // Global search filter
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
+    // Global search filter (using debounced value)
+    if (debouncedSearchTerm) {
+      const searchLower = debouncedSearchTerm.toLowerCase();
       const matchesGlobalSearch = (
         clientName.toLowerCase().includes(searchLower) ||
         branch.toLowerCase().includes(searchLower) ||
@@ -692,7 +698,8 @@ const ConfigurationManagement = () => {
     if (valueA < valueB) return direction === 'asc' ? -1 : 1;
     if (valueA > valueB) return direction === 'asc' ? 1 : -1;
     return 0;
-  });
+    });
+  }, [customers, debouncedSearchTerm, columnFilters, columnSorts]);
 
   // Handle column filter changes
   const handleColumnFilterChange = (columnKey: string, value: string) => {
@@ -757,8 +764,11 @@ const ConfigurationManagement = () => {
     XLSX.writeFile(wb, `customers_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Filter and sort factory pricing
-  const filteredAndSortedFactoryPricing = factoryPricing?.filter((pricing) => {
+  // Filter and sort factory pricing (memoized for performance)
+  const filteredAndSortedFactoryPricing = useMemo(() => {
+    if (!factoryPricing) return [];
+    
+    return factoryPricing.filter((pricing) => {
     // Safety check: skip if pricing is null/undefined
     if (!pricing) return false;
     
@@ -770,9 +780,9 @@ const ConfigurationManagement = () => {
     const tax = pricing.tax?.toString() || '';
     const createdDate = pricing.created_at ? new Date(pricing.created_at).toLocaleDateString() : '';
     
-    // Global search filter
-    if (pricingSearchTerm) {
-      const searchLower = pricingSearchTerm.toLowerCase();
+    // Global search filter (using debounced value)
+    if (debouncedPricingSearchTerm) {
+      const searchLower = debouncedPricingSearchTerm.toLowerCase();
       const matchesGlobalSearch = (
         sku.toLowerCase().includes(searchLower) ||
         pricingDate.includes(searchLower) ||
@@ -846,7 +856,8 @@ const ConfigurationManagement = () => {
     if (valueA < valueB) return direction === 'asc' ? -1 : 1;
     if (valueA > valueB) return direction === 'asc' ? 1 : -1;
     return 0;
-  });
+    });
+  }, [factoryPricing, debouncedPricingSearchTerm, pricingColumnFilters, pricingColumnSorts]);
 
   // Handle factory pricing column filter changes
   const handlePricingColumnFilterChange = (columnKey: string, value: string) => {
@@ -1874,4 +1885,4 @@ const ConfigurationManagement = () => {
   );
 };
 
-export default ConfigurationManagement;
+export default memo(ConfigurationManagement);

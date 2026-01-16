@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo, useCallback } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { Pagination } from "@/components/ui/pagination";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -20,11 +22,12 @@ import {
 import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
 
-const Dashboard = () => {
+const Dashboard = memo(() => {
   const { toast } = useToast();
   
   // Filter and sort states for Client Receivables Outstanding table
   const [receivablesSearchTerm, setReceivablesSearchTerm] = useState("");
+  const debouncedReceivablesSearchTerm = useDebouncedValue(receivablesSearchTerm, 300);
   const [receivablesColumnFilters, setReceivablesColumnFilters] = useState({
     client: "",
     branch: "",
@@ -89,21 +92,36 @@ const Dashboard = () => {
     },
   });
 
-  // Fetch client receivables data
+  // Pagination state for receivables table
+  const [receivablesPage, setReceivablesPage] = useState(1);
+  const receivablesPageSize = 25;
+
+  // Fetch client receivables data (limited to recent transactions for performance)
   const { data: receivables } = useQuery({
     queryKey: ["receivables"],
     queryFn: async () => {
+      // Limit to last 90 days or max 2000 records for performance
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      
       const { data: transactions } = await supabase
         .from("sales_transactions")
         .select(`
-          *,
+          id,
+          customer_id,
+          transaction_type,
+          amount,
+          transaction_date,
+          created_at,
           customers (
             id,
             client_name,
             branch
           )
         `)
-        .order("created_at", { ascending: false });
+        .gte("created_at", ninetyDaysAgo.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(2000); // Safety limit
 
       if (!transactions) return [];
 
@@ -224,14 +242,14 @@ const Dashboard = () => {
   });
 
   // Filter and sort handlers for Client Receivables Outstanding
-  const handleReceivablesColumnFilterChange = (columnKey: string, value: string) => {
+  const handleReceivablesColumnFilterChange = useCallback((columnKey: string, value: string) => {
     setReceivablesColumnFilters(prev => ({
       ...prev,
       [columnKey]: value
     }));
-  };
+  }, []);
 
-  const handleReceivablesColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
+  const handleReceivablesColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
     setReceivablesColumnSorts(prev => {
       const newSorts = { ...prev };
       // Clear other sorts
@@ -241,9 +259,9 @@ const Dashboard = () => {
       newSorts[columnKey] = direction;
       return newSorts;
     });
-  };
+  }, []);
 
-  const clearAllReceivablesFilters = () => {
+  const clearAllReceivablesFilters = useCallback(() => {
     setReceivablesSearchTerm("");
     setReceivablesColumnFilters({
       client: "",
@@ -261,16 +279,16 @@ const Dashboard = () => {
       outstanding: null,
       priority: null,
     });
-  };
+  }, []);
 
   // Filtered and sorted Client Receivables Outstanding
   const filteredAndSortedReceivables = useMemo(() => {
     if (!receivables) return [];
 
     return receivables.filter(receivable => {
-      // Global search
-      if (receivablesSearchTerm) {
-        const searchLower = receivablesSearchTerm.toLowerCase();
+      // Global search (using debounced value)
+      if (debouncedReceivablesSearchTerm) {
+        const searchLower = debouncedReceivablesSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
           receivable.customer.client_name?.toLowerCase().includes(searchLower) ||
           receivable.customer.branch?.toLowerCase().includes(searchLower) ||
@@ -343,10 +361,19 @@ const Dashboard = () => {
         return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
       }
     });
-  }, [receivables, receivablesSearchTerm, receivablesColumnFilters, receivablesColumnSorts]);
+  }, [receivables, debouncedReceivablesSearchTerm, receivablesColumnFilters, receivablesColumnSorts]);
+
+  // Paginated receivables for display
+  const paginatedReceivables = useMemo(() => {
+    const startIndex = (receivablesPage - 1) * receivablesPageSize;
+    const endIndex = startIndex + receivablesPageSize;
+    return filteredAndSortedReceivables.slice(startIndex, endIndex);
+  }, [filteredAndSortedReceivables, receivablesPage, receivablesPageSize]);
+
+  const receivablesTotalPages = Math.ceil(filteredAndSortedReceivables.length / receivablesPageSize);
 
   // Export Client Receivables Outstanding to Excel
-  const exportReceivablesToExcel = () => {
+  const exportReceivablesToExcel = useCallback(() => {
     if (!filteredAndSortedReceivables || filteredAndSortedReceivables.length === 0) {
       toast({
         title: "No Data",
@@ -376,7 +403,7 @@ const Dashboard = () => {
       title: "Success",
       description: `Exported ${exportData.length} receivables to ${fileName}`,
     });
-  };
+  }, [filteredAndSortedReceivables, toast]);
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
@@ -651,7 +678,7 @@ const Dashboard = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAndSortedReceivables.map((receivable, index) => (
+                {paginatedReceivables.map((receivable, index) => (
                   <TableRow 
                     key={receivable.customer.id} 
                     className={`hover:bg-red-50 transition-colors ${
@@ -706,10 +733,31 @@ const Dashboard = () => {
               </p>
             </div>
           )}
+
+          {/* Pagination Controls */}
+          {filteredAndSortedReceivables.length > 0 && (
+            <div className="border-t border-red-200">
+              <Pagination
+                page={receivablesPage}
+                totalPages={receivablesTotalPages}
+                total={filteredAndSortedReceivables.length}
+                pageSize={receivablesPageSize}
+                onNextPage={() => setReceivablesPage(prev => Math.min(prev + 1, receivablesTotalPages))}
+                onPreviousPage={() => setReceivablesPage(prev => Math.max(prev - 1, 1))}
+                onFirstPage={() => setReceivablesPage(1)}
+                onLastPage={() => setReceivablesPage(receivablesTotalPages)}
+                onPageChange={setReceivablesPage}
+                hasNextPage={receivablesPage < receivablesTotalPages}
+                hasPreviousPage={receivablesPage > 1}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
-};
+});
+
+Dashboard.displayName = 'Dashboard';
 
 export default Dashboard;

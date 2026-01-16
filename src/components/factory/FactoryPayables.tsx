@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { 
@@ -44,6 +45,7 @@ const FactoryPayables = () => {
     transaction_date: ""
   });
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState<{
     date: string | string[];
     client: string | string[];
@@ -135,8 +137,11 @@ const FactoryPayables = () => {
     return pricing?.cost_per_case || null;
   };
 
-  // Filter and sort transactions
-  const filteredAndSortedTransactions = transactions?.filter((transaction) => {
+  // Filter and sort transactions (memoized for performance)
+  const filteredAndSortedTransactions = useMemo(() => {
+    if (!transactions) return [];
+    
+    return transactions.filter((transaction) => {
     const sku = transaction.sku || '';
     const amount = transaction.amount?.toString() || '';
     const date = new Date(transaction.transaction_date).toLocaleDateString();
@@ -150,9 +155,9 @@ const FactoryPayables = () => {
     const pricePerCase = getPricePerCase(transaction.sku);
     const pricePerCaseStr = pricePerCase?.toString() || '';
     
-    // Global search filter
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
+    // Global search filter (using debounced value)
+    if (debouncedSearchTerm) {
+      const searchLower = debouncedSearchTerm.toLowerCase();
       const matchesGlobalSearch = (
         sku.toLowerCase().includes(searchLower) ||
         clientName.toLowerCase().includes(searchLower) ||
@@ -277,22 +282,23 @@ const FactoryPayables = () => {
     if (valueA < valueB) return direction === 'asc' ? -1 : 1;
     if (valueA > valueB) return direction === 'asc' ? 1 : -1;
     return 0;
-  }) || [];
+    });
+  }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing]);
 
-  // Column filter handlers
-  const handleColumnFilterChange = (columnKey: string, value: string | string[]) => {
+  // Column filter handlers (memoized)
+  const handleColumnFilterChange = useCallback((columnKey: string, value: string | string[]) => {
     setColumnFilters(prev => ({
       ...prev,
       [columnKey]: value
     }));
-  };
+  }, []);
 
-  const handleClearColumnFilter = (columnKey: string) => {
+  const handleClearColumnFilter = useCallback((columnKey: string) => {
     setColumnFilters(prev => ({
       ...prev,
       [columnKey]: ""
     }));
-  };
+  }, []);
 
   // Get unique values for multi-select filters
   const getUniqueClients = useMemo(() => {
@@ -317,26 +323,31 @@ const FactoryPayables = () => {
     return Array.from(unique).sort();
   }, [transactions]);
 
-  const handleColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
-    setColumnSorts(prev => ({
-      ...prev,
-      [columnKey]: direction
-    }));
-  };
+  const handleColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
+    setColumnSorts(prev => {
+      const newSorts = { ...prev };
+      // Clear other sorts
+      Object.keys(newSorts).forEach(key => {
+        if (key !== columnKey) newSorts[key] = null;
+      });
+      newSorts[columnKey] = direction;
+      return newSorts;
+    });
+  }, []);
 
-  // Get unique values for dropdown filters
-  const getUniqueTypes = () => {
+  // Get unique values for dropdown filters (memoized)
+  const getUniqueTypes = useMemo(() => {
     if (!transactions) return [];
     return [...new Set(transactions.map(t => t.transaction_type).filter(Boolean))].sort();
-  };
+  }, [transactions]);
 
-  const getUniqueSKUs = () => {
+  const getUniqueSKUs = useMemo(() => {
     if (!transactions) return [];
     return [...new Set(transactions.map(t => t.sku).filter(Boolean))].sort();
-  };
+  }, [transactions]);
 
-  // Export filtered transactions to Excel
-  const exportToExcel = () => {
+  // Export filtered transactions to Excel (memoized)
+  const exportToExcel = useCallback(() => {
     const exportData = filteredAndSortedTransactions.map((transaction) => {
       const clientName = transaction.transaction_type === 'payment' 
         ? (transaction.description || 'Elma Payment')
@@ -366,7 +377,7 @@ const FactoryPayables = () => {
       title: "Export Successful",
       description: `Exported ${exportData.length} factory transactions to ${fileName}`,
     });
-  };
+  }, [filteredAndSortedTransactions, toast, factoryPricing]);
 
   // Calculate summary with proper amount calculation
   const summary = transactions?.reduce(

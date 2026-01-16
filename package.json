@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "analyze:bundle": "node scripts/measure-bundle-size.js"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { LabelPurchase, LabelPurchaseForm, MutationFunction } from "@/types";
@@ -41,6 +42,7 @@ const LabelPurchases = () => {
 
   // Filtering and sorting state
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState({
     vendor: "",
     client: "",
@@ -397,14 +399,14 @@ const LabelPurchases = () => {
 
 
 
-  // Filter and sort purchases
-  const filteredAndSortedPurchases = () => {
+  // Filter and sort purchases (memoized for performance)
+  const filteredAndSortedPurchases = useMemo(() => {
     if (!purchases) return [];
 
     const filtered = purchases.filter((purchase) => {
-      // Global search
-      if (searchTerm) {
-        const searchLower = searchTerm.toLowerCase();
+      // Global search (using debounced value)
+      if (debouncedSearchTerm) {
+        const searchLower = debouncedSearchTerm.toLowerCase();
         const clientName = customers?.find(c => c.id === purchase.client_id)?.client_name?.toLowerCase() || '';
         const vendorName = purchase.vendor_id?.toLowerCase() || '';
         const sku = purchase.sku?.toLowerCase() || '';
@@ -503,18 +505,20 @@ const LabelPurchases = () => {
     });
 
     return filtered;
-  };
+  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts, customers]);
 
-  // Calculate total purchases after filteredAndSortedPurchases is defined
-  const totalPurchases = filteredAndSortedPurchases().reduce((sum, purchase) => sum + (purchase.total_amount || 0), 0);
+  // Calculate total purchases (memoized)
+  const totalPurchases = useMemo(() => {
+    return filteredAndSortedPurchases.reduce((sum, purchase) => sum + (purchase.total_amount || 0), 0);
+  }, [filteredAndSortedPurchases]);
 
-  // Handle column filter change
-  const handleColumnFilterChange = (column: string, value: string) => {
+  // Handle column filter change (memoized)
+  const handleColumnFilterChange = useCallback((column: string, value: string) => {
     setColumnFilters(prev => ({ ...prev, [column]: value }));
-  };
+  }, []);
 
-  // Handle column sort change
-  const handleColumnSortChange = (column: string) => {
+  // Handle column sort change (memoized)
+  const handleColumnSortChange = useCallback((column: string) => {
     setColumnSorts(prev => {
       const currentSort = prev[column as keyof typeof prev];
       let newSort: "asc" | "desc" | null = "asc";
@@ -533,10 +537,10 @@ const LabelPurchases = () => {
 
       return newSorts;
     });
-  };
+  }, []);
 
-  // Clear all filters
-  const clearAllFilters = () => {
+  // Clear all filters (memoized)
+  const clearAllFilters = useCallback(() => {
     setSearchTerm("");
     setColumnFilters({
       client: "",
@@ -556,11 +560,11 @@ const LabelPurchases = () => {
       cost_per_label: null,
       total_amount: null
     });
-  };
+  }, []);
 
-  // Export to Excel
-  const handleExport = () => {
-    const exportData = filteredAndSortedPurchases().map(purchase => ({
+  // Export to Excel (memoized)
+  const handleExport = useCallback(() => {
+    const exportData = filteredAndSortedPurchases.map(purchase => ({
       'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
       'Vendor': purchase.vendor_id || 'N/A',
       'Client': customers?.find(c => c.id === purchase.client_id)?.client_name || 'N/A',
@@ -708,7 +712,7 @@ const LabelPurchases = () => {
           <div>
             <h3 className="text-lg font-semibold">Label Purchases</h3>
             <p className="text-sm text-muted-foreground">
-              Showing {filteredAndSortedPurchases().length} of {purchases?.length || 0} purchases
+              Showing {filteredAndSortedPurchases.length} of {purchases?.length || 0} purchases
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -889,8 +893,8 @@ const LabelPurchases = () => {
           </TableRow>
         </TableHeader>
         <TableBody>
-              {filteredAndSortedPurchases().length > 0 ? (
-                filteredAndSortedPurchases().map((purchase) => (
+              {filteredAndSortedPurchases.length > 0 ? (
+                filteredAndSortedPurchases.map((purchase) => (
             <TableRow key={purchase.id}>
               <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
                     <TableCell>
@@ -1091,4 +1095,4 @@ const LabelPurchases = () => {
   );
 };
 
-export default LabelPurchases;
+export default memo(LabelPurchases);

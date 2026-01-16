@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { TransportExpense, TransportExpenseForm } from "@/types";
@@ -39,6 +40,7 @@ const TransportExpenses = () => {
   });
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState({
     date: "",
     description: "",
@@ -417,19 +419,19 @@ const TransportExpenses = () => {
     autoPopulateFromSalesEdit();
   }, [editForm.client_id, editForm.branch]);
 
-  // Get unique groups for filtering
-  const getUniqueGroups = () => {
+  // Get unique groups for filtering (memoized)
+  const getUniqueGroups = useMemo(() => {
     if (!expenses) return [];
     return [...new Set(expenses.map(e => e.expense_group).filter(Boolean))].sort();
-  };
+  }, [expenses]);
 
-  // Handle column filter change
-  const handleColumnFilterChange = (column: string, value: string) => {
+  // Handle column filter change (memoized)
+  const handleColumnFilterChange = useCallback((column: string, value: string) => {
     setColumnFilters(prev => ({ ...prev, [column]: value }));
-  };
+  }, []);
 
-  // Handle column sort change
-  const handleColumnSortChange = (column: string, direction: 'asc' | 'desc' | null) => {
+  // Handle column sort change (memoized)
+  const handleColumnSortChange = useCallback((column: string, direction: 'asc' | 'desc' | null) => {
     setColumnSorts(prev => {
       const newSorts = { ...prev };
       // Reset other sorts
@@ -439,15 +441,18 @@ const TransportExpenses = () => {
       newSorts[column] = direction;
       return newSorts;
     });
-  };
+  }, []);
 
-  // Handle clear column filter
-  const handleClearColumnFilter = (column: string) => {
+  // Handle clear column filter (memoized)
+  const handleClearColumnFilter = useCallback((column: string) => {
     setColumnFilters(prev => ({ ...prev, [column]: "" }));
-  };
+  }, []);
 
-  // Filter and sort expenses
-  const filteredAndSortedExpenses = expenses?.filter((expense) => {
+  // Filter and sort expenses (memoized for performance)
+  const filteredAndSortedExpenses = useMemo(() => {
+    if (!expenses) return [];
+    
+    return expenses.filter((expense) => {
     const expenseGroup = expense.expense_group || '';
     const amount = expense.amount?.toString() || '';
     const date = new Date(expense.expense_date).toLocaleDateString();
@@ -460,9 +465,9 @@ const TransportExpenses = () => {
     const clientName = expense.client_name?.toLowerCase() || '';
     const branchName = expense.branch?.toLowerCase() || '';
     
-    // Global search filter
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
+    // Global search filter (using debounced value)
+    if (debouncedSearchTerm) {
+      const searchLower = debouncedSearchTerm.toLowerCase();
       const matchesGlobalSearch = (
         description.toLowerCase().includes(searchLower) ||
         expenseGroup.toLowerCase().includes(searchLower) ||
@@ -527,13 +532,16 @@ const TransportExpenses = () => {
     if (valueA < valueB) return direction === 'asc' ? -1 : 1;
     if (valueA > valueB) return direction === 'asc' ? 1 : -1;
     return 0;
-  }) || [];
+    });
+  }, [expenses, debouncedSearchTerm, columnFilters, columnSorts]);
 
-  const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0;
+  const totalExpenses = useMemo(() => {
+    return filteredAndSortedExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+  }, [filteredAndSortedExpenses]);
 
 
-  // Export filtered data to Excel
-  const exportToExcel = () => {
+  // Export filtered data to Excel (memoized)
+  const exportToExcel = useCallback(() => {
     const exportData = filteredAndSortedExpenses.map((expense) => {
       return {
         'Date': new Date(expense.expense_date).toLocaleDateString(),
@@ -558,7 +566,7 @@ const TransportExpenses = () => {
       title: "Export Successful",
       description: `Exported ${exportData.length} transport expenses to ${fileName}`,
     });
-  };
+  }, [filteredAndSortedExpenses, toast]);
 
   return (
     <div className="space-y-6">
