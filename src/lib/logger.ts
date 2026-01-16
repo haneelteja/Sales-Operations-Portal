@@ -48,17 +48,28 @@ class Logger {
   }
 }
 
-// Create logger instance
-const loggerInstance = new Logger(
-  import.meta.env.DEV ? LogLevel.DEBUG : LogLevel.INFO
-);
+// Lazy initialization to prevent circular dependency issues
+let loggerInstance: Logger | null = null;
 
-// Export logger instance
-export const logger = loggerInstance;
+function getLogger(): Logger {
+  if (!loggerInstance) {
+    loggerInstance = new Logger(
+      import.meta.env.DEV ? LogLevel.DEBUG : LogLevel.INFO
+    );
+  }
+  return loggerInstance;
+}
 
-// Export individual methods for convenience (avoid destructuring to prevent initialization issues)
-export const error = loggerInstance.error.bind(loggerInstance);
-export const warn = loggerInstance.warn.bind(loggerInstance);
-export const info = loggerInstance.info.bind(loggerInstance);
-export const debug = loggerInstance.debug.bind(loggerInstance);
+// Export logger instance (lazy getter)
+export const logger = new Proxy({} as Logger, {
+  get(_target, prop) {
+    return getLogger()[prop as keyof Logger];
+  }
+});
+
+// Export individual methods using lazy getters
+export const error = (...args: Parameters<Logger['error']>) => getLogger().error(...args);
+export const warn = (...args: Parameters<Logger['warn']>) => getLogger().warn(...args);
+export const info = (...args: Parameters<Logger['info']>) => getLogger().info(...args);
+export const debug = (...args: Parameters<Logger['debug']>) => getLogger().debug(...args);
 

@@ -191,7 +191,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = useCallback(async (email: string, password: string) => {
     // For production: Use real Supabase auth
-    if (process.env.NODE_ENV === 'production' || !process.env.VITE_USE_MOCK_AUTH) {
+    if (!import.meta.env.DEV || import.meta.env.VITE_USE_MOCK_AUTH !== 'true') {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,

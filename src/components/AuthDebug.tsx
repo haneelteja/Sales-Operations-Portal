@@ -5,7 +5,7 @@ const AuthDebug: React.FC = () => {
   const { user, session, profile, loading } = useAuth();
   
   // Only show in development
-  if (process.env.NODE_ENV !== 'development') {
+  if (!import.meta.env.DEV) {
     return null;
   }
 
