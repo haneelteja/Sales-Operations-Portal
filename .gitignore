@@ -47,6 +47,11 @@ lerna-debug.log*
 *.temp
 .cache/
 
+# Backup files
+*.bak
+*.backup
+*~
+
 # Lock files (optional - uncomment if you want to ignore)
 # package-lock.json
 # yarn.lock
