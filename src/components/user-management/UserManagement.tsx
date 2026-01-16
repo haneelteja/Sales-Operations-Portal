@@ -721,13 +721,24 @@ const UserManagement = () => {
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    // Prevent default form submission
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
     
     console.log('Form submission started');
     console.log('Form data:', userForm);
+    console.log('Form data type check - role:', typeof userForm.role, userForm.role);
+    
+    // Prevent double submission
+    if (isSubmitting) {
+      console.warn('Form is already submitting, ignoring duplicate submission');
+      return;
+    }
     
     // Validate required fields
     if (!userForm.username || !userForm.email) {
+      console.error('Validation failed: missing username or email');
       toast({
         title: "Error",
         description: "Please fill in username and email.",
@@ -738,17 +749,18 @@ const UserManagement = () => {
     
     // Validate role is set
     if (!userForm.role || !['admin', 'manager', 'client'].includes(userForm.role)) {
+      console.error('Validation failed: invalid role', userForm.role);
       toast({
         title: "Error",
         description: "Please select a valid role (Admin, Manager, or Client).",
         variant: "destructive",
       });
-      console.error('Invalid role:', userForm.role);
       return;
     }
     
     // For client role, require at least one client-branch combination
     if (userForm.role === 'client' && userForm.associated_client_branches.length === 0) {
+      console.error('Validation failed: client role requires client-branch selection');
       toast({
         title: "Error",
         description: "Please select at least one client-branch combination for client users.",
@@ -759,6 +771,7 @@ const UserManagement = () => {
 
     console.log('Validation passed, submitting form with role:', userForm.role);
     setIsSubmitting(true);
+    
     try {
       if (editingUserId) {
         // Update existing user
@@ -771,24 +784,29 @@ const UserManagement = () => {
           associated_client_branches: userForm.associated_client_branches
         });
         setEditingUserId(null);
+        console.log('User updated successfully');
       } else {
         // Create new user
         console.log('Creating new user with role:', userForm.role);
         await createUserMutation.mutateAsync(userForm);
+        console.log('User created successfully');
       }
       
-      // Reset form
+      // Reset form only on success
       setUserForm({
         username: '',
         email: '',
         associated_client_branches: [],
         role: 'client'
       });
+      clearSavedData(); // Clear auto-saved data after successful submission
     } catch (error) {
       console.error('Form submission error:', error);
       // Error handling is done in the mutation onError callbacks
+      // Don't reset form on error so user can correct and retry
     } finally {
       setIsSubmitting(false);
+      console.log('Form submission completed');
     }
   };
 
@@ -974,9 +992,11 @@ const UserManagement = () => {
         <CardContent>
           <form 
             id="create-user-form" 
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               console.log('Form onSubmit triggered');
-              handleSubmit(e);
+              e.preventDefault();
+              e.stopPropagation();
+              await handleSubmit(e);
             }} 
             className="space-y-6"
             noValidate
@@ -1152,25 +1172,18 @@ const UserManagement = () => {
 
             <div className="flex space-x-2">
               <Button 
-                type="button"
+                type="submit"
                 disabled={isSubmitting}
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
-                onClick={async (e) => {
-                  e.preventDefault();
+                onClick={(e) => {
+                  // Log button click for debugging
                   console.log('Submit button clicked');
                   console.log('Current form state:', userForm);
                   console.log('Is submitting:', isSubmitting);
                   console.log('Editing user ID:', editingUserId);
                   
-                  // Create a synthetic form event and call handleSubmit directly
-                  const syntheticEvent = {
-                    preventDefault: () => {},
-                    stopPropagation: () => {},
-                    currentTarget: document.getElementById('create-user-form'),
-                    target: document.getElementById('create-user-form'),
-                  } as React.FormEvent;
-                  
-                  await handleSubmit(syntheticEvent);
+                  // Don't prevent default - let form submission proceed
+                  // The form's onSubmit handler will be called automatically
                 }}
               >
                 {isSubmitting 
