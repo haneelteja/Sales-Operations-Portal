@@ -176,21 +176,33 @@ serve(async (req) => {
 
     // Create user management record
     console.log('Inserting user_management record with role:', role)
-    console.log('Associated clients:', associatedClients)
-    console.log('Associated branches:', associatedBranches)
+    console.log('Associated clients:', associatedClients, 'Type:', Array.isArray(associatedClients))
+    console.log('Associated branches:', associatedBranches, 'Type:', Array.isArray(associatedBranches))
+    
+    // Ensure arrays are valid (not null/undefined)
+    const safeClients = Array.isArray(associatedClients) ? associatedClients : [];
+    const safeBranches = Array.isArray(associatedBranches) ? associatedBranches : [];
+    
+    // For admin/manager roles, empty arrays are acceptable - they'll have access to all clients
+    console.log('Using safe arrays - clients:', safeClients.length, 'branches:', safeBranches.length)
     
     const insertData = {
       user_id: authData.user.id,
       username: username,
       email: email,
-      associated_clients: associatedClients || [],
-      associated_branches: associatedBranches || [],
+      associated_clients: safeClients,
+      associated_branches: safeBranches,
       role: role, // Explicitly set role from request
       status: 'active',
-      created_by: createdBy
+      created_by: createdBy || null
     };
     
-    console.log('Insert data:', { ...insertData, createdBy: createdBy || 'null' })
+    console.log('Insert data:', { 
+      ...insertData, 
+      created_by: createdBy || 'null',
+      associated_clients_count: insertData.associated_clients.length,
+      associated_branches_count: insertData.associated_branches.length
+    })
     
     const { data: userRecord, error: userError } = await supabase
       .from("user_management")
@@ -203,15 +215,26 @@ serve(async (req) => {
 
     if (userError) {
       console.error('User management creation error:', userError)
+      console.error('Error code:', userError.code)
+      console.error('Error message:', userError.message)
+      console.error('Error details:', userError.details)
+      console.error('Error hint:', userError.hint)
+      
       // If user_management creation fails, try to clean up the auth user
       try {
+        console.log('Attempting to cleanup auth user:', authData.user.id)
         await supabase.auth.admin.deleteUser(authData.user.id)
+        console.log('Auth user cleaned up successfully')
       } catch (cleanupError) {
         console.warn('Failed to cleanup auth user:', cleanupError)
       }
+      
       return new Response(
         JSON.stringify({ 
-          error: `Failed to create user management record: ${userError.message}` 
+          error: `Failed to create user management record: ${userError.message}`,
+          details: userError.details,
+          hint: userError.hint,
+          code: userError.code
         }),
         { 
           status: 500, 

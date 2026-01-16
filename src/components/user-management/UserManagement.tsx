@@ -280,18 +280,33 @@ const UserManagement = () => {
 
       if (formData.role === 'admin' || formData.role === 'manager') {
         // Get all clients and branches for admin/manager roles
-        const { data: allClients } = await supabase
-          .from('customers')
-          .select('client_name, branch')
-          .not('client_name', 'is', null)
-          .not('client_name', 'eq', '')
-          .not('branch', 'is', null)
-          .not('branch', 'eq', '');
+        try {
+          const { data: allClients, error: clientsError } = await supabase
+            .from('customers')
+            .select('client_name, branch')
+            .not('client_name', 'is', null)
+            .not('client_name', 'eq', '')
+            .not('branch', 'is', null)
+            .not('branch', 'eq', '');
 
-        if (allClients) {
-          associatedClients = [...new Set(allClients.map(c => c.client_name).filter(Boolean))];
-          associatedBranches = [...new Set(allClients.map(c => c.branch).filter(Boolean))];
-        } else {
+          if (clientsError) {
+            console.warn('Error fetching all clients for admin/manager:', clientsError);
+            // For admin/manager, empty arrays are acceptable - they'll get access to all clients automatically
+            associatedClients = [];
+            associatedBranches = [];
+          } else if (allClients && allClients.length > 0) {
+            associatedClients = [...new Set(allClients.map(c => c.client_name).filter(Boolean))];
+            associatedBranches = [...new Set(allClients.map(c => c.branch).filter(Boolean))];
+            console.log('Found clients for admin/manager:', associatedClients.length, 'clients');
+          } else {
+            console.log('No clients found in database - admin/manager will have empty access initially');
+            // Empty arrays are fine - admin/manager roles will get access to all clients as they're added
+            associatedClients = [];
+            associatedBranches = [];
+          }
+        } catch (error) {
+          console.error('Exception fetching clients for admin/manager:', error);
+          // Empty arrays are acceptable for admin/manager
           associatedClients = [];
           associatedBranches = [];
         }
