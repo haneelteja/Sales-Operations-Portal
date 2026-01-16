@@ -44,7 +44,7 @@ serve(async (req) => {
       
       return new Response(
         JSON.stringify({ 
-          success: true, 
+          success: false, 
           message: 'Welcome email details logged (SMTP not configured)',
           data: {
             email,

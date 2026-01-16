@@ -312,7 +312,6 @@ serve(async (req) => {
       const appUrl = Deno.env.get('APP_URL') || 'https://sales-operations-portal.vercel.app'
       
       // Try sending via SMTP first (no domain verification needed)
-      // Fallback chain: SMTP → Mailgun → Resend
       console.log('Trying SMTP email function first...')
       let emailResponse = null
       let emailError = null
@@ -332,66 +331,31 @@ serve(async (req) => {
         if (!emailError && emailResponse?.success) {
           console.log('✅ Email sent successfully via SMTP')
         } else {
-          throw new Error('SMTP function failed, trying Mailgun...')
+          throw new Error('SMTP function failed, trying Resend...')
         }
       } catch (smtpErr) {
-        console.log('SMTP function not available or failed, trying Mailgun...')
-        try {
-          const mailgunResult = await supabase.functions.invoke('send-welcome-email-mailgun', {
-            body: {
-              email: email,
-              username: username,
-              tempPassword: password,
-              appUrl: appUrl
-            }
-          })
-          emailResponse = mailgunResult.data
-          emailError = mailgunResult.error
-          
-          if (!emailError && emailResponse?.success) {
-            console.log('✅ Email sent successfully via Mailgun')
-          } else {
-            throw new Error('Mailgun function failed, trying Resend...')
+        console.log('SMTP function not available or failed, trying Resend...')
+        // Fallback to Resend if SMTP is not configured
+        const resendResult = await supabase.functions.invoke('send-welcome-email-resend', {
+          body: {
+            email: email,
+            username: username,
+            tempPassword: password,
+            appUrl: appUrl
           }
-        } catch (mailgunErr) {
-          console.log('Mailgun function not available or failed, trying Resend...')
-          // Fallback to Resend if Mailgun is not configured
-          const resendResult = await supabase.functions.invoke('send-welcome-email-resend', {
-            body: {
-              email: email,
-              username: username,
-              tempPassword: password,
-              appUrl: appUrl
-            }
-          })
-          emailResponse = resendResult.data
-          emailError = resendResult.error
-        }
-      }
-      
-      console.log('Email function response:', JSON.stringify(emailResponse, null, 2))
-      console.log('Email function error:', emailError)
-
-      if (emailError) {
-        console.error('❌ Failed to invoke email function:', emailError)
-        console.error('Error details:', JSON.stringify(emailError, null, 2))
-        // Log email details for manual sending
-        console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
-        console.log('To:', email)
-        console.log('Subject: Welcome to Elma Operations Portal - Your Login Credentials')
-        console.log('Username:', username)
-        console.log('Temporary Password:', password)
-        console.log('App URL:', appUrl)
-        console.log('=== END EMAIL DETAILS ===')
-      } else if (emailResponse) {
-        // Check if response indicates success
-        if (emailResponse.success === true || emailResponse.message?.includes('successfully')) {
-          console.log('✅ Welcome email sent successfully via Resend to:', email)
-          if (emailResponse.data?.resendId) {
-            console.log('Resend Email ID:', emailResponse.data.resendId)
+        })
+        emailResponse = resendResult.data
+        emailError = resendResult.error
+        
+        // Validate Resend response - if it failed, log details for manual sending
+        if (emailError || !emailResponse?.success) {
+          console.error('❌ Resend fallback also failed')
+          if (emailError) {
+            console.error('Resend error:', emailError)
           }
-        } else {
-          console.warn('⚠️ Email function returned but may not have sent:', emailResponse)
+          if (emailResponse && !emailResponse.success) {
+            console.error('Resend returned success: false')
+          }
           // Log email details for manual sending
           console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
           console.log('To:', email)
@@ -399,10 +363,20 @@ serve(async (req) => {
           console.log('Username:', username)
           console.log('Temporary Password:', password)
           console.log('App URL:', appUrl)
-          console.log('Response:', JSON.stringify(emailResponse, null, 2))
+          if (emailResponse) {
+            console.log('Response:', JSON.stringify(emailResponse, null, 2))
+          }
           console.log('=== END EMAIL DETAILS ===')
+        } else {
+          console.log('✅ Welcome email sent successfully via Resend to:', email)
+          if (emailResponse.data?.resendId) {
+            console.log('Resend Email ID:', emailResponse.data.resendId)
+          }
         }
-      } else {
+      }
+      
+      console.log('Email function response:', JSON.stringify(emailResponse, null, 2))
+      console.log('Email function error:', emailError) else {
         console.warn('⚠️ No response from email function')
         // Log email details for manual sending
         console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
