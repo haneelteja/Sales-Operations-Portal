@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { 
@@ -44,7 +44,16 @@ const FactoryPayables = () => {
     transaction_date: ""
   });
   const [searchTerm, setSearchTerm] = useState("");
-  const [columnFilters, setColumnFilters] = useState({
+  const [columnFilters, setColumnFilters] = useState<{
+    date: string | string[];
+    client: string | string[];
+    branch: string | string[];
+    sku: string | string[];
+    quantity: string | string[];
+    price_per_case: string | string[];
+    type: string | string[];
+    amount: string | string[];
+  }>({
     date: "",
     client: "",
     branch: "",
@@ -157,15 +166,62 @@ const FactoryPayables = () => {
       if (!matchesGlobalSearch) return false;
     }
     
-    // Column-specific filters
-    if (columnFilters.date && dateISO !== columnFilters.date) return false;
-    if (columnFilters.client && !clientName.toLowerCase().includes(columnFilters.client.toLowerCase())) return false;
-    if (columnFilters.branch && !branch.toLowerCase().includes(columnFilters.branch.toLowerCase())) return false;
-    if (columnFilters.sku && !sku.toLowerCase().includes(columnFilters.sku.toLowerCase())) return false;
-    if (columnFilters.quantity && quantity !== columnFilters.quantity) return false;
-    if (columnFilters.price_per_case && pricePerCaseStr !== columnFilters.price_per_case) return false;
-    if (columnFilters.type && !type.toLowerCase().includes(columnFilters.type.toLowerCase())) return false;
-    if (columnFilters.amount && !amount.includes(columnFilters.amount)) return false;
+    // Column-specific filters - support both single values and arrays (multi-select)
+    // Date filter (single value only)
+    if (columnFilters.date) {
+      const dateFilter = Array.isArray(columnFilters.date) ? columnFilters.date[0] : columnFilters.date;
+      if (dateFilter && dateISO !== dateFilter) return false;
+    }
+    
+    // Client filter (multi-select)
+    if (columnFilters.client) {
+      const clientFilter = Array.isArray(columnFilters.client) ? columnFilters.client : [columnFilters.client];
+      if (clientFilter.length > 0 && !clientFilter.some(filter => 
+        clientName.toLowerCase().includes(filter.toLowerCase())
+      )) return false;
+    }
+    
+    // Branch filter (multi-select)
+    if (columnFilters.branch) {
+      const branchFilter = Array.isArray(columnFilters.branch) ? columnFilters.branch : [columnFilters.branch];
+      if (branchFilter.length > 0 && !branchFilter.some(filter => 
+        branch.toLowerCase().includes(filter.toLowerCase())
+      )) return false;
+    }
+    
+    // SKU filter (multi-select)
+    if (columnFilters.sku) {
+      const skuFilter = Array.isArray(columnFilters.sku) ? columnFilters.sku : [columnFilters.sku];
+      if (skuFilter.length > 0 && !skuFilter.some(filter => 
+        sku.toLowerCase().includes(filter.toLowerCase())
+      )) return false;
+    }
+    
+    // Type filter (multi-select)
+    if (columnFilters.type) {
+      const typeFilter = Array.isArray(columnFilters.type) ? columnFilters.type : [columnFilters.type];
+      if (typeFilter.length > 0 && !typeFilter.some(filter => 
+        type.toLowerCase().includes(filter.toLowerCase())
+      )) return false;
+    }
+    
+    // Quantity filter (single value - text search)
+    if (columnFilters.quantity) {
+      const quantityFilter = Array.isArray(columnFilters.quantity) ? columnFilters.quantity[0] : columnFilters.quantity;
+      if (quantityFilter && !quantity.includes(quantityFilter)) return false;
+    }
+    
+    // Price per case filter (single value - text search)
+    if (columnFilters.price_per_case) {
+      const priceFilter = Array.isArray(columnFilters.price_per_case) ? columnFilters.price_per_case[0] : columnFilters.price_per_case;
+      if (priceFilter && !pricePerCaseStr.includes(priceFilter)) return false;
+    }
+    
+    // Amount filter (single value - text search)
+    if (columnFilters.amount) {
+      const amountFilter = Array.isArray(columnFilters.amount) ? columnFilters.amount[0] : columnFilters.amount;
+      if (amountFilter && !amount.includes(amountFilter)) return false;
+    }
     
     return true;
   }).sort((a, b) => {
@@ -224,7 +280,7 @@ const FactoryPayables = () => {
   }) || [];
 
   // Column filter handlers
-  const handleColumnFilterChange = (columnKey: string, value: string) => {
+  const handleColumnFilterChange = (columnKey: string, value: string | string[]) => {
     setColumnFilters(prev => ({
       ...prev,
       [columnKey]: value
@@ -237,6 +293,29 @@ const FactoryPayables = () => {
       [columnKey]: ""
     }));
   };
+
+  // Get unique values for multi-select filters
+  const getUniqueClients = useMemo(() => {
+    if (!transactions) return [];
+    const unique = new Set<string>();
+    transactions.forEach(t => {
+      const clientName = t.transaction_type === 'payment' 
+        ? (t.description || 'Elma Payment')
+        : (t.customers?.client_name || '');
+      if (clientName) unique.add(clientName);
+    });
+    return Array.from(unique).sort();
+  }, [transactions]);
+
+  const getUniqueBranches = useMemo(() => {
+    if (!transactions) return [];
+    const unique = new Set<string>();
+    transactions.forEach(t => {
+      const branch = t.customers?.branch;
+      if (branch) unique.add(branch);
+    });
+    return Array.from(unique).sort();
+  }, [transactions]);
 
   const handleColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
     setColumnSorts(prev => ({
@@ -757,7 +836,8 @@ const FactoryPayables = () => {
                     onClearFilter={() => handleClearColumnFilter('client')}
                     sortDirection={columnSorts.client}
                     onSortChange={(direction) => handleColumnSortChange('client', direction)}
-                    dataType="text"
+                    dataType="multiselect"
+                    options={getUniqueClients}
                   />
                 </div>
               </TableHead>
@@ -772,7 +852,8 @@ const FactoryPayables = () => {
                     onClearFilter={() => handleClearColumnFilter('branch')}
                     sortDirection={columnSorts.branch}
                     onSortChange={(direction) => handleColumnSortChange('branch', direction)}
-                    dataType="text"
+                    dataType="multiselect"
+                    options={getUniqueBranches}
                   />
                 </div>
               </TableHead>
@@ -787,8 +868,8 @@ const FactoryPayables = () => {
                     onClearFilter={() => handleClearColumnFilter('sku')}
                     sortDirection={columnSorts.sku}
                     onSortChange={(direction) => handleColumnSortChange('sku', direction)}
-                    dataType="text"
-                    options={getUniqueSKUs()}
+                    dataType="multiselect"
+                    options={getUniqueSKUs}
                   />
                 </div>
               </TableHead>
@@ -834,7 +915,7 @@ const FactoryPayables = () => {
                     sortDirection={columnSorts.type}
                     onSortChange={(direction) => handleColumnSortChange('type', direction)}
                     dataType="text"
-                    options={getUniqueTypes()}
+                    options={getUniqueTypes}
                   />
                 </div>
               </TableHead>

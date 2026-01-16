@@ -393,7 +393,7 @@ prepared_data AS (
       WHEN UPPER(TRIM(t.branch)) = 'DILSHUKNAGAR' THEN 'Dilshuknagar'
       WHEN UPPER(TRIM(t.branch)) = 'FILM NAGAR' THEN 'Film nagar'
       WHEN UPPER(TRIM(t.branch)) = 'BACHUPALLY' THEN 'Bachupally'
-      WHEN UPPER(TRIM(t.branch)) = 'L B NAGAR' OR UPPER(TRIM(t.branch)) LIKE '%L B NAGAR%' THEN 'L B Nagar'
+      WHEN UPPER(TRIM(t.branch)) = 'L B NAGAR' OR UPPER(TRIM(t.branch)) LIKE '%L B NAGAR%' OR UPPER(TRIM(t.branch)) LIKE 'L B NAGAR%' THEN 'L B Nagar'
       WHEN UPPER(TRIM(t.branch)) = 'MAIN OFFICE' THEN 'Main office'
       WHEN UPPER(TRIM(t.branch)) = 'TENALI' THEN 'Tenali'
       WHEN UPPER(TRIM(t.branch)) = 'TIRUMALAGIRI' THEN 'Tirumalagiri'

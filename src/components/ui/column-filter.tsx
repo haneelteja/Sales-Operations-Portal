@@ -135,7 +135,36 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
       );
     }
 
-    if (options.length > 0) {
+    // Auto-enable multiselect when options are provided (unless explicitly text type)
+    if (options.length > 0 && dataType !== 'text') {
+      const selectedValues = Array.isArray(currentFilterValue) ? currentFilterValue : 
+                            (currentFilterValue ? [currentFilterValue] : []);
+      return (
+        <div className="space-y-2">
+          <div className="max-h-48 overflow-y-auto border rounded-md p-2">
+            {options.map((option) => (
+              <label key={option} className="flex items-center space-x-2 py-1 hover:bg-gray-50 rounded px-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedValues.includes(option)}
+                  onChange={(e) => handleMultiSelectChange(option, e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">{option}</span>
+              </label>
+            ))}
+          </div>
+          {selectedValues.length > 0 && (
+            <div className="text-xs text-gray-500">
+              {selectedValues.length} selected
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Single select dropdown (only for explicit text type with options)
+    if (options.length > 0 && dataType === 'text') {
       return (
         <div className="space-y-2">
           <select

@@ -19,7 +19,7 @@ import { MobileTable } from "@/components/ui/mobile-table";
 import { useMobileDetection, MOBILE_CLASSES } from "@/lib/mobile-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Trash2, Edit, Download } from "lucide-react";
+import { Pencil, Trash2, Edit, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import * as XLSX from 'xlsx';
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { useAutoSave } from "@/hooks/useAutoSave";
@@ -80,7 +80,14 @@ const SalesEntry = () => {
     branch: ""
   });
   const [searchTerm, setSearchTerm] = useState("");
-  const [columnFilters, setColumnFilters] = useState({
+  const [columnFilters, setColumnFilters] = useState<{
+    date: string | string[];
+    customer: string | string[];
+    branch: string | string[];
+    type: string | string[];
+    sku: string | string[];
+    amount: string | string[];
+  }>({
     date: "",
     customer: "",
     branch: "",
@@ -96,6 +103,8 @@ const SalesEntry = () => {
     sku: null,
     amount: null
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(50); // Transactions per page
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -770,12 +779,12 @@ const SalesEntry = () => {
     checkSingleSKUMode();
   }, [checkSingleSKUMode]);
 
-  // Fetch recent transactions for display
-  const { data: recentTransactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
+  // Fetch all transactions (we'll paginate client-side after filtering)
+  const { data: allTransactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ["recent-transactions"],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error, count } = await supabase
           .from("sales_transactions")
           .select(`
             id,
@@ -788,16 +797,18 @@ const SalesEntry = () => {
             description,
             created_at,
             customers (client_name, branch)
-          `)
-          .order("created_at", { ascending: false })
-          .limit(50);
+          `, { count: 'exact' })
+          .order("created_at", { ascending: false });
         
         if (error) {
           console.error('Error fetching transactions:', error);
           throw new Error(`Failed to fetch transactions: ${error.message}`);
         }
         
-        return data || [];
+        return {
+          data: data || [],
+          total: count || 0
+        };
       } catch (error) {
         console.error('Critical error in transactions query:', error);
         throw error;
@@ -808,6 +819,9 @@ const SalesEntry = () => {
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
+
+  const recentTransactions = allTransactions?.data || [];
+  const totalTransactions = allTransactions?.total || 0;
 
   // Calculate cumulative outstanding for a specific customer up to a given transaction
   const calculateCumulativeOutstanding = useCallback((customerId: string, transactionDate: string, transactionId: string) => {
@@ -943,6 +957,12 @@ const SalesEntry = () => {
           const amount = transaction.amount?.toString() || '';
           const date = new Date(transaction.transaction_date).toLocaleDateString();
           const dateISO = transaction.transaction_date;
+          // Normalize date to YYYY-MM-DD format for comparison
+          // Handle both ISO strings and date-only strings
+          const transactionDateObj = new Date(transaction.transaction_date);
+          const transactionDateOnly = transactionDateObj.getFullYear() + '-' + 
+            String(transactionDateObj.getMonth() + 1).padStart(2, '0') + '-' + 
+            String(transactionDateObj.getDate()).padStart(2, '0');
           const type = transaction.transaction_type || '';
           const outstanding = transaction.outstanding?.toString() || '';
           
@@ -962,13 +982,50 @@ const SalesEntry = () => {
             if (!matchesGlobalSearch) return false;
           }
           
-          // Column-specific filters
-          if (columnFilters.date && dateISO !== columnFilters.date) return false;
-          if (columnFilters.customer && !customerName.toLowerCase().includes(columnFilters.customer.toLowerCase())) return false;
-          if (columnFilters.branch && !branch.toLowerCase().includes(columnFilters.branch.toLowerCase())) return false;
-          if (columnFilters.type && !type.toLowerCase().includes(columnFilters.type.toLowerCase())) return false;
-          if (columnFilters.sku && !sku.toLowerCase().includes(columnFilters.sku.toLowerCase())) return false;
-          if (columnFilters.amount && !amount.includes(columnFilters.amount)) return false;
+          // Column-specific filters - support both single values and arrays (multi-select)
+          // Date filter (single value only)
+          if (columnFilters.date) {
+            const dateFilter = Array.isArray(columnFilters.date) ? columnFilters.date[0] : columnFilters.date;
+            if (dateFilter && transactionDateOnly !== dateFilter) return false;
+          }
+          
+          // Customer filter (multi-select)
+          if (columnFilters.customer) {
+            const customerFilter = Array.isArray(columnFilters.customer) ? columnFilters.customer : [columnFilters.customer];
+            if (customerFilter.length > 0 && !customerFilter.some(filter => 
+              customerName.toLowerCase().includes(filter.toLowerCase())
+            )) return false;
+          }
+          
+          // Branch filter (multi-select)
+          if (columnFilters.branch) {
+            const branchFilter = Array.isArray(columnFilters.branch) ? columnFilters.branch : [columnFilters.branch];
+            if (branchFilter.length > 0 && !branchFilter.some(filter => 
+              branch.toLowerCase().includes(filter.toLowerCase())
+            )) return false;
+          }
+          
+          // Type filter (multi-select)
+          if (columnFilters.type) {
+            const typeFilter = Array.isArray(columnFilters.type) ? columnFilters.type : [columnFilters.type];
+            if (typeFilter.length > 0 && !typeFilter.some(filter => 
+              type.toLowerCase().includes(filter.toLowerCase())
+            )) return false;
+          }
+          
+          // SKU filter (multi-select)
+          if (columnFilters.sku) {
+            const skuFilter = Array.isArray(columnFilters.sku) ? columnFilters.sku : [columnFilters.sku];
+            if (skuFilter.length > 0 && !skuFilter.some(filter => 
+              sku.toLowerCase().includes(filter.toLowerCase())
+            )) return false;
+          }
+          
+          // Amount filter (single value - text search)
+          if (columnFilters.amount) {
+            const amountFilter = Array.isArray(columnFilters.amount) ? columnFilters.amount[0] : columnFilters.amount;
+            if (amountFilter && !amount.includes(amountFilter)) return false;
+          }
           
           return true;
         } catch (error) {
@@ -1033,12 +1090,21 @@ const SalesEntry = () => {
     }
   }, [recentTransactions, searchTerm, columnFilters, columnSorts, calculateCumulativeOutstanding]);
 
+  // Paginate the filtered results
+  const totalFilteredTransactions = filteredAndSortedRecentTransactions.length;
+  const totalPages = Math.ceil(totalFilteredTransactions / pageSize);
+  const paginatedTransactions = filteredAndSortedRecentTransactions.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   // Column filter handlers
-  const handleColumnFilterChange = (columnKey: string, value: string) => {
+  const handleColumnFilterChange = (columnKey: string, value: string | string[]) => {
     setColumnFilters(prev => ({
       ...prev,
       [columnKey]: value
     }));
+    setCurrentPage(1); // Reset to first page when filter changes
   };
 
   const handleClearColumnFilter = (columnKey: string) => {
@@ -1046,7 +1112,43 @@ const SalesEntry = () => {
       ...prev,
       [columnKey]: ""
     }));
+    setCurrentPage(1); // Reset to first page when filter clears
   };
+
+  // Get unique values for multi-select filters
+  const getUniqueCustomers = useMemo(() => {
+    const unique = new Set<string>();
+    recentTransactions?.forEach(t => {
+      const name = t.customers?.client_name;
+      if (name) unique.add(name);
+    });
+    return Array.from(unique).sort();
+  }, [recentTransactions]);
+
+  const getUniqueBranches = useMemo(() => {
+    const unique = new Set<string>();
+    recentTransactions?.forEach(t => {
+      const branch = t.customers?.branch;
+      if (branch) unique.add(branch);
+    });
+    return Array.from(unique).sort();
+  }, [recentTransactions]);
+
+  const getUniqueSKUs = useMemo(() => {
+    const unique = new Set<string>();
+    recentTransactions?.forEach(t => {
+      if (t.sku) unique.add(t.sku);
+    });
+    return Array.from(unique).sort();
+  }, [recentTransactions]);
+
+  const getUniqueTypes = useMemo(() => {
+    const unique = new Set<string>();
+    recentTransactions?.forEach(t => {
+      if (t.transaction_type) unique.add(t.transaction_type);
+    });
+    return Array.from(unique).sort();
+  }, [recentTransactions]);
 
   const handleColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
     setColumnSorts(prev => ({
@@ -2105,9 +2207,11 @@ const SalesEntry = () => {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="mb-0">Recent Client Transactions</CardTitle>
+            <CardTitle className="mb-0">Client Transactions</CardTitle>
             <span className="text-sm text-muted-foreground">
-              {filteredAndSortedRecentTransactions.length} of {recentTransactions?.length || 0} transactions
+              Showing {paginatedTransactions.length} of {totalFilteredTransactions} filtered transactions
+              {totalTransactions !== totalFilteredTransactions && ` (${totalTransactions} total)`}
+              {totalPages > 1 && ` - Page ${currentPage} of ${totalPages}`}
             </span>
           </div>
         </CardHeader>
@@ -2130,10 +2234,16 @@ const SalesEntry = () => {
               <Input
                 placeholder="Search transactions by customer, branch, SKU, description, amount, date, or type..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1); // Reset to first page when search changes
+                }}
                 className="max-w-md"
               />
-              {(searchTerm || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
+              {(searchTerm || Object.values(columnFilters).some(filter => {
+                if (Array.isArray(filter)) return filter.length > 0;
+                return filter && filter !== "";
+              }) || Object.values(columnSorts).some(sort => sort !== null)) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -2155,6 +2265,7 @@ const SalesEntry = () => {
                       sku: null,
                       amount: null
                     });
+                    setCurrentPage(1); // Reset to first page when clearing filters
                   }}
                 >
                   Clear All Filters
@@ -2191,8 +2302,8 @@ const SalesEntry = () => {
                       onClearFilter={() => handleClearColumnFilter('customer')}
                       sortDirection={columnSorts.customer}
                       onSortChange={(direction) => handleColumnSortChange('customer', direction)}
-                      dataType="text"
-                      options={getUniqueCustomers()}
+                      dataType="multiselect"
+                      options={getUniqueCustomers}
                     />
                   </div>
                 </TableHead>
@@ -2207,8 +2318,8 @@ const SalesEntry = () => {
                       onClearFilter={() => handleClearColumnFilter('branch')}
                       sortDirection={columnSorts.branch}
                       onSortChange={(direction) => handleColumnSortChange('branch', direction)}
-                      dataType="text"
-                      options={getUniqueBranches()}
+                      dataType="multiselect"
+                      options={getUniqueBranches}
                     />
                   </div>
                 </TableHead>
@@ -2223,8 +2334,8 @@ const SalesEntry = () => {
                       onClearFilter={() => handleClearColumnFilter('type')}
                       sortDirection={columnSorts.type}
                       onSortChange={(direction) => handleColumnSortChange('type', direction)}
-                      dataType="text"
-                      options={getUniqueTypes()}
+                      dataType="multiselect"
+                      options={getUniqueTypes}
                     />
                   </div>
                 </TableHead>
@@ -2239,8 +2350,8 @@ const SalesEntry = () => {
                       onClearFilter={() => handleClearColumnFilter('sku')}
                       sortDirection={columnSorts.sku}
                       onSortChange={(direction) => handleColumnSortChange('sku', direction)}
-                      dataType="text"
-                      options={getUniqueSKUs()}
+                      dataType="multiselect"
+                      options={getUniqueSKUs}
                     />
                   </div>
                 </TableHead>
@@ -2304,8 +2415,8 @@ const SalesEntry = () => {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : filteredAndSortedRecentTransactions.length > 0 ? (
-                filteredAndSortedRecentTransactions.map((transaction) => {
+              ) : paginatedTransactions.length > 0 ? (
+                paginatedTransactions.map((transaction) => {
                 const customer = customers?.find(c => c.id === transaction.customer_id);
                 const customerPrice = customer?.price_per_bottle || 0;
                 const quantity = transaction.quantity || 0;
@@ -2495,6 +2606,62 @@ const SalesEntry = () => {
             )}
             </TableBody>
           </Table>
+          
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1 || transactionsLoading}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        disabled={transactionsLoading}
+                        className="w-10"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages || transactionsLoading}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
