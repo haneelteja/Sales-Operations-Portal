@@ -129,6 +129,54 @@ serve(async (req) => {
       )
     }
 
+    // Check if user already exists in auth.users
+    let existingAuthUser = null;
+    try {
+      const { data: authUsers, error: listError } = await supabase.auth.admin.listUsers();
+      if (!listError && authUsers?.users) {
+        existingAuthUser = authUsers.users.find(u => u.email === email);
+        if (existingAuthUser) {
+          console.log('Found existing auth user with email:', email, 'ID:', existingAuthUser.id);
+          // Delete the existing user first
+          try {
+            console.log('Deleting existing auth user:', existingAuthUser.id);
+            const { error: deleteError } = await supabase.auth.admin.deleteUser(existingAuthUser.id);
+            if (deleteError) {
+              console.error('Failed to delete existing auth user:', deleteError);
+              return new Response(
+                JSON.stringify({ 
+                  error: `User with email "${email}" already exists in auth system and could not be deleted. Please delete the user manually first.`,
+                  details: deleteError.message
+                }),
+                { 
+                  status: 409, 
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+                }
+              );
+            }
+            console.log('Successfully deleted existing auth user');
+            // Wait a moment for cleanup
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } catch (deleteError) {
+            console.error('Exception deleting existing auth user:', deleteError);
+            return new Response(
+              JSON.stringify({ 
+                error: `User with email "${email}" already exists and could not be deleted. Please delete the user manually first.`,
+                details: deleteError instanceof Error ? deleteError.message : String(deleteError)
+              }),
+              { 
+                status: 409, 
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+              }
+            );
+          }
+        }
+      }
+    } catch (listError) {
+      console.warn('Could not check existing auth users (may require admin privileges):', listError);
+      // Continue - we'll try to create and handle the error if it fails
+    }
+
     // Create user in auth.users using admin API
     // Mark user as requiring password reset on first login
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -146,9 +194,24 @@ serve(async (req) => {
 
     if (authError) {
       console.error('Auth user creation error:', authError)
+      // Check if it's an email exists error
+      if (authError.message?.includes('already been registered') || authError.message?.includes('email_exists')) {
+        return new Response(
+          JSON.stringify({ 
+            error: `User with email "${email}" already exists in the authentication system. Please delete the existing user first or use a different email.`,
+            code: 'email_exists',
+            hint: 'The user may exist in auth.users but not in user_management. Check Supabase Auth dashboard.'
+          }),
+          { 
+            status: 409, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
       return new Response(
         JSON.stringify({ 
-          error: `Failed to create auth user: ${authError.message}` 
+          error: `Failed to create auth user: ${authError.message}`,
+          code: authError.status || 'unknown'
         }),
         { 
           status: 500, 
