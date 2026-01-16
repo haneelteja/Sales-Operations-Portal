@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,20 +23,15 @@ serve(async (req) => {
       )
     }
 
-    // Get SMTP configuration from environment variables
-    const smtpHost = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com'
-    const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '465')
-    const smtpUser = Deno.env.get('SMTP_USER')
-    const smtpPass = Deno.env.get('SMTP_PASS')
-    const fromEmail = Deno.env.get('SMTP_FROM_EMAIL') || smtpUser || 'noreply@example.com'
-    const fromName = Deno.env.get('SMTP_FROM_NAME') || 'Elma Operations'
-
-    if (!smtpUser || !smtpPass) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/0a173aea-4f4a-4dab-bee1-f23537c01efe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'send-welcome-email-smtp/index.ts:35',message:'SMTP not configured - returning response',data:{smtpUser:!!smtpUser,smtpPass:!!smtpPass,willReturnSuccess:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
+    // Get Mailgun configuration from environment variables
+    const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY')
+    const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN')
+    const fromEmail = Deno.env.get('MAILGUN_FROM_EMAIL') || `noreply@${mailgunDomain || 'example.com'}`
+    const fromName = Deno.env.get('MAILGUN_FROM_NAME') || 'Elma Operations'
+    
+    if (!mailgunApiKey || !mailgunDomain) {
       console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
-      console.log('SMTP not configured. Please set SMTP_USER and SMTP_PASS environment variables.')
+      console.log('Mailgun not configured. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN environment variables.')
       console.log('To:', email)
       console.log('Subject: Welcome to Elma Operations Portal - Your Login Credentials')
       console.log('Username:', username)
@@ -45,19 +39,16 @@ serve(async (req) => {
       console.log('App URL:', appUrl || 'https://sales-operations-portal.vercel.app')
       console.log('=== END EMAIL DETAILS ===')
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/0a173aea-4f4a-4dab-bee1-f23537c01efe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'send-welcome-email-smtp/index.ts:45',message:'Returning success:false when SMTP not configured',data:{success:false,status:200},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       return new Response(
         JSON.stringify({ 
           success: false, 
-          message: 'Welcome email details logged (SMTP not configured)',
+          message: 'Welcome email details logged (Mailgun not configured)',
           data: {
             email,
             username,
             tempPassword,
             appUrl: appUrl || 'https://sales-operations-portal.vercel.app',
-            note: 'Please configure SMTP_USER and SMTP_PASS environment variables or send email manually'
+            note: 'Please configure MAILGUN_API_KEY and MAILGUN_DOMAIN environment variables or send email manually'
           }
         }),
         { 
@@ -126,46 +117,51 @@ serve(async (req) => {
 </html>
     `.trim()
 
-    // Create SMTP client
-    const client = new SMTPClient({
-      connection: {
-        hostname: smtpHost,
-        port: smtpPort,
-        tls: true,
-        auth: {
-          username: smtpUser,
-          password: smtpPass,
-        },
-      },
-    })
+    // Mailgun API endpoint
+    const mailgunUrl = `https://api.mailgun.net/v3/${mailgunDomain}/messages`
+    
+    // Create form data for Mailgun API
+    const formData = new FormData()
+    formData.append('from', `${fromName} <${fromEmail}>`)
+    formData.append('to', email)
+    formData.append('subject', 'Welcome to Elma Operations Portal - Your Login Credentials')
+    formData.append('html', emailHtml)
+    formData.append('text', `Welcome to Elma Operations Portal\n\nUsername: ${username}\nPassword: ${tempPassword}\n\nPlease log in at: ${appUrl || 'https://sales-operations-portal.vercel.app'}\n\nPlease change your password after your first login.`)
 
-    console.log('Sending email via SMTP...')
-    console.log('SMTP Host:', smtpHost)
-    console.log('SMTP Port:', smtpPort)
+    console.log('Sending email via Mailgun...')
+    console.log('Mailgun Domain:', mailgunDomain)
     console.log('From:', `${fromName} <${fromEmail}>`)
     console.log('To:', email)
 
     try {
-      // Send email
-      await client.send({
-        from: `${fromName} <${fromEmail}>`,
-        to: email,
-        subject: 'Welcome to Elma Operations Portal - Your Login Credentials',
-        content: emailHtml,
-        html: emailHtml,
+      // Send email using Mailgun API
+      const mailgunResponse = await fetch(mailgunUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${btoa(`api:${mailgunApiKey}`)}`,
+        },
+        body: formData,
       })
 
-      console.log('✅ Email sent successfully via SMTP to:', email)
+      const mailgunData = await mailgunResponse.json()
+
+      if (!mailgunResponse.ok) {
+        throw new Error(`Mailgun API error: ${JSON.stringify(mailgunData)}`)
+      }
+
+      console.log('✅ Email sent successfully via Mailgun to:', email)
+      console.log('Mailgun Message ID:', mailgunData.id)
 
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'Welcome email sent successfully via SMTP',
+          message: 'Welcome email sent successfully via Mailgun',
           data: {
             email,
             username,
             tempPassword,
             appUrl: appUrl || 'https://sales-operations-portal.vercel.app',
+            mailgunId: mailgunData.id
           }
         }),
         { 
@@ -173,11 +169,8 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
-    } catch (smtpError) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/0a173aea-4f4a-4dab-bee1-f23537c01efe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'send-welcome-email-smtp/index.ts:170',message:'SMTP send failed - caught error',data:{errorMessage:smtpError.message,errorType:smtpError.constructor.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
-      console.error('❌ SMTP error:', smtpError)
+    } catch (mailgunError) {
+      console.error('❌ Mailgun error:', mailgunError)
       
       // Fallback: Log email details
       console.log('=== WELCOME EMAIL DETAILS (MANUAL SEND REQUIRED) ===')
@@ -186,22 +179,19 @@ serve(async (req) => {
       console.log('Username:', username)
       console.log('Password:', tempPassword)
       console.log('App URL:', appUrl || 'https://sales-operations-portal.vercel.app')
-      console.log('SMTP Error:', smtpError.message)
+      console.log('Mailgun Error:', mailgunError.message)
       console.log('=== END EMAIL DETAILS ===')
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/0a173aea-4f4a-4dab-bee1-f23537c01efe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'send-welcome-email-smtp/index.ts:183',message:'Returning success:false when SMTP send failed',data:{success:false,status:200,error:smtpError.message},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       return new Response(
         JSON.stringify({ 
           success: false, 
-          message: 'Welcome email details logged (SMTP error)',
+          message: 'Welcome email details logged (Mailgun error)',
           data: {
             email,
             username,
             tempPassword,
             appUrl: appUrl || 'https://sales-operations-portal.vercel.app',
-            error: smtpError.message,
+            error: mailgunError.message,
             note: 'Please send this email manually to the user'
           }
         }),
@@ -210,9 +200,6 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
-    } finally {
-      // Close SMTP connection
-      await client.close()
     }
 
   } catch (error) {

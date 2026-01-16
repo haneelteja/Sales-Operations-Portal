@@ -312,6 +312,7 @@ serve(async (req) => {
       const appUrl = Deno.env.get('APP_URL') || 'https://sales-operations-portal.vercel.app'
       
       // Try sending via SMTP first (no domain verification needed)
+      // Fallback chain: SMTP → Mailgun → Resend
       console.log('Trying SMTP email function first...')
       let emailResponse = null
       let emailError = null
@@ -331,21 +332,41 @@ serve(async (req) => {
         if (!emailError && emailResponse?.success) {
           console.log('✅ Email sent successfully via SMTP')
         } else {
-          throw new Error('SMTP function failed, trying Resend...')
+          throw new Error('SMTP function failed, trying Mailgun...')
         }
       } catch (smtpErr) {
-        console.log('SMTP function not available or failed, trying Resend...')
-        // Fallback to Resend if SMTP is not configured
-        const resendResult = await supabase.functions.invoke('send-welcome-email-resend', {
-          body: {
-            email: email,
-            username: username,
-            tempPassword: password,
-            appUrl: appUrl
+        console.log('SMTP function not available or failed, trying Mailgun...')
+        try {
+          const mailgunResult = await supabase.functions.invoke('send-welcome-email-mailgun', {
+            body: {
+              email: email,
+              username: username,
+              tempPassword: password,
+              appUrl: appUrl
+            }
+          })
+          emailResponse = mailgunResult.data
+          emailError = mailgunResult.error
+          
+          if (!emailError && emailResponse?.success) {
+            console.log('✅ Email sent successfully via Mailgun')
+          } else {
+            throw new Error('Mailgun function failed, trying Resend...')
           }
-        })
-        emailResponse = resendResult.data
-        emailError = resendResult.error
+        } catch (mailgunErr) {
+          console.log('Mailgun function not available or failed, trying Resend...')
+          // Fallback to Resend if Mailgun is not configured
+          const resendResult = await supabase.functions.invoke('send-welcome-email-resend', {
+            body: {
+              email: email,
+              username: username,
+              tempPassword: password,
+              appUrl: appUrl
+            }
+          })
+          emailResponse = resendResult.data
+          emailError = resendResult.error
+        }
       }
       
       console.log('Email function response:', JSON.stringify(emailResponse, null, 2))
