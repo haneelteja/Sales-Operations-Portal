@@ -96,8 +96,8 @@ const LabelPurchases = () => {
       sku: customer.sku,
       client_name: customer.client_name,
       branch: customer.branch
-    }));
-    
+    }, [filteredAndSortedPurchases, customers]);
+  
     return uniqueSKUs;
   };
 
@@ -580,7 +580,11 @@ const LabelPurchases = () => {
 
     XLSX.utils.book_append_sheet(wb, ws, 'Label Purchases');
     XLSX.writeFile(wb, `label-purchases-${new Date().toISOString().split('T')[0]}.xlsx`);
+<<<<<<< HEAD
   });
+=======
+  }, [filteredAndSortedPurchases, customers]);
+>>>>>>> origin/copilot/fix-vercel-revert-2026-01-17
 
   return (
     <div className="space-y-6">
