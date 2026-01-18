@@ -1,15 +1,18 @@
+import React from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+
 import PortalRouter from "@/components/PortalRouter";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import SupabaseVerify from "./pages/SupabaseVerify";
 import NotFound from "./pages/NotFound";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import EmbeddedOrderManagement from "@/components/order-management/EmbeddedOrderManagement";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,7 +29,7 @@ const queryClient = new QueryClient({
       },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
       staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
+      // cacheTime: 10 * 60 * 1000, // 10 minutes (removed, not a valid option)
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     },
