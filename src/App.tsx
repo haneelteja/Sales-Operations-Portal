@@ -62,6 +62,7 @@ const App = () => (
               <Route path="/verify" element={<SupabaseVerify />} />
               <Route path="/" element={<PortalRouter />} />
               <Route path="/embedded-order-management" element={<React.Suspense fallback={<div>Loading...</div>}><EmbeddedOrderManagement /></React.Suspense>} />
+                          <Route path="/minimal-test" element={<MinimalTest />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
@@ -71,5 +72,6 @@ const App = () => (
     </QueryClientProvider>
   </ErrorBoundary>
 );
+import MinimalTest from "@/pages/MinimalTest";
 
 export default App;
