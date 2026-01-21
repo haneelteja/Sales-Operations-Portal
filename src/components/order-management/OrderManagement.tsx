@@ -127,45 +127,45 @@ const OrderManagement: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-6 bg-white rounded-lg shadow-md">
+      <div className="flex items-center justify-between border-b pb-4">
         <div>
-          <h2 className="text-xl font-semibold">Order Management</h2>
-          <p className="text-sm text-muted-foreground">Read-only summary of orders and dispatches.</p>
+          <h2 className="text-xl font-semibold text-gray-800">Order Management</h2>
+          <p className="text-sm text-gray-600">Read-only summary of orders and dispatches.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={exportOrdersToExcel} disabled={!normalizedOrders.length}>
+          <Button variant="outline" className="hover:bg-gray-100" onClick={exportOrdersToExcel} disabled={!normalizedOrders.length}>
             Export Orders
           </Button>
-          <Button variant="outline" onClick={exportDispatchToExcel} disabled={!dispatchData?.length}>
+          <Button variant="outline" className="hover:bg-gray-100" onClick={exportDispatchToExcel} disabled={!dispatchData?.length}>
             Export Dispatch
           </Button>
         </div>
       </div>
 
-      <Card>
+      <Card className="border rounded-lg">
         <CardHeader>
-          <CardTitle>Current Orders</CardTitle>
+          <CardTitle className="text-lg font-medium text-gray-800">Current Orders</CardTitle>
         </CardHeader>
         <CardContent>
-          {ordersError && <p className="text-sm text-destructive">Failed to load orders.</p>}
+          {ordersError && <p className="text-sm text-red-500">Failed to load orders.</p>}
           {ordersLoading ? (
-            <p className="text-sm text-muted-foreground">Loading orders...</p>
+            <p className="text-sm text-gray-600">Loading orders...</p>
           ) : (
-            <Table>
+            <Table className="table-auto w-full border-collapse">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Cases</TableHead>
-                  <TableHead>Delivery</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="border-b">Client</TableHead>
+                  <TableHead className="border-b">Branch</TableHead>
+                  <TableHead className="border-b">SKU</TableHead>
+                  <TableHead className="border-b text-right">Cases</TableHead>
+                  <TableHead className="border-b">Delivery</TableHead>
+                  <TableHead className="border-b">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {normalizedOrders.map((order) => (
-                  <TableRow key={order.id}>
+                  <TableRow key={order.id} className="hover:bg-gray-100">
                     <TableCell>{order.client || "-"}</TableCell>
                     <TableCell>{order.branch || "-"}</TableCell>
                     <TableCell>{order.sku || "-"}</TableCell>
@@ -176,7 +176,7 @@ const OrderManagement: React.FC = () => {
                 ))}
                 {!normalizedOrders.length && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-sm text-gray-600">
                       No orders found.
                     </TableCell>
                   </TableRow>
@@ -187,28 +187,28 @@ const OrderManagement: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border rounded-lg">
         <CardHeader>
-          <CardTitle>Orders Dispatch</CardTitle>
+          <CardTitle className="text-lg font-medium text-gray-800">Orders Dispatch</CardTitle>
         </CardHeader>
         <CardContent>
-          {dispatchError && <p className="text-sm text-destructive">Failed to load dispatch data.</p>}
+          {dispatchError && <p className="text-sm text-red-500">Failed to load dispatch data.</p>}
           {dispatchLoading ? (
-            <p className="text-sm text-muted-foreground">Loading dispatch data...</p>
+            <p className="text-sm text-gray-600">Loading dispatch data...</p>
           ) : (
-            <Table>
+            <Table className="table-auto w-full border-collapse">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Cases</TableHead>
-                  <TableHead>Delivery Date</TableHead>
+                  <TableHead className="border-b">Client</TableHead>
+                  <TableHead className="border-b">Branch</TableHead>
+                  <TableHead className="border-b">SKU</TableHead>
+                  <TableHead className="border-b text-right">Cases</TableHead>
+                  <TableHead className="border-b">Delivery Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(dispatchData as DispatchRow[] | undefined)?.map((order) => (
-                  <TableRow key={order.id}>
+                  <TableRow key={order.id} className="hover:bg-gray-100">
                     <TableCell>{order.client || "-"}</TableCell>
                     <TableCell>{order.branch || "-"}</TableCell>
                     <TableCell>{order.sku || "-"}</TableCell>
@@ -218,7 +218,7 @@ const OrderManagement: React.FC = () => {
                 ))}
                 {!dispatchData?.length && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-sm text-gray-600">
                       No dispatch records found.
                     </TableCell>
                   </TableRow>
