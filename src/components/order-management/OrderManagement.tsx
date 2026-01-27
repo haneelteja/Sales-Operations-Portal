@@ -736,7 +736,6 @@ const OrderManagement: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Order Management</h2>
-          <p className="text-sm text-muted-foreground">Create, manage, and dispatch customer orders.</p>
         </div>
       </div>
 
@@ -747,8 +746,8 @@ const OrderManagement: React.FC = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleOrderSubmit} className="space-y-4">
-            {/* First Row: Date, Client, Branch, Tentative Delivery Date */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* First Row: Date, Client, Branch */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="order-date">Date *</Label>
                 <Input
@@ -767,7 +766,7 @@ const OrderManagement: React.FC = () => {
                   <SelectTrigger id="order-client">
                     <SelectValue placeholder="Select client" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
                     {getUniqueCustomers().map((customer) => (
                       <SelectItem key={customer.id} value={customer.id}>
                         {customer.client_name}
@@ -787,7 +786,7 @@ const OrderManagement: React.FC = () => {
                   <SelectTrigger id="order-branch">
                     <SelectValue placeholder={getAvailableBranches(orderForm.client_id).length === 0 ? "Select branch" : "Select branch"} />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
                     {getAvailableBranches(orderForm.client_id).map((branch, index) => (
                       <SelectItem key={index} value={branch}>
                         {branch}
@@ -796,7 +795,10 @@ const OrderManagement: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
 
+            {/* Second Row: Tentative Delivery Date, SKU, Number of Cases */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="order-delivery">Tentative Delivery Date *</Label>
                 <Input
@@ -822,11 +824,6 @@ const OrderManagement: React.FC = () => {
                   required
                 />
               </div>
-            </div>
-
-            {/* Second Row: SKU and Number of Cases (right side) */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="md:col-span-2"></div> {/* Empty space for alignment */}
               
               <div className="space-y-2">
                 <Label htmlFor="order-sku">SKU</Label>
@@ -838,7 +835,7 @@ const OrderManagement: React.FC = () => {
                   <SelectTrigger id="order-sku">
                     <SelectValue placeholder="Select SKU" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
                     {getAvailableSKUs().map((sku, index) => (
                       <SelectItem key={index} value={sku}>
                         {sku}
@@ -873,8 +870,16 @@ const OrderManagement: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <CardTitle className="text-lg font-medium text-gray-800">Current Orders</CardTitle>
+            <div className="flex-1 max-w-sm">
+              <Input
+                placeholder="Search orders..."
+                value={ordersSearchTerm}
+                onChange={(e) => setOrdersSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
             <Button 
               variant="outline" 
               onClick={exportOrdersToExcel} 
@@ -891,15 +896,6 @@ const OrderManagement: React.FC = () => {
             <p className="text-sm text-gray-600">Loading orders...</p>
           ) : (
             <>
-              {/* Global Search */}
-              <div className="mb-4">
-                <Input
-                  placeholder="Search orders..."
-                  value={ordersSearchTerm}
-                  onChange={(e) => setOrdersSearchTerm(e.target.value)}
-                  className="max-w-sm"
-                />
-              </div>
 
               <Table className="table-auto w-full border-collapse">
                 <TableHeader>
@@ -1056,8 +1052,16 @@ const OrderManagement: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <CardTitle className="text-lg font-medium text-gray-800">Orders Dispatched</CardTitle>
+            <div className="flex-1 max-w-sm">
+              <Input
+                placeholder="Search dispatch records..."
+                value={dispatchSearchTerm}
+                onChange={(e) => setDispatchSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
             <Button 
               variant="outline" 
               onClick={exportDispatchToExcel} 
@@ -1074,15 +1078,6 @@ const OrderManagement: React.FC = () => {
             <p className="text-sm text-gray-600">Loading dispatch data...</p>
           ) : (
             <>
-              {/* Global Search */}
-              <div className="mb-4">
-                <Input
-                  placeholder="Search dispatch records..."
-                  value={dispatchSearchTerm}
-                  onChange={(e) => setDispatchSearchTerm(e.target.value)}
-                  className="max-w-sm"
-                />
-              </div>
 
               <Table className="table-auto w-full border-collapse">
                 <TableHeader>
