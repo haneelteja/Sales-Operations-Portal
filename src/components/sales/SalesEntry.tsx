@@ -112,20 +112,51 @@ const SalesEntry = () => {
   const queryClient = useQueryClient();
 
   // Auto-save form data to prevent data loss from session timeouts
+  
+  // Memoized load handlers to prevent infinite loops in useAutoSave
+  const handleSaleFormLoad = useCallback((savedData: typeof saleForm) => {
+    if (savedData && Object.values(savedData).some(v => v !== '')) {
+      setSaleForm(savedData);
+      toast({
+        title: "Form data restored",
+        description: "Your previous sale form data has been restored.",
+      });
+    }
+  }, [toast]);
+
+  const handlePaymentFormLoad = useCallback((savedData: typeof paymentForm) => {
+    if (savedData && Object.values(savedData).some(v => v !== '')) {
+      setPaymentForm(savedData);
+      toast({
+        title: "Form data restored",
+        description: "Your previous payment form data has been restored.",
+      });
+    }
+  }, [toast]);
+
+  const handleSalesItemsLoad = useCallback((savedData: { items: typeof salesItems, currentItem: typeof currentItem, isSingleSKUMode: boolean }) => {
+    if (savedData?.items && savedData.items.length > 0) {
+      setSalesItems(savedData.items);
+      if (savedData.currentItem) {
+        setCurrentItem(savedData.currentItem);
+      }
+      if (savedData.isSingleSKUMode !== undefined) {
+        setIsSingleSKUMode(savedData.isSingleSKUMode);
+      }
+      toast({
+        title: "Sales items restored",
+        description: "Your previous sales items have been restored.",
+      });
+    }
+  }, [toast]);
+
+  // Auto-save form data to prevent data loss from session timeouts
   const { loadData: loadSaleFormData, clearSavedData: clearSaleFormData } = useAutoSave({
     storageKey: 'sales_entry_sale_form_autosave',
     data: saleForm,
     enabled: true,
     debounceDelay: 2000,
-    onLoad: (savedData) => {
-      if (savedData && Object.values(savedData).some(v => v !== '')) {
-        setSaleForm(savedData);
-        toast({
-          title: "Form data restored",
-          description: "Your previous sale form data has been restored.",
-        });
-      }
-    },
+    onLoad: handleSaleFormLoad,
   });
 
   const { loadData: loadPaymentFormData, clearSavedData: clearPaymentFormData } = useAutoSave({
@@ -133,15 +164,7 @@ const SalesEntry = () => {
     data: paymentForm,
     enabled: true,
     debounceDelay: 2000,
-    onLoad: (savedData) => {
-      if (savedData && Object.values(savedData).some(v => v !== '')) {
-        setPaymentForm(savedData);
-        toast({
-          title: "Form data restored",
-          description: "Your previous payment form data has been restored.",
-        });
-      }
-    },
+    onLoad: handlePaymentFormLoad,
   });
 
   const { loadData: loadSalesItemsData, clearSavedData: clearSalesItemsData } = useAutoSave({
@@ -149,21 +172,7 @@ const SalesEntry = () => {
     data: { items: salesItems, currentItem, isSingleSKUMode },
     enabled: true,
     debounceDelay: 2000,
-    onLoad: (savedData) => {
-      if (savedData?.items && savedData.items.length > 0) {
-        setSalesItems(savedData.items);
-        if (savedData.currentItem) {
-          setCurrentItem(savedData.currentItem);
-        }
-        if (savedData.isSingleSKUMode !== undefined) {
-          setIsSingleSKUMode(savedData.isSingleSKUMode);
-        }
-        toast({
-          title: "Sales items restored",
-          description: "Your previous sales items have been restored.",
-        });
-      }
-    },
+    onLoad: handleSalesItemsLoad,
   });
 
   // Load saved data on mount
