@@ -276,44 +276,6 @@ const OrderManagement: React.FC = () => {
       });
   }, [ordersData]);
 
-  const exportOrdersToExcel = useCallback(() => {
-    if (!filteredAndSortedOrders.length) return;
-
-    const exportData = filteredAndSortedOrders.map((order) => ({
-      Client: order.client,
-      Branch: order.branch,
-      SKU: order.sku,
-      "Number of Cases": order.number_of_cases,
-      "Tentative Delivery Date": order.tentative_delivery_date,
-      Status: order.status,
-      "Created At": new Date(order.created_at).toLocaleString(),
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Current Orders");
-    const fileName = `Current_Orders_${new Date().toISOString().split("T")[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  }, [filteredAndSortedOrders]);
-
-  const exportDispatchToExcel = useCallback(() => {
-    if (!filteredAndSortedDispatch.length) return;
-
-    const exportData = filteredAndSortedDispatch.map((row) => ({
-      Client: row.client,
-      Branch: row.branch,
-      SKU: row.sku,
-      Cases: row.cases,
-      "Delivery Date": row.delivery_date,
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Orders Dispatch");
-    const fileName = `Orders_Dispatch_${new Date().toISOString().split("T")[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  }, [filteredAndSortedDispatch]);
-
   const renderStatus = (status: string) => {
     if (status === "pending") return <Badge variant="secondary">Pending</Badge>;
     if (status === "dispatched") return <Badge variant="outline">Dispatched</Badge>;
@@ -671,6 +633,45 @@ const OrderManagement: React.FC = () => {
       return 0;
     });
   }, [dispatchData, debouncedDispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts]);
+
+  // Export functions (defined after filteredAndSortedOrders and filteredAndSortedDispatch)
+  const exportOrdersToExcel = useCallback(() => {
+    if (!filteredAndSortedOrders.length) return;
+
+    const exportData = filteredAndSortedOrders.map((order) => ({
+      Client: order.client,
+      Branch: order.branch,
+      SKU: order.sku,
+      "Number of Cases": order.number_of_cases,
+      "Tentative Delivery Date": order.tentative_delivery_date,
+      Status: order.status,
+      "Created At": new Date(order.created_at).toLocaleString(),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Current Orders");
+    const fileName = `Current_Orders_${new Date().toISOString().split("T")[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }, [filteredAndSortedOrders]);
+
+  const exportDispatchToExcel = useCallback(() => {
+    if (!filteredAndSortedDispatch.length) return;
+
+    const exportData = filteredAndSortedDispatch.map((row) => ({
+      Client: row.client,
+      Branch: row.branch,
+      SKU: row.sku,
+      Cases: row.cases,
+      "Delivery Date": row.delivery_date,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Orders Dispatch");
+    const fileName = `Orders_Dispatch_${new Date().toISOString().split("T")[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }, [filteredAndSortedDispatch]);
 
   // Handle column filter changes for Current Orders
   const handleOrdersColumnFilterChange = useCallback((columnKey: string, value: string) => {
