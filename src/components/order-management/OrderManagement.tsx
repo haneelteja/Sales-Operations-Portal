@@ -370,6 +370,17 @@ const OrderManagement: React.FC = () => {
 
   // Handle client change - auto-populate branch if single, reset SKU
   const handleClientChange = (clientId: string) => {
+    // If client is cleared (empty string), reset the form
+    if (!clientId || clientId === "") {
+      setOrderForm({
+        ...orderForm,
+        client_id: "",
+        branch: "",
+        sku: "",
+      });
+      return;
+    }
+    
     const availableBranches = getAvailableBranches(clientId);
     const autoBranch = availableBranches.length === 1 ? availableBranches[0] : "";
     
@@ -762,7 +773,7 @@ const OrderManagement: React.FC = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="order-client">Client *</Label>
-                <Select value={orderForm.client_id} onValueChange={handleClientChange}>
+                <Select value={orderForm.client_id || ""} onValueChange={handleClientChange}>
                   <SelectTrigger id="order-client">
                     <SelectValue placeholder="Select client" />
                   </SelectTrigger>
@@ -779,7 +790,7 @@ const OrderManagement: React.FC = () => {
               <div className="space-y-2">
                 <Label htmlFor="order-branch">Branch *</Label>
                 <Select 
-                  value={orderForm.branch} 
+                  value={orderForm.branch || ""} 
                   onValueChange={handleBranchChange} 
                   disabled={!orderForm.client_id}
                 >
@@ -828,7 +839,7 @@ const OrderManagement: React.FC = () => {
               <div className="space-y-2">
                 <Label htmlFor="order-sku">SKU</Label>
                 <Select 
-                  value={orderForm.sku} 
+                  value={orderForm.sku || ""} 
                   onValueChange={(value) => setOrderForm({ ...orderForm, sku: value })} 
                   disabled={!orderForm.client_id || !orderForm.branch}
                 >
@@ -880,14 +891,16 @@ const OrderManagement: React.FC = () => {
                 className="w-full"
               />
             </div>
-            <Button 
-              variant="outline" 
-              onClick={exportOrdersToExcel} 
-              disabled={!filteredAndSortedOrders.length}
-              size="sm"
-            >
-              Export Orders
-            </Button>
+            <div className="flex justify-end">
+              <Button 
+                variant="outline" 
+                onClick={exportOrdersToExcel} 
+                disabled={!filteredAndSortedOrders.length}
+                size="sm"
+              >
+                Export Orders
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

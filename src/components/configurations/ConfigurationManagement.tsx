@@ -1086,7 +1086,7 @@ const ConfigurationManagement = () => {
                   <div>
                     <Label htmlFor="customer-sku" className="text-xs mb-1 block">SKU</Label>
                     <Select 
-                      value={customerForm.sku} 
+                      value={customerForm.sku || ""} 
                       onValueChange={(value) => setCustomerForm({...customerForm, sku: value})}
                       disabled={availableSKUsLoading || !!availableSKUsError}
                     >

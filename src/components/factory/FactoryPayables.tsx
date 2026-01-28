@@ -683,7 +683,7 @@ const FactoryPayables = () => {
                 <div className="space-y-2">
                   <Label htmlFor="production-sku">SKU *</Label>
                   <Select 
-                    value={productionForm.sku} 
+                    value={productionForm.sku || ""} 
                     onValueChange={(value) => setProductionForm({...productionForm, sku: value})}
                   >
                     <SelectTrigger>
@@ -1045,7 +1045,7 @@ const FactoryPayables = () => {
                                 <div className="space-y-2">
                                   <Label htmlFor="edit-sku">SKU</Label>
                                   <Select 
-                                    value={editForm.sku} 
+                                    value={editForm.sku || ""} 
                                     onValueChange={(value) => setEditForm({...editForm, sku: value})}
                                   >
                                     <SelectTrigger>

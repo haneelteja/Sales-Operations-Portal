@@ -20,15 +20,9 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   );
 }
 
-// Clear any cached auth data
-if (typeof window !== 'undefined') {
-  localStorage.removeItem('supabase.auth.token');
-  localStorage.removeItem('supabase.auth.refresh_token');
-  localStorage.removeItem('sb-yltbknkksjgtexluhtau-auth-token');
-  localStorage.removeItem('sb-yltbknkksjgtexluhtau-auth-refresh-token');
-  localStorage.removeItem('sb-qkvmdrtfhpcvwvqjuyuu-auth-token');
-  localStorage.removeItem('sb-qkvmdrtfhpcvwvqjuyuu-auth-refresh-token');
-}
+// Session persistence is handled automatically by Supabase
+// The session will persist across regular page refreshes
+// Only hot reloads (HMR) in development will reset the session
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
