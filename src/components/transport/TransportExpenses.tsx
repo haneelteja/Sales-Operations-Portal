@@ -746,9 +746,10 @@ const TransportExpenses = () => {
         </div>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-slate-50 border-b border-slate-200">
+      <div className="w-full overflow-x-auto">
+        <Table className="min-w-full">
+          <TableHeader>
+            <TableRow className="bg-slate-50 border-b border-slate-200">
             <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
               <div className="flex items-center justify-between">
                 <span>Date</span>
@@ -918,6 +919,7 @@ const TransportExpenses = () => {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

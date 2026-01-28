@@ -909,8 +909,8 @@ const OrderManagement: React.FC = () => {
             <p className="text-sm text-gray-600">Loading orders...</p>
           ) : (
             <>
-
-              <Table className="table-auto w-full border-collapse">
+              <div className="w-full overflow-x-auto">
+                <Table className="table-auto w-full border-collapse min-w-full">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="border-b">
@@ -1091,8 +1091,8 @@ const OrderManagement: React.FC = () => {
             <p className="text-sm text-gray-600">Loading dispatch data...</p>
           ) : (
             <>
-
-              <Table className="table-auto w-full border-collapse">
+              <div className="w-full overflow-x-auto">
+                <Table className="table-auto w-full border-collapse min-w-full">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="border-b">

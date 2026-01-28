@@ -140,7 +140,7 @@ const Index = () => {
               </h1>
             </div>
           </header>
-          <main className="flex-1 p-6 bg-background">
+          <main className="flex-1 p-4 bg-background">
             {renderContent()}
           </main>
         </div>

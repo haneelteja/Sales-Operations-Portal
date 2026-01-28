@@ -1174,12 +1174,13 @@ const ConfigurationManagement = () => {
                 </div>
               </div>
 
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[20%]">
-                      <div className="flex items-center gap-2">
-                        Client Name
+              <div className="w-full overflow-x-auto">
+                <Table className="min-w-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Client Name
                         <ColumnFilter
                           columnKey="client_name"
                           columnName="Client Name"
@@ -1189,10 +1190,10 @@ const ConfigurationManagement = () => {
                           dataType="text"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[15%]">
-                      <div className="flex items-center gap-2">
-                        Branch
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Branch
                         <ColumnFilter
                           columnKey="branch"
                           columnName="Branch"
@@ -1202,10 +1203,10 @@ const ConfigurationManagement = () => {
                           dataType="text"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[12%]">
-                      <div className="flex items-center gap-2">
-                        SKU
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          SKU
                         <ColumnFilter
                           columnKey="sku"
                           columnName="SKU"
@@ -1215,10 +1216,10 @@ const ConfigurationManagement = () => {
                           dataType="text"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[12%]">
-                      <div className="flex items-center gap-2">
-                        Pricing Date
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Pricing Date
                         <ColumnFilter
                           columnKey="pricing_date"
                           columnName="Pricing Date"
@@ -1228,10 +1229,10 @@ const ConfigurationManagement = () => {
                           dataType="date"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="text-right w-[12%]">
-                      <div className="flex items-center justify-end gap-2">
-                        Price per Case
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          Price per Case
                         <ColumnFilter
                           columnKey="price_per_case"
                           columnName="Price per Case"
@@ -1241,10 +1242,10 @@ const ConfigurationManagement = () => {
                           dataType="number"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="text-right w-[12%]">
-                      <div className="flex items-center justify-end gap-2">
-                        Price per Bottle
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          Price per Bottle
                         <ColumnFilter
                           columnKey="price_per_bottle"
                           columnName="Price per Bottle"
@@ -1254,15 +1255,15 @@ const ConfigurationManagement = () => {
                           dataType="number"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[10%]">
-                      <div className="flex items-center gap-2">
-                        Status
-                      </div>
-                    </TableHead>
-                    <TableHead className="w-[10%]">
-                      <div className="flex items-center gap-2">
-                        Created
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Status
+                        </div>
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Created
                         <ColumnFilter
                           columnKey="created_at"
                           columnName="Created"
@@ -1272,31 +1273,31 @@ const ConfigurationManagement = () => {
                           dataType="date"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="text-right w-[8%]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAndSortedCustomers?.length > 0 ? (
-                    filteredAndSortedCustomers.map((customer) => (
-                    <TableRow key={customer.id}>
-                      <TableCell className="font-medium w-[20%]">{customer.client_name}</TableCell>
-                      <TableCell className="w-[15%]">{customer.branch}</TableCell>
-                      <TableCell className="w-[12%]">{customer.sku || '-'}</TableCell>
-                      <TableCell className="w-[12%]">{customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '-'}</TableCell>
-                      <TableCell className="text-right w-[12%]">
-                        {customer.price_per_case ? `₹${customer.price_per_case}` : '-'}
-                      </TableCell>
-                      <TableCell className="text-right w-[12%]">
-                        {customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}
-                      </TableCell>
-                      <TableCell className="w-[10%]">
-                        <Badge variant={customer.is_active ? "default" : "secondary"}>
-                          {customer.is_active ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="w-[10%]">{new Date(customer.created_at).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-right w-[8%]">
+                      </TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAndSortedCustomers?.length > 0 ? (
+                      filteredAndSortedCustomers.map((customer) => (
+                      <TableRow key={customer.id}>
+                        <TableCell className="font-medium">{customer.client_name}</TableCell>
+                        <TableCell>{customer.branch}</TableCell>
+                        <TableCell>{customer.sku || '-'}</TableCell>
+                        <TableCell>{customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '-'}</TableCell>
+                        <TableCell className="text-right">
+                          {customer.price_per_case ? `₹${customer.price_per_case}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={customer.is_active ? "default" : "secondary"}>
+                            {customer.is_active ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(customer.created_at).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
@@ -1341,6 +1342,7 @@ const ConfigurationManagement = () => {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
