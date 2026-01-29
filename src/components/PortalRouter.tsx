@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import Auth from '@/pages/Auth';
 import Index from '@/pages/Index';
 import ResetPassword from '@/pages/ResetPassword';
@@ -9,21 +9,55 @@ import { SessionWarning } from '@/components/SessionWarning';
 
 const PortalRouter: React.FC = () => {
   const { user, session, loading: authLoading, requiresPasswordReset } = useAuth();
+  const navigate = useNavigate();
   const [isPasswordReset, setIsPasswordReset] = useState(false);
   const [isCheckingReset, setIsCheckingReset] = useState(true);
 
   useEffect(() => {
-    // Check if we're on a password reset URL (hash fragments OR query parameters)
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const queryParams = new URLSearchParams(window.location.search);
-    
-    const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
-    const type = hashParams.get('type') || queryParams.get('type');
+    const checkForResetTokens = () => {
+      // Check if we're on a password reset URL (hash fragments OR query parameters)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const queryParams = new URLSearchParams(window.location.search);
+      
+      const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
+      const type = hashParams.get('type') || queryParams.get('type');
 
-    if (type === 'recovery' && accessToken) {
-      setIsPasswordReset(true);
-    }
-    setIsCheckingReset(false);
+      console.log('PortalRouter: Checking for reset tokens', {
+        pathname: window.location.pathname,
+        hash: window.location.hash,
+        search: window.location.search,
+        hasAccessToken: !!accessToken,
+        hasType: !!type,
+        type: type
+      });
+
+      if (type === 'recovery' && accessToken) {
+        console.log('PortalRouter: Reset tokens found on root route, redirecting to /reset-password');
+        // If we're on root route with reset tokens, redirect to /reset-password to preserve hash
+        if (window.location.pathname === '/') {
+          // Preserve the hash when redirecting
+          navigate(`/reset-password${window.location.hash}${window.location.search}`, { replace: true });
+          return;
+        }
+        setIsPasswordReset(true);
+      }
+      setIsCheckingReset(false);
+    };
+
+    // Check immediately
+    checkForResetTokens();
+
+    // Also listen for hash changes (in case hash arrives after component mounts)
+    const handleHashChange = () => {
+      console.log('PortalRouter: Hash change detected');
+      checkForResetTokens();
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
   }, []);
 
   // Debug logging

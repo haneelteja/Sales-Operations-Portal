@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 const ResetPassword = () => {
   const { updatePassword } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   
   const [isLoading, setIsLoading] = useState(false);
@@ -26,6 +27,17 @@ const ResetPassword = () => {
     newPassword: '',
     confirmPassword: '',
   });
+
+  // Log component mount for debugging
+  useEffect(() => {
+    console.log('ResetPassword: Component mounted', {
+      pathname: location.pathname,
+      hash: location.hash || window.location.hash,
+      search: location.search || window.location.search,
+      fullUrl: window.location.href,
+      state: location.state
+    });
+  }, [location]);
 
   useEffect(() => {
     let retryTimeout: NodeJS.Timeout | null = null;
@@ -108,9 +120,12 @@ const ResetPassword = () => {
           }, 3000);
           setIsProcessing(false);
         }
-      } else if (retryCount < 10) {
-        // Retry up to 10 times (1 second total) to allow hash fragments to be processed
+      } else if (retryCount < 20) {
+        // Retry up to 20 times (2 seconds total) to allow hash fragments to be processed
         // This handles the case where Supabase redirects asynchronously
+        if (retryCount === 0) {
+          console.log('ResetPassword: No tokens found on first check, starting retry loop...');
+        }
         retryTimeout = setTimeout(() => {
           if (isMounted) {
             processPasswordReset(retryCount + 1);
@@ -121,7 +136,8 @@ const ResetPassword = () => {
         console.warn('ResetPassword: No password reset tokens found in URL after retries', {
           hash: window.location.hash,
           search: window.location.search,
-          fullUrl: window.location.href
+          fullUrl: window.location.href,
+          retryCount
         });
         setError('No valid password reset link found. Please request a new password reset email.');
         toast({
