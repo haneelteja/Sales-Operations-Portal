@@ -11,7 +11,7 @@ import { Loader2, Lock, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const ResetPassword = () => {
-  const { updatePassword } = useAuth();
+  const { updatePassword, session, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -22,11 +22,26 @@ const ResetPassword = () => {
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [hasValidSession, setHasValidSession] = useState(false);
   
   const [formData, setFormData] = useState({
     newPassword: '',
     confirmPassword: '',
   });
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession && existingSession.user) {
+        console.log('ResetPassword: Found existing valid session on mount');
+        sessionSetRef.current = true;
+        setHasValidSession(true);
+        setIsProcessing(false);
+      }
+    };
+    checkExistingSession();
+  }, []);
 
   // Log component mount for debugging
   useEffect(() => {
@@ -35,9 +50,11 @@ const ResetPassword = () => {
       hash: location.hash || window.location.hash,
       search: location.search || window.location.search,
       fullUrl: window.location.href,
-      state: location.state
+      state: location.state,
+      hasSession: !!session,
+      hasUser: !!user
     });
-  }, [location]);
+  }, [location, session, user]);
 
   const sessionSetRef = useRef(false); // Track if session has been set to prevent re-processing
 
@@ -104,6 +121,7 @@ const ResetPassword = () => {
           } else {
             // Session set successfully - mark as set and stop retrying
             sessionSetRef.current = true;
+            setHasValidSession(true);
             console.log('ResetPassword: Session set successfully, stopping retry loop');
             
             // Clear hash after a short delay to allow session to be established
@@ -151,14 +169,30 @@ const ResetPassword = () => {
           search: window.location.search,
           retryCount
         });
-        setError('No valid password reset link found. Please request a new password reset email.');
-        toast({
-          title: "Invalid Reset Link",
-          description: "No valid password reset link found. Please request a new password reset email.",
-          variant: "destructive",
-        });
-        setIsProcessing(false);
-        // Don't redirect immediately - let user see the error and option to request new link
+        
+        // Check if there's an existing valid session (user might have clicked expired link but is still logged in)
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (existingSession && existingSession.user) {
+          console.log('ResetPassword: Found existing session, allowing password reset');
+          sessionSetRef.current = true;
+          setHasValidSession(true);
+          setIsProcessing(false);
+          toast({
+            title: "Password Reset Ready",
+            description: "You can now set your new password.",
+          });
+        } else {
+          // No tokens and no session - show error and disable form
+          setHasValidSession(false);
+          setError('No valid password reset link found. The link may have expired (links expire after 1 hour). Please request a new password reset email.');
+          toast({
+            title: "Invalid Reset Link",
+            description: "No valid password reset link found. The link may have expired. Please request a new password reset email.",
+            variant: "destructive",
+          });
+          setIsProcessing(false);
+          // Don't redirect immediately - let user see the error and option to request new link
+        }
       }
     };
 
@@ -188,6 +222,19 @@ const ResetPassword = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if we have a valid session before allowing password reset
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    if (!currentSession || !currentSession.user) {
+      setError('No valid session found. Please use a fresh password reset link.');
+      toast({
+        title: "Session Expired",
+        description: "No valid session found. Please request a new password reset email.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
     setError('');
 
@@ -329,6 +376,7 @@ const ResetPassword = () => {
                   value={formData.newPassword}
                   onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
                   required
+                  disabled={!hasValidSession || isProcessing}
                   className="pr-10"
                 />
                 <Button
@@ -357,6 +405,7 @@ const ResetPassword = () => {
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                   required
+                  disabled={!hasValidSession || isProcessing}
                   className="pr-10"
                 />
                 <Button
@@ -375,12 +424,18 @@ const ResetPassword = () => {
               </div>
             </div>
             
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isLoading || !hasValidSession || isProcessing}
+            >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Resetting Password...
                 </>
+              ) : !hasValidSession ? (
+                'Waiting for Valid Session...'
               ) : (
                 'Reset Password'
               )}
