@@ -1612,7 +1612,7 @@ const SalesEntry = () => {
       const selectedCustomer = customers?.find(c => c.id === data.customer_id);
 
       // Update corresponding factory transaction if it's a sale transaction
-      if (data.sku && data.quantity) {
+      if (data.sku && data.quantity && originalCustomerId) {
         // Get factory pricing for amount calculation
         const { data: factoryPricing } = await supabase
           .from("factory_pricing")
@@ -1625,22 +1625,40 @@ const SalesEntry = () => {
         const quantity = parseInt(data.quantity);
         const factoryAmount = quantity * factoryCostPerCase;
 
-        // Find and update factory payables transaction using ORIGINAL values
-        // (since we're matching before the update)
+        // Get customer name for description update
+        const selectedCustomer = customers?.find(c => c.id === data.customer_id);
+        const newDescription = selectedCustomer?.client_name || "Unknown Client";
+
+        // Find and update factory payables transaction using reliable identifiers:
+        // customer_id, transaction_date, sku, and transaction_type
+        // This is more reliable than matching by description which can vary
         const { error: factoryError } = await supabase
           .from("factory_payables")
           .update({
             sku: data.sku,
             amount: factoryAmount,
             quantity: quantity,
-            description: `Production for ${data.description}`,
-            transaction_date: data.transaction_date
+            description: newDescription,
+            transaction_date: data.transaction_date,
+            customer_id: data.customer_id
           })
-          .eq("description", `Production for ${originalDescription}`)
-          .eq("transaction_date", originalTransactionDate);
+          .eq("customer_id", originalCustomerId)
+          .eq("transaction_date", originalTransactionDate)
+          .eq("sku", editingTransaction?.sku || '')
+          .eq("transaction_type", "production");
 
         if (factoryError) {
-          console.warn("Failed to update factory transaction:", factoryError);
+          console.error("Failed to update factory transaction:", factoryError);
+          console.error("Update attempt details:", {
+            originalCustomerId,
+            originalTransactionDate,
+            originalSku: editingTransaction?.sku,
+            newCustomerId: data.customer_id,
+            newTransactionDate: data.transaction_date,
+            newSku: data.sku
+          });
+        } else {
+          console.log("Factory transaction updated successfully");
         }
       }
 
