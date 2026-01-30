@@ -14,7 +14,6 @@ const TransportExpenses = lazy(() => import("@/components/transport/TransportExp
 const Labels = lazy(() => import("@/components/labels/Labels"));
 const ConfigurationManagement = lazy(() => import("@/components/configurations/ConfigurationManagement"));
 const Reports = lazy(() => import("@/components/reports/Reports"));
-const Adjustments = lazy(() => import("@/components/adjustments/Adjustments"));
 const UserManagement = lazy(() => import("@/components/user-management/UserManagement"));
 // const OrderManagement = lazy(() => import("@/components/order-management/OrderManagement"));
 
