@@ -82,24 +82,6 @@ const Index = () => {
             <Reports />
           </Suspense>
         );
-      case "adjustments":
-        // Only allow managers to access adjustments
-        if (profile?.role !== 'manager') {
-          return (
-            <Alert className="m-6">
-              <Shield className="h-4 w-4" />
-              <AlertDescription>
-                Access denied. The Adjustments tab is only available to users with Manager role.
-                Your current role: {profile?.role || 'Unknown'}
-              </AlertDescription>
-            </Alert>
-          );
-        }
-        return (
-          <Suspense fallback={<RouteLoader />}>
-            <Adjustments />
-          </Suspense>
-        );
       case "user-management":
         // Only allow managers to access user management
         if (profile?.role !== 'manager') {

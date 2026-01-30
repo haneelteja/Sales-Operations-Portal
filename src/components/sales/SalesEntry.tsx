@@ -1587,6 +1587,11 @@ const SalesEntry = () => {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: { id: string } & Partial<SaleForm>) => {
+      // Store original transaction values before update for finding related records
+      const originalDescription = editingTransaction?.description || '';
+      const originalTransactionDate = editingTransaction?.transaction_date || '';
+      const originalCustomerId = editingTransaction?.customer_id || '';
+
       // Update sales transaction
       const { error: salesError } = await supabase
         .from("sales_transactions")
@@ -1603,6 +1608,9 @@ const SalesEntry = () => {
 
       if (salesError) throw salesError;
 
+      // Get customer info for transport update
+      const selectedCustomer = customers?.find(c => c.id === data.customer_id);
+
       // Update corresponding factory transaction if it's a sale transaction
       if (data.sku && data.quantity) {
         // Get factory pricing for amount calculation
@@ -1617,7 +1625,8 @@ const SalesEntry = () => {
         const quantity = parseInt(data.quantity);
         const factoryAmount = quantity * factoryCostPerCase;
 
-        // Update factory payables transaction
+        // Find and update factory payables transaction using ORIGINAL values
+        // (since we're matching before the update)
         const { error: factoryError } = await supabase
           .from("factory_payables")
           .update({
@@ -1627,11 +1636,31 @@ const SalesEntry = () => {
             description: `Production for ${data.description}`,
             transaction_date: data.transaction_date
           })
-          .eq("description", `Production for ${editingTransaction?.description}`)
-          .eq("transaction_date", editingTransaction?.transaction_date);
+          .eq("description", `Production for ${originalDescription}`)
+          .eq("transaction_date", originalTransactionDate);
 
         if (factoryError) {
           console.warn("Failed to update factory transaction:", factoryError);
+        }
+      }
+
+      // Update corresponding transport transaction
+      if (selectedCustomer && originalCustomerId) {
+        const { error: transportError } = await supabase
+          .from("transport_expenses")
+          .update({
+            expense_date: data.transaction_date,
+            description: selectedCustomer ? `${selectedCustomer.client_name}-${selectedCustomer.branch} Transport` : 'Client-Branch Transport',
+            client_id: data.customer_id,
+            client_name: selectedCustomer?.client_name || 'N/A',
+            branch: selectedCustomer?.branch || 'N/A'
+          })
+          .eq("expense_group", "Client Sale Transport")
+          .eq("client_id", originalCustomerId)
+          .eq("expense_date", originalTransactionDate);
+
+        if (transportError) {
+          console.warn("Failed to update transport transaction:", transportError);
         }
       }
     },
@@ -2533,7 +2562,11 @@ const SalesEntry = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Dialog>
+                        <Dialog open={!!editingTransaction && editingTransaction.id === transaction.id} onOpenChange={(open) => {
+                              if (!open) {
+                                setEditingTransaction(null);
+                              }
+                            }}>
                           <DialogTrigger asChild>
                             <Button
                               variant="outline"

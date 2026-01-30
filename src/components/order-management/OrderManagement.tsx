@@ -879,11 +879,11 @@ const OrderManagement: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="relative">
         <CardHeader>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <CardTitle className="text-lg font-medium text-gray-800">Current Orders</CardTitle>
-            <div className="flex-1 max-w-sm">
+            <div className="flex-1 min-w-[200px] max-w-sm">
               <Input
                 placeholder="Search orders..."
                 value={ordersSearchTerm}
@@ -891,19 +891,44 @@ const OrderManagement: React.FC = () => {
                 className="w-full"
               />
             </div>
-            <div className="flex justify-end">
+            <div className="hidden md:block">
               <Button 
                 variant="outline" 
                 onClick={exportOrdersToExcel} 
                 disabled={!filteredAndSortedOrders.length}
                 size="sm"
+                className="whitespace-nowrap"
               >
                 Export Orders
               </Button>
             </div>
           </div>
+          {/* Mobile export button */}
+          <div className="md:hidden mt-3 flex justify-end">
+            <Button 
+              variant="outline" 
+              onClick={exportOrdersToExcel} 
+              disabled={!filteredAndSortedOrders.length}
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              Export Orders
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="relative">
+          {/* Desktop export button - positioned at right edge of table */}
+          <div className="hidden md:block absolute top-0 right-0 z-10">
+            <Button 
+              variant="outline" 
+              onClick={exportOrdersToExcel} 
+              disabled={!filteredAndSortedOrders.length}
+              size="sm"
+              className="shadow-sm bg-white hover:bg-gray-50"
+            >
+              Export Orders
+            </Button>
+          </div>
           {ordersError && <p className="text-sm text-red-500">Failed to load orders.</p>}
           {ordersLoading ? (
             <p className="text-sm text-gray-600">Loading orders...</p>
@@ -912,9 +937,9 @@ const OrderManagement: React.FC = () => {
               <div className="w-full overflow-x-auto">
                 <Table className="table-auto w-full border-collapse min-w-full">
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                  <TableRow className="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-700 hover:via-blue-600 hover:to-indigo-700 transition-all duration-200">
+                    <TableHead className="border-b border-blue-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>Client</span>
                         <ColumnFilter
                           columnKey="client"
@@ -926,11 +951,12 @@ const OrderManagement: React.FC = () => {
                           onSortChange={(direction) => handleOrdersColumnSortChange('client', direction)}
                           dataType="text"
                           options={getUniqueOrderValues('client') as string[]}
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                    <TableHead className="border-b border-blue-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>Branch</span>
                         <ColumnFilter
                           columnKey="branch"
@@ -942,11 +968,12 @@ const OrderManagement: React.FC = () => {
                           onSortChange={(direction) => handleOrdersColumnSortChange('branch', direction)}
                           dataType="text"
                           options={getUniqueOrderValues('branch') as string[]}
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                    <TableHead className="border-b border-blue-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>SKU</span>
                         <ColumnFilter
                           columnKey="sku"
@@ -958,11 +985,12 @@ const OrderManagement: React.FC = () => {
                           onSortChange={(direction) => handleOrdersColumnSortChange('sku', direction)}
                           dataType="text"
                           options={getUniqueOrderValues('sku') as string[]}
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <TableHead className="border-b border-blue-400/30 text-white font-semibold text-right">
+                      <div className="flex items-center justify-end gap-2 text-white">
                         <span>Cases</span>
                         <ColumnFilter
                           columnKey="number_of_cases"
@@ -973,11 +1001,12 @@ const OrderManagement: React.FC = () => {
                           sortDirection={ordersColumnSorts.number_of_cases}
                           onSortChange={(direction) => handleOrdersColumnSortChange('number_of_cases', direction)}
                           dataType="number"
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                    <TableHead className="border-b border-blue-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>Delivery</span>
                         <ColumnFilter
                           columnKey="tentative_delivery_date"
@@ -988,11 +1017,12 @@ const OrderManagement: React.FC = () => {
                           sortDirection={ordersColumnSorts.tentative_delivery_date}
                           onSortChange={(direction) => handleOrdersColumnSortChange('tentative_delivery_date', direction)}
                           dataType="date"
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                    <TableHead className="border-b border-blue-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>Status</span>
                         <ColumnFilter
                           columnKey="status"
@@ -1004,10 +1034,11 @@ const OrderManagement: React.FC = () => {
                           onSortChange={(direction) => handleOrdersColumnSortChange('status', direction)}
                           dataType="text"
                           options={['pending', 'dispatched']}
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="text-right text-white font-semibold border-b border-blue-400/30">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1064,11 +1095,11 @@ const OrderManagement: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="relative">
         <CardHeader>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <CardTitle className="text-lg font-medium text-gray-800">Orders Dispatched</CardTitle>
-            <div className="flex-1 max-w-sm">
+            <div className="flex-1 min-w-[200px] max-w-sm">
               <Input
                 placeholder="Search dispatch records..."
                 value={dispatchSearchTerm}
@@ -1076,17 +1107,44 @@ const OrderManagement: React.FC = () => {
                 className="w-full"
               />
             </div>
+            <div className="hidden md:block">
+              <Button 
+                variant="outline" 
+                onClick={exportDispatchToExcel} 
+                disabled={!filteredAndSortedDispatch.length}
+                size="sm"
+                className="whitespace-nowrap"
+              >
+                Export Dispatch
+              </Button>
+            </div>
+          </div>
+          {/* Mobile export button */}
+          <div className="md:hidden mt-3 flex justify-end">
             <Button 
               variant="outline" 
               onClick={exportDispatchToExcel} 
               disabled={!filteredAndSortedDispatch.length}
               size="sm"
+              className="w-full sm:w-auto"
             >
               Export Dispatch
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="relative">
+          {/* Desktop export button - positioned at right edge of table */}
+          <div className="hidden md:block absolute top-0 right-0 z-10">
+            <Button 
+              variant="outline" 
+              onClick={exportDispatchToExcel} 
+              disabled={!filteredAndSortedDispatch.length}
+              size="sm"
+              className="shadow-sm bg-white hover:bg-gray-50"
+            >
+              Export Dispatch
+            </Button>
+          </div>
           {dispatchError && <p className="text-sm text-red-500">Failed to load dispatch data.</p>}
           {dispatchLoading ? (
             <p className="text-sm text-gray-600">Loading dispatch data...</p>
@@ -1095,9 +1153,9 @@ const OrderManagement: React.FC = () => {
               <div className="w-full overflow-x-auto">
                 <Table className="table-auto w-full border-collapse min-w-full">
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                  <TableRow className="bg-gradient-to-r from-emerald-600 via-green-500 to-teal-600 hover:from-emerald-700 hover:via-green-600 hover:to-teal-700 transition-all duration-200">
+                    <TableHead className="border-b border-emerald-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>Client</span>
                         <ColumnFilter
                           columnKey="client"
@@ -1109,11 +1167,12 @@ const OrderManagement: React.FC = () => {
                           onSortChange={(direction) => handleDispatchColumnSortChange('client', direction)}
                           dataType="text"
                           options={getUniqueDispatchValues('client') as string[]}
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                    <TableHead className="border-b border-emerald-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>Branch</span>
                         <ColumnFilter
                           columnKey="branch"
@@ -1125,11 +1184,12 @@ const OrderManagement: React.FC = () => {
                           onSortChange={(direction) => handleDispatchColumnSortChange('branch', direction)}
                           dataType="text"
                           options={getUniqueDispatchValues('branch') as string[]}
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                    <TableHead className="border-b border-emerald-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>SKU</span>
                         <ColumnFilter
                           columnKey="sku"
@@ -1141,11 +1201,12 @@ const OrderManagement: React.FC = () => {
                           onSortChange={(direction) => handleDispatchColumnSortChange('sku', direction)}
                           dataType="text"
                           options={getUniqueDispatchValues('sku') as string[]}
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <TableHead className="border-b border-emerald-400/30 text-white font-semibold text-right">
+                      <div className="flex items-center justify-end gap-2 text-white">
                         <span>Cases</span>
                         <ColumnFilter
                           columnKey="cases"
@@ -1156,11 +1217,12 @@ const OrderManagement: React.FC = () => {
                           sortDirection={dispatchColumnSorts.cases}
                           onSortChange={(direction) => handleDispatchColumnSortChange('cases', direction)}
                           dataType="number"
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b">
-                      <div className="flex items-center gap-2">
+                    <TableHead className="border-b border-emerald-400/30 text-white font-semibold">
+                      <div className="flex items-center gap-2 text-white">
                         <span>Delivery Date</span>
                         <ColumnFilter
                           columnKey="delivery_date"
@@ -1171,6 +1233,7 @@ const OrderManagement: React.FC = () => {
                           sortDirection={dispatchColumnSorts.delivery_date}
                           onSortChange={(direction) => handleDispatchColumnSortChange('delivery_date', direction)}
                           dataType="date"
+                          triggerClassName="text-white hover:text-white hover:bg-white/20"
                         />
                       </div>
                     </TableHead>

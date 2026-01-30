@@ -117,15 +117,6 @@ export interface LabelVendor {
   updated_at: string;
 }
 
-export interface Adjustment {
-  id: string;
-  adjustment_type: string;
-  amount: number;
-  description: string;
-  adjustment_date: string;
-  created_at: string;
-  updated_at: string;
-}
 
 // Form types
 export interface SaleForm {

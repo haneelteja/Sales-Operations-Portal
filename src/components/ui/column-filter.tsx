@@ -23,6 +23,7 @@ interface ColumnFilterProps {
   onSortChange: (direction: 'asc' | 'desc' | null) => void;
   dataType?: 'text' | 'date' | 'number' | 'multiselect';
   options?: string[]; // For dropdown options
+  triggerClassName?: string; // Optional className for the trigger button
 }
 
 export const ColumnFilter: React.FC<ColumnFilterProps> = ({
@@ -36,7 +37,8 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
   sortDirection,
   onSortChange,
   dataType = 'text',
-  options = []
+  options = [],
+  triggerClassName = ''
 }) => {
   // Use label if provided, otherwise use columnName, fallback to empty string
   const displayName = label || columnName || '';
@@ -204,9 +206,9 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0 hover:bg-gray-100"
+          className={`h-8 w-8 p-0 hover:bg-gray-100 ${triggerClassName}`}
         >
-          <MoreVertical className="h-4 w-4" />
+          <MoreVertical className={`h-4 w-4 ${triggerClassName}`} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">

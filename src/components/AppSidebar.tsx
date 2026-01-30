@@ -6,7 +6,6 @@ import {
   Truck, 
   Tag, 
   UserPlus,
-  Settings,
   FileText,
   Cog,
   LogOut,
@@ -51,7 +50,6 @@ const menuItems: MenuItem[] = [
   { id: "labels", title: "Labels", icon: Tag },
   { id: "configurations", title: "Configurations", icon: Cog },
   { id: "reports", title: "Reports", icon: FileText },
-  { id: "adjustments", title: "Adjustments", icon: Settings, roles: ['manager'] }, // Only visible to managers
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
 ];
 

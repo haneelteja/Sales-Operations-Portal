@@ -51,7 +51,6 @@ const navigationItems: NavigationItem[] = [
   { id: 'labels', title: 'Labels', icon: Tag },
   { id: 'configurations', title: 'Settings', icon: Cog },
   { id: 'reports', title: 'Reports', icon: FileText },
-  { id: 'adjustments', title: 'Adjustments', icon: Settings, roles: ['manager'] }, // Only visible to managers
   { id: 'user-management', title: 'Users', icon: Shield, roles: ['manager'] }, // Only visible to managers
 ];
 
