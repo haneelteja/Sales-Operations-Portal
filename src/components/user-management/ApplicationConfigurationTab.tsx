@@ -30,6 +30,10 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingConfig, setEditingConfig] = useState<InvoiceConfiguration | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isBackupLogsOpen, setIsBackupLogsOpen] = useState(false);
+  const [isBackupFolderDialogOpen, setIsBackupFolderDialogOpen] = useState(false);
+  const [isNotificationEmailDialogOpen, setIsNotificationEmailDialogOpen] = useState(false);
+  const [isRunningBackup, setIsRunningBackup] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -40,16 +44,10 @@ const ApplicationConfigurationTab: React.FC = () => {
   });
 
   // Fetch backup configuration
-  const { data: backupConfigData, refetch: refetchBackupConfig } = useQuery({
+  const { data: backupConfig, refetch: refetchBackupConfig } = useQuery({
     queryKey: ['backup-config'],
     queryFn: getBackupConfig,
   });
-
-  React.useEffect(() => {
-    if (backupConfigData) {
-      setBackupConfig(backupConfigData);
-    }
-  }, [backupConfigData]);
 
   // Update configuration mutation
   const updateMutation = useMutation({
@@ -121,6 +119,64 @@ const ApplicationConfigurationTab: React.FC = () => {
     });
   };
 
+  // Handle storage provider change
+  const handleStorageProviderChange = (config: InvoiceConfiguration, newValue: 'google_drive' | 'onedrive') => {
+    updateMutation.mutate({
+      id: config.id,
+      config_value: newValue,
+    });
+  };
+
+  // Handle backup folder edit
+  const handleBackupFolderEdit = (config: InvoiceConfiguration) => {
+    setEditingConfig(config);
+    setIsBackupFolderDialogOpen(true);
+  };
+
+  // Handle notification email edit
+  const handleNotificationEmailEdit = (config: InvoiceConfiguration) => {
+    setEditingConfig(config);
+    setIsNotificationEmailDialogOpen(true);
+  };
+
+  // Handle manual backup trigger
+  const handleManualBackup = async () => {
+    setIsRunningBackup(true);
+    try {
+      const result = await triggerManualBackup();
+      if (result.success) {
+        toast({
+          title: 'Success',
+          description: 'Backup started successfully',
+        });
+        // Refresh backup config to get updated status
+        refetchBackupConfig();
+      } else {
+        toast({
+          title: 'Error',
+          description: result.error || 'Failed to start backup',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to start backup',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRunningBackup(false);
+    }
+  };
+
+  // Handle backup config refresh
+  const handleBackupConfigRefresh = () => {
+    refetchBackupConfig();
+    setIsBackupFolderDialogOpen(false);
+    setIsNotificationEmailDialogOpen(false);
+    setEditingConfig(null);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -163,13 +219,15 @@ const ApplicationConfigurationTab: React.FC = () => {
       {/* Configurations Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Invoice Configurations
-          </CardTitle>
-          <CardDescription>
-            Manage invoice generation settings and storage paths
-          </CardDescription>
+          <div className="flex items-center gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Configurations
+            </CardTitle>
+            <CardDescription className="m-0">
+              Manage invoice generation settings and storage paths
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           {filteredConfigurations.length === 0 ? (
