@@ -1434,7 +1434,7 @@ const SalesEntry = () => {
       
       console.log('Inserting sales transaction:', saleData);
       
-      const { error: saleError } = await supabase
+      const { data: insertedTransactions, error: saleError } = await supabase
         .from("sales_transactions")
         .insert(saleData)
         .select();
@@ -1449,6 +1449,11 @@ const SalesEntry = () => {
         }
         
         throw saleError;
+      }
+
+      // Return the inserted transaction for auto-invoice generation
+      if (!insertedTransactions || insertedTransactions.length === 0) {
+        throw new Error("Failed to retrieve inserted transaction");
       }
 
       // Get factory pricing for amount calculation
@@ -1572,13 +1577,58 @@ const SalesEntry = () => {
         });
         throw new Error(`Transport transaction creation failed: ${transportError.message}`);
       }
+
+      // Return the inserted transaction for auto-invoice generation
+      return insertedTransactions;
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (insertedTransactions, variables) => {
       toast({ title: "Success", description: "Sale recorded successfully!" });
       
-      // Check if factory pricing exists for this SKU
-      if (variables.sku) {
-        // This will be handled in the mutation function, but we can add additional validation here
+      // Auto-generate invoice for the sale transaction
+      if (insertedTransactions && insertedTransactions.length > 0) {
+        const transaction = insertedTransactions[0] as SalesTransaction;
+        
+        // Only generate invoice for sale transactions
+        if (transaction.transaction_type === 'sale' && transaction.customer_id) {
+          try {
+            // Get customer details (try from cache first, then fetch if needed)
+            let customer = customers?.find(c => c.id === transaction.customer_id);
+            
+            // If customer not in cache, fetch it
+            if (!customer) {
+              const { data: customerData, error: customerError } = await supabase
+                .from("customers")
+                .select("*")
+                .eq("id", transaction.customer_id)
+                .single();
+              
+              if (customerError || !customerData) {
+                throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
+              }
+              customer = customerData as Customer;
+            }
+            
+            // Generate invoice automatically (both DOCX and PDF)
+            await generateInvoice.mutateAsync({
+              transactionId: transaction.id,
+              transaction,
+              customer,
+            });
+            
+            toast({ 
+              title: "Invoice Generated", 
+              description: "Invoice (DOCX & PDF) generated and saved to Google Drive!" 
+            });
+          } catch (error) {
+            // Log error but don't block the success flow
+            logger.error('Auto-invoice generation failed:', error);
+            toast({
+              title: "Invoice Generation Warning",
+              description: "Sale recorded successfully, but invoice generation failed. You can generate it manually.",
+              variant: "destructive"
+            });
+          }
+        }
       }
       
       // Reset form completely, including customer_id
@@ -1598,6 +1648,7 @@ const SalesEntry = () => {
       invalidateRelated('sales_transactions');
       invalidateRelated('factory_payables');
       invalidateRelated('transport_expenses');
+      invalidateRelated('invoices');
     },
     onError: (error) => {
       console.error('Sale mutation error:', error);
