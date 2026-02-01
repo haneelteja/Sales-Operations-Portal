@@ -31,6 +31,7 @@ import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
 import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
 import { useInvoiceGeneration, useInvoice, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
+import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 
 // Invoice Actions Component
 const InvoiceActions = ({ 
@@ -1584,8 +1585,11 @@ const SalesEntry = () => {
     onSuccess: async (insertedTransactions, variables) => {
       toast({ title: "Success", description: "Sale recorded successfully!" });
       
-      // Auto-generate invoice for the sale transaction
-      if (insertedTransactions && insertedTransactions.length > 0) {
+      // Check if auto invoice generation is enabled
+      const autoEnabled = await isAutoInvoiceEnabled();
+      
+      // Auto-generate invoice for the sale transaction (only if enabled)
+      if (autoEnabled && insertedTransactions && insertedTransactions.length > 0) {
         const transaction = insertedTransactions[0] as SalesTransaction;
         
         // Only generate invoice for sale transactions

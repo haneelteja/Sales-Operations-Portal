@@ -5,6 +5,7 @@
 
 import type { CloudStorageAdapter, FileUploadResult } from './storageAdapter';
 import { GoogleDriveAdapter } from './googleDriveAdapter';
+import { getInvoiceFolderPath } from '@/services/invoiceConfigService';
 // import { OneDriveAdapter } from './onedriveAdapter'; // To be implemented
 
 export type StorageProvider = 'google_drive' | 'onedrive';
@@ -48,7 +49,10 @@ export class StorageService {
     folderPath: string;
   }> {
     try {
-      // Build folder path: Invoices/YYYY/MM-MonthName
+      // Get base folder path from configuration (default: MyDrive/Invoice)
+      const baseFolderPath = await getInvoiceFolderPath();
+      
+      // Build folder path: {baseFolderPath}/YYYY/MM-MonthName
       const date = new Date(invoiceDate);
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -58,7 +62,8 @@ export class StorageService {
       ];
       const monthName = monthNames[date.getMonth()];
       
-      const folderPath = `Invoices/${year}/${month}-${monthName}`;
+      // Combine base path with year/month structure
+      const folderPath = `${baseFolderPath}/${year}/${month}-${monthName}`;
 
       // Upload Word document
       const wordResult = await this.adapter.uploadFile(

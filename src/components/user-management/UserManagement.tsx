@@ -10,14 +10,16 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, Search, X, Shield } from "lucide-react";
+import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, Search, X, Shield, Settings } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import * as XLSX from 'xlsx';
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { userFormSchema, type UserFormInput } from "@/lib/validation/schemas";
 import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
+import ApplicationConfigurationTab from "./ApplicationConfigurationTab";
 
 interface UserManagementRecord {
   id: string;
@@ -923,26 +925,43 @@ const UserManagement = () => {
           <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
           <p className="text-gray-600">Manage user access and permissions</p>
         </div>
-        <div className="flex space-x-2">
-          <Button 
-            onClick={async () => {
-              await queryClient.invalidateQueries({ queryKey: ["user-management"] });
-              await queryClient.refetchQueries({ queryKey: ["user-management"] });
-              queryClient.removeQueries({ queryKey: ["user-management"] });
-            }} 
-            variant="outline"
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            🔄 Refresh
-          </Button>
-          <Button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4 mr-2" />
-            Export to Excel
-          </Button>
-        </div>
       </div>
 
-      {/* Create User Form */}
+      {/* Tabs for Users and Application Configuration */}
+      <Tabs defaultValue="users" className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="users" className="flex items-center gap-2">
+            <User className="h-4 w-4" />
+            Users
+          </TabsTrigger>
+          {(profile?.role === 'manager' || profile?.role === 'admin') && (
+            <TabsTrigger value="app-config" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Application Configuration
+            </TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="users" className="space-y-6">
+          <div className="flex items-center justify-end gap-2">
+            <Button 
+              onClick={async () => {
+                await queryClient.invalidateQueries({ queryKey: ["user-management"] });
+                await queryClient.refetchQueries({ queryKey: ["user-management"] });
+                queryClient.removeQueries({ queryKey: ["user-management"] });
+              }} 
+              variant="outline"
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              🔄 Refresh
+            </Button>
+            <Button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="h-4 w-4 mr-2" />
+              Export to Excel
+            </Button>
+          </div>
+
+          {/* Create User Form */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
@@ -1566,6 +1585,14 @@ const UserManagement = () => {
           </div>
         </div>
       )}
+        </TabsContent>
+
+        {(profile?.role === 'manager' || profile?.role === 'admin') && (
+          <TabsContent value="app-config">
+            <ApplicationConfigurationTab />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 };
