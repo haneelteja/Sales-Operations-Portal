@@ -19,22 +19,22 @@
         }
         
         .header h1 {
-            font-size: 18pt;
+            font-size: 14pt;
             font-weight: bold;
             margin: 0 0 8mm 0;
             text-transform: capitalize;
+            text-decoration: underline;
+        }
+        
+        .company-details {
+            font-size: 11pt;
+            margin-bottom: 10mm;
+            line-height: 1.6;
         }
         
         .company-name {
-            font-size: 16pt;
             font-weight: bold;
-            margin: 0 0 5mm 0;
-        }
-        
-        .company-address {
-            font-size: 11pt;
-            margin: 0;
-            line-height: 1.6;
+            margin-bottom: 2mm;
         }
         
         /* Bill To and Invoice Details Section */
@@ -180,8 +180,13 @@
         <!-- Header -->
         <div class="header">
             <h1>Bill of supply</h1>
-            <div class="company-name">{{companyName}}</div>
-            <div class="company-address">{{companyAddress}}</div>
+        </div>
+        
+        <!-- Company Details -->
+        <div class="company-details">
+            <div class="company-name">AAMODHA ENTERPRISES</div>
+            <div>#1-8-56, north kamala Nagar,</div>
+            <div>kapra, Hyderabad, 500051</div>
         </div>
         
         <!-- Bill To and Invoice Details -->
