@@ -115,10 +115,10 @@ const ApplicationConfigurationTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
+      <div className="flex items-center gap-3">
         <h2 className="text-2xl font-bold text-gray-900">Application Configuration</h2>
-        <p className="text-gray-600 mt-1">
-          Manage application-level invoice generation settings and Google Drive folder paths
+        <p className="text-gray-600">
+          Manage application-level invoice generation settings and storage paths
         </p>
       </div>
 
@@ -176,7 +176,7 @@ const ApplicationConfigurationTab: React.FC = () => {
                         {index + 1}
                       </TableCell>
                       <TableCell>{config.description}</TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center align-middle">
                         {config.config_key === 'invoice_folder_path' ? (
                           <Button
                             variant="outline"
