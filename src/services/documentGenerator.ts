@@ -6,6 +6,7 @@
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { saveAs } from 'file-saver';
+import jsPDF from 'jspdf';
 import type { InvoiceData } from './invoiceService';
 import { logger } from '@/lib/logger';
 
@@ -134,18 +135,163 @@ export async function convertWordToPDF(
 }
 
 /**
- * Generate PDF directly from invoice data (alternative to Word conversion)
- * This uses a PDF library to create PDF from scratch
+ * Generate PDF directly from invoice data
+ * Creates a PDF invoice matching the Word template structure
  */
 export async function generatePDFDocument(
   data: InvoiceData
 ): Promise<ArrayBuffer> {
-  // This would use a library like pdfkit or jspdf
-  // For now, return a placeholder
-  throw new Error(
-    'PDF generation not yet implemented. ' +
-    'Install pdfkit or jspdf and implement PDF generation.'
-  );
+  try {
+    // Create new PDF document (A4 size: 210mm x 297mm)
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    let yPosition = margin;
+
+    // Helper function to add text with optional styling
+    const addText = (
+      text: string,
+      x: number,
+      y: number,
+      fontSize: number = 10,
+      fontStyle: 'normal' | 'bold' | 'italic' = 'normal',
+      align: 'left' | 'center' | 'right' = 'left'
+    ) => {
+      doc.setFontSize(fontSize);
+      doc.setFont('helvetica', fontStyle);
+      doc.text(text, x, y, { align });
+    };
+
+    // Helper function to draw a line
+    const drawLine = (x1: number, y1: number, x2: number, y2: number) => {
+      doc.setLineWidth(0.5);
+      doc.line(x1, y1, x2, y2);
+    };
+
+    // Header: Bill of Supply
+    addText('Bill of supply', pageWidth / 2, yPosition, 16, 'bold', 'center');
+    yPosition += 10;
+
+    // Company Name
+    addText(data.companyName, pageWidth / 2, yPosition, 14, 'bold', 'center');
+    yPosition += 7;
+
+    // Company Address (handle multi-line)
+    const addressLines = data.companyAddress
+      .split(/[\n,]/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+    addressLines.forEach(line => {
+      addText(line, pageWidth / 2, yPosition, 10, 'normal', 'center');
+      yPosition += 5;
+    });
+    yPosition += 5;
+
+    // Bill to section
+    addText('Bill to:', margin, yPosition, 10, 'bold');
+    yPosition += 6;
+    addText(`${data.clientName},`, margin, yPosition, 10);
+    yPosition += 5;
+    if (data.branch) {
+      addText(`${data.branch}.`, margin, yPosition, 10);
+      yPosition += 5;
+    }
+
+    // Invoice Number and Date (right aligned)
+    yPosition = margin + 20;
+    addText(`Bill No: ${data.invoiceNumber}`, pageWidth - margin, yPosition, 10, 'normal', 'right');
+    yPosition += 5;
+    addText(`Date: ${formatDate(data.invoiceDate)}`, pageWidth - margin, yPosition, 10, 'normal', 'right');
+    yPosition += 5;
+    addText('Dispatch Through: AUTO', pageWidth - margin, yPosition, 10, 'normal', 'right');
+    yPosition += 10;
+
+    // Table Header
+    const tableStartY = yPosition;
+    const colWidths = {
+      sno: 15,
+      description: 60,
+      sku: 30,
+      qty: 25,
+      rate: 30,
+      amount: 30,
+    };
+    let xPos = margin;
+
+    // Draw table header
+    addText('S.No:', xPos, yPosition, 9, 'bold');
+    xPos += colWidths.sno;
+    addText('Description of Goods', xPos, yPosition, 9, 'bold');
+    xPos += colWidths.description;
+    addText('SKU', xPos, yPosition, 9, 'bold');
+    xPos += colWidths.sku;
+    addText('Qty', xPos, yPosition, 9, 'bold');
+    xPos += colWidths.qty;
+    addText('Rate', xPos, yPosition, 9, 'bold');
+    xPos += colWidths.rate;
+    addText('Amount', xPos, yPosition, 9, 'bold');
+
+    yPosition += 6;
+    drawLine(margin, yPosition, pageWidth - margin, yPosition);
+    yPosition += 3;
+
+    // Table Row
+    xPos = margin;
+    addText('1.', xPos, yPosition, 9);
+    xPos += colWidths.sno;
+    addText('Elma 500 ml', xPos, yPosition, 9);
+    xPos += colWidths.description;
+    addText(data.sku, xPos, yPosition, 9);
+    xPos += colWidths.sku;
+    addText(`${data.quantity} cases`, xPos, yPosition, 9);
+    xPos += colWidths.qty;
+    addText(formatCurrency(data.pricePerCase), xPos, yPosition, 9);
+    xPos += colWidths.rate;
+    addText(formatCurrency(data.amount), xPos, yPosition, 9);
+
+    yPosition += 8;
+    drawLine(margin, yPosition, pageWidth - margin, yPosition);
+    yPosition += 5;
+
+    // Total Amount
+    addText('Total amount', pageWidth - margin - colWidths.amount, yPosition, 10, 'bold', 'right');
+    addText(formatCurrency(data.grandTotal), pageWidth - margin, yPosition, 10, 'bold', 'right');
+    yPosition += 8;
+
+    // Amount in words
+    addText(`Amount in words: ${data.amountInWords}`, margin, yPosition, 10);
+    yPosition += 8;
+
+    // Account Details
+    addText('Account Details:', margin, yPosition, 10, 'bold');
+    yPosition += 6;
+    addText('Account Name: M/S Aamodha Enterprises', margin, yPosition, 9);
+    yPosition += 5;
+    addText('Bank: HDFC Bank', margin, yPosition, 9);
+    yPosition += 5;
+    addText('Account Number: 50200082063860', margin, yPosition, 9);
+    yPosition += 5;
+    addText('IFSC Code: HDFC0009611', margin, yPosition, 9);
+    yPosition += 10;
+
+    // Signatures section
+    const signatureY = pageHeight - 30;
+    addText('Dispatch Signature:', margin, signatureY, 9);
+    addText('Received Signature:', pageWidth - margin, signatureY, 9, 'normal', 'right');
+
+    // Convert PDF to ArrayBuffer
+    const pdfBlob = doc.output('arraybuffer');
+    return pdfBlob;
+  } catch (error) {
+    logger.error('Error generating PDF document:', error);
+    throw new Error(`PDF document generation failed: ${error.message}`);
+  }
 }
 
 /**
@@ -158,17 +304,16 @@ export async function generateInvoiceDocuments(
     // Generate Word document
     const wordBuffer = await generateWordDocument(data);
     
+    // Generate PDF document
+    const pdfBuffer = await generatePDFDocument(data);
+    
     // Generate file names
     const wordFileName = `${data.invoiceNumber}.docx`;
     const pdfFileName = `${data.invoiceNumber}.pdf`;
     
-    // For now, PDF generation is not implemented
-    // In production, you would:
-    // 1. Convert Word to PDF using backend service, OR
-    // 2. Generate PDF directly from data
-    
     return {
       wordBuffer,
+      pdfBuffer,
       wordFileName,
       pdfFileName,
     };
