@@ -15,6 +15,7 @@ const Labels = lazy(() => import("@/components/labels/Labels"));
 const ConfigurationManagement = lazy(() => import("@/components/configurations/ConfigurationManagement"));
 const Reports = lazy(() => import("@/components/reports/Reports"));
 const UserManagement = lazy(() => import("@/components/user-management/UserManagement"));
+const ApplicationConfigurationTab = lazy(() => import("@/components/user-management/ApplicationConfigurationTab"));
 
 // Loading component for route transitions
 const RouteLoader = () => (
@@ -96,6 +97,24 @@ const Index = () => {
         return (
           <Suspense fallback={<RouteLoader />}>
             <UserManagement />
+          </Suspense>
+        );
+      case "application-configuration":
+        // Only allow managers and admins to access application configuration
+        if (profile?.role !== 'manager' && profile?.role !== 'admin') {
+          return (
+            <Alert className="m-6">
+              <Shield className="h-4 w-4" />
+              <AlertDescription>
+                Access denied. The Application Configuration tab is only available to users with Manager or Admin role.
+                Your current role: {profile?.role || 'Unknown'}
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return (
+          <Suspense fallback={<RouteLoader />}>
+            <ApplicationConfigurationTab />
           </Suspense>
         );
       default:

@@ -11,7 +11,8 @@ import {
   LogOut,
   User,
   ShoppingCart,
-  Shield
+  Shield,
+  Settings
 } from "lucide-react";
 
 import {
@@ -51,6 +52,7 @@ const menuItems: MenuItem[] = [
   { id: "configurations", title: "Configurations", icon: Cog },
   { id: "reports", title: "Reports", icon: FileText },
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
+  { id: "application-configuration", title: "Application Configuration", icon: Settings, roles: ['manager', 'admin'] }, // Only visible to managers and admins
 ];
 
 export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
