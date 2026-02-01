@@ -7,6 +7,7 @@ import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import type { InvoiceData } from './invoiceService';
 import { logger } from '@/lib/logger';
 
@@ -135,153 +136,129 @@ export async function convertWordToPDF(
 }
 
 /**
- * Generate PDF directly from invoice data
- * Creates a PDF invoice matching the Word template structure exactly
+ * Load HTML template and replace placeholders
+ */
+async function loadHTMLTemplate(): Promise<string> {
+  try {
+    const response = await fetch('/templates/invoice-template.html');
+    if (!response.ok) {
+      throw new Error(`Failed to load HTML template: ${response.statusText}`);
+    }
+    return await response.text();
+  } catch (error) {
+    logger.error('Error loading HTML template:', error);
+    throw new Error(`Template loading failed: ${error.message}`);
+  }
+}
+
+/**
+ * Replace template placeholders with actual data
+ */
+function replaceTemplatePlaceholders(template: string, data: InvoiceData): string {
+  const replacements: Record<string, string> = {
+    companyName: data.companyName,
+    companyAddress: data.companyAddress.replace(/\n/g, '<br>'),
+    clientName: data.clientName,
+    branch: data.branch || '',
+    invoiceNumber: data.invoiceNumber,
+    invoiceDate: formatDate(data.invoiceDate),
+    sku: data.sku,
+    quantity: data.quantity.toString(),
+    unitPrice: formatCurrency(data.pricePerCase),
+    amount: formatCurrency(data.amount),
+    totalAmount: formatCurrency(data.grandTotal),
+    amountInWords: data.amountInWords,
+  };
+
+  let html = template;
+  Object.entries(replacements).forEach(([key, value]) => {
+    const regex = new RegExp(`{{${key}}}`, 'g');
+    html = html.replace(regex, value || '');
+  });
+
+  return html;
+}
+
+/**
+ * Generate PDF from HTML template
+ * Creates a PDF invoice using HTML template for perfect alignment
  */
 export async function generatePDFDocument(
   data: InvoiceData
 ): Promise<ArrayBuffer> {
   try {
-    // Create new PDF document (A4 size: 210mm x 297mm)
-    const doc = new jsPDF({
+    // Load HTML template
+    const htmlTemplate = await loadHTMLTemplate();
+    
+    // Replace placeholders with actual data
+    const htmlContent = replaceTemplatePlaceholders(htmlTemplate, data);
+    
+    // Create a temporary container element with proper styling
+    const container = document.createElement('div');
+    container.innerHTML = htmlContent;
+    
+    // Style the container to match A4 dimensions and ensure proper rendering
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '210mm';
+    container.style.minHeight = '297mm';
+    container.style.backgroundColor = '#ffffff';
+    container.style.overflow = 'hidden';
+    
+    document.body.appendChild(container);
+    
+    // Wait for fonts and styles to load
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    // Get the actual content element (invoice-container)
+    const contentElement = container.querySelector('.invoice-container') || container;
+    
+    // Convert HTML to canvas with high quality settings
+    const canvas = await html2canvas(contentElement as HTMLElement, {
+      scale: 2, // Higher quality (2x resolution)
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      width: contentElement.scrollWidth,
+      height: contentElement.scrollHeight,
+      windowWidth: 794, // A4 width in pixels at 96 DPI
+      windowHeight: 1123, // A4 height in pixels at 96 DPI
+    });
+    
+    // Remove temporary container
+    document.body.removeChild(container);
+    
+    // Convert canvas to PDF
+    const imgData = canvas.toDataURL('image/png', 1.0);
+    const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
+      compress: true,
     });
-
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 15;
-    const rightMargin = pageWidth - margin;
-    let yPosition = margin;
-
-    // Helper function to add text with optional styling
-    const addText = (
-      text: string,
-      x: number,
-      y: number,
-      fontSize: number = 10,
-      fontStyle: 'normal' | 'bold' | 'italic' = 'normal',
-      align: 'left' | 'center' | 'right' = 'left'
-    ) => {
-      doc.setFontSize(fontSize);
-      doc.setFont('helvetica', fontStyle);
-      doc.text(text, x, y, { align });
-    };
-
-    // Helper function to draw a line
-    const drawLine = (x1: number, y1: number, x2: number, y2: number, lineWidth: number = 0.5) => {
-      doc.setLineWidth(lineWidth);
-      doc.line(x1, y1, x2, y2);
-    };
-
-    // Header: Bill of Supply (centered, larger font, matching template)
-    addText('Bill of supply', pageWidth / 2, yPosition, 18, 'bold', 'center');
-    yPosition += 12;
-
-    // Company Name (centered, bold, matching template)
-    addText(data.companyName, pageWidth / 2, yPosition, 16, 'bold', 'center');
-    yPosition += 8;
-
-    // Company Address (centered, handle multi-line, matching template)
-    const addressLines = data.companyAddress
-      .split(/[\n,]/)
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
-    addressLines.forEach(line => {
-      addText(line, pageWidth / 2, yPosition, 11, 'normal', 'center');
-      yPosition += 5.5;
-    });
-    yPosition += 6;
-
-    // Bill to section and Invoice details (side by side, matching template)
-    const billToStartY = yPosition;
     
-    // Left side: Bill to
-    addText('Bill to:', margin, yPosition, 11, 'bold');
-    yPosition += 6;
-    addText(`${data.clientName},`, margin, yPosition, 11);
-    yPosition += 5.5;
-    if (data.branch) {
-      addText(`${data.branch}.`, margin, yPosition, 11);
+    // Calculate dimensions to fit A4 page
+    const imgWidth = 210; // A4 width in mm
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    
+    // If content exceeds one page, add additional pages
+    const pageHeight = 297; // A4 height in mm
+    let heightLeft = imgHeight;
+    let position = 0;
+    
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+    
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
     }
-
-    // Right side: Invoice details (aligned to match template)
-    yPosition = billToStartY;
-    addText(`Bill No: ${data.invoiceNumber}`, rightMargin, yPosition, 11, 'normal', 'right');
-    yPosition += 5.5;
-    addText(`Date: ${formatDate(data.invoiceDate)}`, rightMargin, yPosition, 11, 'normal', 'right');
-    yPosition += 5.5;
-    addText('Dispatch Through: AUTO', rightMargin, yPosition, 11, 'normal', 'right');
     
-    // Move to table section (ensure enough space)
-    yPosition = Math.max(billToStartY + 18, yPosition + 3) + 5;
-
-    // Table Section - Precisely aligned columns to match template
-    const tableStartY = yPosition;
-    
-    // Column positions matching template layout (in mm from left margin)
-    const colPositions = {
-      sno: margin + 2,           // S.No: column
-      description: margin + 20,   // Description column
-      sku: margin + 88,           // SKU column
-      qty: margin + 118,          // Qty column
-      rate: margin + 143,         // Rate column
-      amount: rightMargin - 2,    // Amount column (right aligned)
-    };
-
-    // Draw table header (matching template)
-    addText('S.No:', colPositions.sno, yPosition, 10, 'bold');
-    addText('Description of Goods', colPositions.description, yPosition, 10, 'bold');
-    addText('SKU', colPositions.sku, yPosition, 10, 'bold');
-    addText('Qty', colPositions.qty, yPosition, 10, 'bold');
-    addText('Rate', colPositions.rate, yPosition, 10, 'bold');
-    addText('Amount', colPositions.amount, yPosition, 10, 'bold', 'right');
-
-    yPosition += 6;
-    drawLine(margin, yPosition, rightMargin, yPosition, 0.5);
-    yPosition += 4;
-
-    // Table Row - Precisely aligned with header
-    addText('1.', colPositions.sno, yPosition, 10);
-    addText('Elma 500 ml', colPositions.description, yPosition, 10);
-    addText(data.sku, colPositions.sku, yPosition, 10);
-    addText(`${data.quantity} cases`, colPositions.qty, yPosition, 10);
-    addText(formatCurrency(data.pricePerCase), colPositions.rate, yPosition, 10);
-    addText(formatCurrency(data.amount), colPositions.amount, yPosition, 10, 'normal', 'right');
-
-    yPosition += 8;
-    drawLine(margin, yPosition, rightMargin, yPosition, 0.5);
-    yPosition += 6;
-
-    // Total Amount (right aligned, matching template position)
-    addText('Total amount', rightMargin - 38, yPosition, 11, 'bold', 'right');
-    addText(formatCurrency(data.grandTotal), rightMargin, yPosition, 11, 'bold', 'right');
-    yPosition += 9;
-
-    // Amount in words (matching template)
-    addText(`Amount in words: ${data.amountInWords}`, margin, yPosition, 11);
-    yPosition += 10;
-
-    // Account Details section (matching template spacing)
-    addText('Account Details:', margin, yPosition, 11, 'bold');
-    yPosition += 6;
-    addText('Account Name: M/S Aamodha Enterprises', margin, yPosition, 10);
-    yPosition += 5.5;
-    addText('Bank: HDFC Bank', margin, yPosition, 10);
-    yPosition += 5.5;
-    addText('Account Number: 50200082063860', margin, yPosition, 10);
-    yPosition += 5.5;
-    addText('IFSC Code: HDFC0009611', margin, yPosition, 10);
-    yPosition += 12;
-
-    // Signatures section (at bottom, matching template)
-    const signatureY = pageHeight - 20;
-    addText('Dispatch Signature:', margin, signatureY, 10);
-    addText('Received Signature:', rightMargin, signatureY, 10, 'normal', 'right');
-
     // Convert PDF to ArrayBuffer
-    const pdfBlob = doc.output('arraybuffer');
+    const pdfBlob = pdf.output('arraybuffer');
     return pdfBlob;
   } catch (error) {
     logger.error('Error generating PDF document:', error);

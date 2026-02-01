@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice Functions Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    .config {
+      background: #f9f9f9;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+    .config label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #333;
+    }
+    .config input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .success {
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724;
+    }
+    .error {
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+    }
+    .info {
+      background: #d1ecf1;
+      border: 1px solid #bee5eb;
+      color: #0c5460;
+    }
+    .link {
+      color: #007bff;
+      text-decoration: none;
+      word-break: break-all;
+    }
+    .link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Invoice Generation Functions Test</h1>
+    <p class="subtitle">Test Google Drive token refresh and file upload functions</p>
+
+    <div class="config">
+      <label>Supabase URL:</label>
+      <input type="text" id="supabaseUrl" placeholder="https://your-project.supabase.co" value="">
+      
+      <label>Supabase Anon Key:</label>
+      <input type="text" id="supabaseAnonKey" placeholder="your-anon-key" value="">
+      
+      <small style="color: #666;">💡 These values are loaded from your environment. Update if needed.</small>
+    </div>
+
+    <div>
+      <button onclick="testTokenRefresh()">🔐 Test Token Refresh</button>
+      <button onclick="testFileUpload()">📤 Test File Upload</button>
+      <button onclick="testBoth()">🚀 Test Both</button>
+    </div>
+
+    <div id="result"></div>
+  </div>
+
+  <script>
+    // Load from environment or use defaults
+    const SUPABASE_URL = document.getElementById('supabaseUrl').value || 
+      (window.location.hostname === 'localhost' ? 'https://your-project.supabase.co' : 
+       window.location.origin.replace('http://', 'https://').replace('https://', 'https://').split('/')[0]);
+    
+    const SUPABASE_ANON_KEY = document.getElementById('supabaseAnonKey').value || '';
+
+    function showResult(message, type = 'info') {
+      const resultDiv = document.getElementById('result');
+      resultDiv.className = `result ${type}`;
+      resultDiv.textContent = message;
+    }
+
+    async function testTokenRefresh() {
+      const url = document.getElementById('supabaseUrl').value || SUPABASE_URL;
+      const key = document.getElementById('supabaseAnonKey').value || SUPABASE_ANON_KEY;
+
+      if (!url || url.includes('your-project') || !key || key.includes('your-anon')) {
+        showResult('❌ Please configure Supabase URL and Anon Key above', 'error');
+        return;
+      }
+
+      showResult('🔄 Testing token refresh...', 'info');
+
+      try {
+        const response = await fetch(`${url}/functions/v1/google-drive-token`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.accessToken) {
+          showResult(
+            `✅ Token Refresh Successful!\n\n` +
+            `Access Token: ${data.accessToken.substring(0, 30)}...\n` +
+            `Expires In: ${data.expiresIn} seconds\n` +
+            `Full Response: ${JSON.stringify(data, null, 2)}`,
+            'success'
+          );
+        } else {
+          showResult(
+            `❌ Token Refresh Failed!\n\n` +
+            `Status: ${response.status}\n` +
+            `Error: ${JSON.stringify(data, null, 2)}\n\n` +
+            `💡 Troubleshooting:\n` +
+            `1. Check GOOGLE_REFRESH_TOKEN secret is set\n` +
+            `2. Check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set\n` +
+            `3. Verify refresh token is valid`,
+            'error'
+          );
+        }
+      } catch (error) {
+        showResult(
+          `❌ Error: ${error.message}\n\n` +
+          `💡 Check:\n` +
+          `1. Supabase URL is correct\n` +
+          `2. Function is deployed\n` +
+          `3. Network connection`,
+          'error'
+        );
+      }
+    }
+
+    async function testFileUpload() {
+      const url = document.getElementById('supabaseUrl').value || SUPABASE_URL;
+      const key = document.getElementById('supabaseAnonKey').value || SUPABASE_ANON_KEY;
+
+      if (!url || url.includes('your-project') || !key || key.includes('your-anon')) {
+        showResult('❌ Please configure Supabase URL and Anon Key above', 'error');
+        return;
+      }
+
+      showResult('🔄 Testing file upload...', 'info');
+
+      // Create test file content
+      const testContent = `Test Invoice File\nGenerated: ${new Date().toISOString()}\nThis is a test file for invoice generation system.`;
+      const base64Content = btoa(testContent);
+
+      try {
+        const response = await fetch(`${url}/functions/v1/google-drive-upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileName: `test-invoice-${Date.now()}.txt`,
+            folderId: null,
+            fileData: base64Content,
+            mimeType: 'text/plain',
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.id) {
+          showResult(
+            `✅ File Upload Successful!\n\n` +
+            `File ID: ${data.id}\n` +
+            `File Name: ${data.name}\n\n` +
+            `View Link: ${data.webViewLink}\n` +
+            `Download Link: ${data.webContentLink}\n\n` +
+            `Full Response: ${JSON.stringify(data, null, 2)}\n\n` +
+            `🔗 <a href="${data.webViewLink}" target="_blank" class="link">Open in Google Drive</a>`,
+            'success'
+          );
+        } else {
+          showResult(
+            `❌ File Upload Failed!\n\n` +
+            `Status: ${response.status}\n` +
+            `Error: ${JSON.stringify(data, null, 2)}\n\n` +
+            `💡 Troubleshooting:\n` +
+            `1. Token refresh function must work first\n` +
+            `2. Check OAuth scopes include drive.file\n` +
+            `3. Verify refresh token has correct permissions`,
+            'error'
+          );
+        }
+      } catch (error) {
+        showResult(
+          `❌ Error: ${error.message}\n\n` +
+          `💡 Check:\n` +
+          `1. Token refresh function works\n` +
+          `2. Function is deployed\n` +
+          `3. Network connection`,
+          'error'
+        );
+      }
+    }
+
+    async function testBoth() {
+      showResult('🔄 Running both tests...', 'info');
+      
+      const tokenResult = await testTokenRefresh();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      if (document.getElementById('result').textContent.includes('✅')) {
+        await testFileUpload();
+      } else {
+        showResult(
+          '❌ Token refresh failed. Cannot test file upload.\n\n' +
+          'Please fix token refresh issues first.',
+          'error'
+        );
+      }
+    }
+
+    // Auto-load from environment if available
+    if (typeof window !== 'undefined' && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('supabase_url')) {
+        document.getElementById('supabaseUrl').value = params.get('supabase_url');
+      }
+      if (params.get('anon_key')) {
+        document.getElementById('supabaseAnonKey').value = params.get('anon_key');
+      }
+    }
+  </script>
+</body>
+</html>
