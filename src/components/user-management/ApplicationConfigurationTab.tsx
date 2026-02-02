@@ -73,12 +73,19 @@ const ApplicationConfigurationTab: React.FC = () => {
   });
 
   // Filter configurations based on search query
+  // Exclude WhatsApp configurations (they're shown in WhatsAppConfigurationSection)
   const filteredConfigurations = useMemo(() => {
     if (!configurations) return [];
-    if (!searchQuery.trim()) return configurations;
+    
+    // Filter out WhatsApp-related configurations
+    const nonWhatsAppConfigs = configurations.filter(
+      (config) => !config.config_key.startsWith('whatsapp_')
+    );
+    
+    if (!searchQuery.trim()) return nonWhatsAppConfigs;
 
     const query = searchQuery.toLowerCase();
-    return configurations.filter((config) =>
+    return nonWhatsAppConfigs.filter((config) =>
       config.description?.toLowerCase().includes(query)
     );
   }, [configurations, searchQuery]);
