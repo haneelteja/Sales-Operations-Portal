@@ -314,6 +314,9 @@ const ApplicationConfigurationTab: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* WhatsApp Configuration Section */}
+      <WhatsAppConfigurationSection />
+
       {/* Backup Section */}
       <Card>
         <CardHeader>

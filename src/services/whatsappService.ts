@@ -145,20 +145,50 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig> {
 
     const config: Partial<WhatsAppConfig> = {};
     (data || []).forEach((item) => {
-      const key = item.config_key.replace('whatsapp_', '') as keyof WhatsAppConfig;
+      // Map config keys to WhatsAppConfig interface keys
+      const configKeyMap: Record<string, keyof WhatsAppConfig> = {
+        'whatsapp_enabled': 'whatsapp_enabled',
+        'whatsapp_stock_delivered_enabled': 'whatsapp_stock_delivered_enabled',
+        'whatsapp_invoice_enabled': 'whatsapp_invoice_enabled',
+        'whatsapp_payment_reminder_enabled': 'whatsapp_payment_reminder_enabled',
+        'whatsapp_festival_enabled': 'whatsapp_festival_enabled',
+        'whatsapp_api_key': 'whatsapp_api_key',
+        'whatsapp_api_url': 'whatsapp_api_url',
+        'whatsapp_retry_max': 'whatsapp_retry_max',
+        'whatsapp_retry_interval_minutes': 'whatsapp_retry_interval_minutes',
+        'whatsapp_failure_notification_email': 'whatsapp_failure_notification_email',
+        'whatsapp_payment_reminder_days': 'whatsapp_payment_reminder_days',
+      };
+
+      const mappedKey = configKeyMap[item.config_key];
+      if (!mappedKey) return;
+
       const value = item.config_value;
 
       // Convert string values to appropriate types
-      if (key === 'enabled' || key.includes('_enabled')) {
-        config[key as keyof WhatsAppConfig] = value === 'true' as any;
-      } else if (key === 'retry_max' || key === 'retry_interval_minutes') {
-        config[key as keyof WhatsAppConfig] = parseInt(value, 10) as any;
+      if (mappedKey.includes('_enabled')) {
+        config[mappedKey] = (value === 'true') as any;
+      } else if (mappedKey === 'whatsapp_retry_max' || mappedKey === 'whatsapp_retry_interval_minutes') {
+        config[mappedKey] = parseInt(value, 10) as any;
       } else {
-        config[key as keyof WhatsAppConfig] = value as any;
+        config[mappedKey] = value as any;
       }
     });
 
-    return config as WhatsAppConfig;
+    // Set defaults for missing values
+    return {
+      whatsapp_enabled: config.whatsapp_enabled ?? false,
+      whatsapp_stock_delivered_enabled: config.whatsapp_stock_delivered_enabled ?? false,
+      whatsapp_invoice_enabled: config.whatsapp_invoice_enabled ?? false,
+      whatsapp_payment_reminder_enabled: config.whatsapp_payment_reminder_enabled ?? false,
+      whatsapp_festival_enabled: config.whatsapp_festival_enabled ?? false,
+      whatsapp_api_key: config.whatsapp_api_key ?? '',
+      whatsapp_api_url: config.whatsapp_api_url ?? 'https://api.360messenger.com',
+      whatsapp_retry_max: config.whatsapp_retry_max ?? 3,
+      whatsapp_retry_interval_minutes: config.whatsapp_retry_interval_minutes ?? 30,
+      whatsapp_failure_notification_email: config.whatsapp_failure_notification_email ?? 'pega2023test@gmail.com',
+      whatsapp_payment_reminder_days: config.whatsapp_payment_reminder_days ?? '3,7',
+    } as WhatsAppConfig;
   } catch (error) {
     logger.error('Error in getWhatsAppConfig:', error);
     throw error;

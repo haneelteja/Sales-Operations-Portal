@@ -17,6 +17,7 @@ import {
 import { generateInvoiceDocuments } from '@/services/documentGenerator';
 import { StorageService } from '@/services/cloudStorage/storageService';
 import { getStorageProvider } from '@/services/invoiceConfigService';
+import { sendWhatsAppMessage, getWhatsAppConfig } from '@/services/whatsappService';
 import type { Invoice, SalesTransaction, Customer } from '@/types';
 import { logger } from '@/lib/logger';
 import { useToast } from '@/hooks/use-toast';
@@ -233,4 +234,59 @@ async function regenerateInvoice(
   await markInvoiceRegenerated(existingInvoice.id);
 
   return updatedInvoice;
+}
+
+/**
+ * Send WhatsApp message after invoice generation (if enabled)
+ */
+async function sendInvoiceWhatsAppMessage(
+  invoice: Invoice,
+  customer: Customer,
+  transaction: SalesTransaction,
+  invoiceData: any
+): Promise<void> {
+  try {
+    // Check if WhatsApp is enabled
+    const whatsappConfig = await getWhatsAppConfig();
+    
+    if (!whatsappConfig.whatsapp_enabled || !whatsappConfig.whatsapp_invoice_enabled) {
+      logger.info('WhatsApp invoice messages are disabled, skipping...');
+      return;
+    }
+
+    // Check if customer has WhatsApp number
+    if (!customer.whatsapp_number) {
+      logger.info(`Customer ${customer.client_name} does not have WhatsApp number, skipping...`);
+      return;
+    }
+
+    // Prepare placeholders for template
+    const placeholders: Record<string, string> = {
+      customerName: customer.client_name,
+      invoiceNumber: invoice.invoice_number,
+      invoiceDate: new Date(invoice.invoice_date).toLocaleDateString('en-IN'),
+      amount: `₹${transaction.amount?.toLocaleString('en-IN') || '0'}`,
+      dueDate: invoice.due_date ? new Date(invoice.due_date).toLocaleDateString('en-IN') : 'N/A',
+      invoiceLink: invoice.pdf_file_url || invoice.word_file_url || '',
+    };
+
+    // Send WhatsApp message with PDF attachment
+    const result = await sendWhatsAppMessage({
+      customerId: customer.id,
+      messageType: 'invoice',
+      triggerType: 'auto',
+      attachmentUrl: invoice.pdf_file_url || null,
+      attachmentType: invoice.pdf_file_url ? 'application/pdf' : undefined,
+      placeholders,
+    });
+
+    if (result.success) {
+      logger.info(`WhatsApp invoice message sent successfully for invoice ${invoice.invoice_number}`);
+    } else {
+      logger.warn(`Failed to send WhatsApp invoice message: ${result.error}`);
+    }
+  } catch (error) {
+    // Don't throw error - WhatsApp failure shouldn't break invoice generation
+    logger.error('Error sending WhatsApp invoice message:', error);
+  }
 }
