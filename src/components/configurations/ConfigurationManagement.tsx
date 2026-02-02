@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, memo } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import type { 
   Customer, 
@@ -30,6 +31,7 @@ const ConfigurationManagement = () => {
     sku: "",
     price_per_case: "",
     price_per_bottle: "",
+    whatsapp_number: "",
     pricing_date: new Date().toISOString().split('T')[0]
   });
 
@@ -52,7 +54,8 @@ const ConfigurationManagement = () => {
     branch: "",
     sku: "",
     price_per_case: "",
-    price_per_bottle: ""
+    price_per_bottle: "",
+    whatsapp_number: ""
   });
 
   // Filtering and sorting state for customers
@@ -234,6 +237,7 @@ const ConfigurationManagement = () => {
           ...data,
           price_per_case: data.price_per_case ? parseFloat(data.price_per_case) : null,
           price_per_bottle: data.price_per_bottle ? parseFloat(data.price_per_bottle) : null,
+          whatsapp_number: data.whatsapp_number || null,
           pricing_date: data.pricing_date
         });
 
@@ -253,6 +257,7 @@ const ConfigurationManagement = () => {
         sku: "",
         price_per_case: "",
         price_per_bottle: "",
+        whatsapp_number: "",
         pricing_date: new Date().toISOString().split('T')[0]
       });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
@@ -293,6 +298,7 @@ const ConfigurationManagement = () => {
         sku: string | null;
         price_per_case: number | null;
         price_per_bottle: number | null;
+        whatsapp_number: string | null;
         pricing_date: string | null;
       }> = {};
       
@@ -305,6 +311,9 @@ const ConfigurationManagement = () => {
       }
       if (data.price_per_bottle !== undefined) {
         updateData.price_per_bottle = data.price_per_bottle ? parseFloat(data.price_per_bottle) : null;
+      }
+      if (data.whatsapp_number !== undefined) {
+        updateData.whatsapp_number = data.whatsapp_number || null;
       }
       if (data.pricing_date) updateData.pricing_date = data.pricing_date;
 
@@ -1008,7 +1017,8 @@ const ConfigurationManagement = () => {
       branch: customer.branch || "",
       sku: customer.sku || "",
       price_per_case: customer.price_per_case?.toString() || "",
-      price_per_bottle: customer.price_per_bottle?.toString() || ""
+      price_per_bottle: customer.price_per_bottle?.toString() || "",
+      whatsapp_number: customer.whatsapp_number || ""
     });
     setIsEditCustomerOpen(true);
   };
@@ -1024,6 +1034,7 @@ const ConfigurationManagement = () => {
       sku: editForm.sku,
       price_per_case: editForm.price_per_case,
       price_per_bottle: editForm.price_per_bottle,
+      whatsapp_number: editForm.whatsapp_number,
       pricing_date: editingCustomer.pricing_date || customerForm.pricing_date || new Date().toISOString().split('T')[0]
     });
   };
@@ -1050,7 +1061,7 @@ const ConfigurationManagement = () => {
           <Card>
             <CardContent className="pt-6">
               <form onSubmit={handleCustomerSubmit} className="flex items-end gap-2">
-                <div className="flex-1 grid grid-cols-5 gap-2">
+                <div className="flex-1 grid grid-cols-6 gap-2">
                   <div>
                     <Label htmlFor="pricing-date" className="text-xs mb-1 block">Date *</Label>
                     <Input
@@ -1115,6 +1126,17 @@ const ConfigurationManagement = () => {
                       value={customerForm.price_per_bottle}
                       onChange={(e) => setCustomerForm({...customerForm, price_per_bottle: e.target.value})}
                       placeholder="12.50"
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="whatsapp-number" className="text-xs mb-1 block">WhatsApp Number</Label>
+                    <Input
+                      id="whatsapp-number"
+                      type="tel"
+                      value={customerForm.whatsapp_number}
+                      onChange={(e) => setCustomerForm({...customerForm, whatsapp_number: e.target.value})}
+                      placeholder="+919876543210"
                       className="h-9"
                     />
                   </div>
@@ -1862,6 +1884,17 @@ const ConfigurationManagement = () => {
                   value={editForm.price_per_bottle}
                   onChange={(e) => setEditForm({...editForm, price_per_bottle: e.target.value})}
                   placeholder="0.00"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="edit-whatsapp-number">WhatsApp Number</Label>
+                <Input
+                  id="edit-whatsapp-number"
+                  type="tel"
+                  value={editForm.whatsapp_number}
+                  onChange={(e) => setEditForm({...editForm, whatsapp_number: e.target.value})}
+                  placeholder="+919876543210"
                 />
               </div>
             </div>

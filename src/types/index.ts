@@ -6,6 +6,7 @@ export interface Customer {
   sku: string | null;
   price_per_case: number | null;
   price_per_bottle: number | null;
+  whatsapp_number: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
