@@ -12,7 +12,8 @@ import {
   User,
   ShoppingCart,
   Shield,
-  Settings
+  Settings,
+  MessageSquare
 } from "lucide-react";
 
 import {
@@ -53,6 +54,7 @@ const menuItems: MenuItem[] = [
   { id: "reports", title: "Reports", icon: FileText },
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
   { id: "application-configuration", title: "Application Configuration", icon: Settings, roles: ['manager', 'admin'] }, // Only visible to managers and admins
+  { id: "whatsapp-configuration", title: "WhatsApp Configurations", icon: MessageSquare, roles: ['manager', 'admin'] }, // Only visible to managers and admins
 ];
 
 export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {

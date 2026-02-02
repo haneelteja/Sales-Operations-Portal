@@ -106,6 +106,16 @@ serve(async (req) => {
       throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
     }
 
+    // Log API configuration (mask sensitive data) - after customer is fetched
+    console.log('WhatsApp API Configuration:', {
+      apiUrl,
+      apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : 'missing',
+      messageType,
+      customerId,
+      customerName: customer.client_name,
+      whatsappNumber: customer.whatsapp_number,
+    });
+
     if (!customer.whatsapp_number) {
       throw new Error(`Customer ${customer.client_name} does not have a WhatsApp number`);
     }
@@ -222,13 +232,43 @@ serve(async (req) => {
             if (mediaResponse.ok) {
               break; // Success, exit loop
             } else {
-              const errorData = await mediaResponse.json().catch(() => ({ error: 'Unknown error' }));
+              let errorData: any = { error: 'Unknown error' };
+              try {
+                if (mediaResponse) {
+                  const responseText = await mediaResponse.text();
+                  if (responseText) {
+                    try {
+                      errorData = JSON.parse(responseText);
+                      // Ensure errorData has an error property
+                      if (!errorData || typeof errorData !== 'object') {
+                        errorData = { error: responseText || 'Unknown error' };
+                      } else if (!errorData.error) {
+                        errorData.error = errorData.message || errorData.statusText || 'Unknown error';
+                      }
+                    } catch (parseError) {
+                      errorData = { error: responseText || 'Failed to parse response' };
+                    }
+                  } else {
+                    errorData = { 
+                      error: mediaResponse.status ? `HTTP ${mediaResponse.status} ${mediaResponse.statusText || ''}` : 'Empty response' 
+                    };
+                  }
+                }
+              } catch (parseError) {
+                errorData = { 
+                  error: mediaResponse && mediaResponse.status 
+                    ? `Failed to parse response: ${mediaResponse.status} ${mediaResponse.statusText || ''}` 
+                    : 'Failed to read response' 
+                };
+              }
               lastMediaError = `Endpoint ${endpoint}: ${JSON.stringify(errorData)}`;
-              console.log(`Tried ${endpoint}, got ${mediaResponse.status}:`, errorData);
+              const statusInfo = mediaResponse ? `${mediaResponse.status}` : 'No response';
+              console.log(`Tried ${endpoint}, got ${statusInfo}:`, errorData);
               mediaResponse = null;
             }
           } catch (err) {
-            lastMediaError = `Endpoint ${endpoint}: ${err instanceof Error ? err.message : 'Unknown error'}`;
+            const errorMsg = err instanceof Error ? err.message : String(err || 'Unknown error');
+            lastMediaError = `Endpoint ${endpoint}: ${errorMsg}`;
             console.log(`Error trying ${endpoint}:`, err);
             mediaResponse = null;
           }
@@ -238,136 +278,137 @@ serve(async (req) => {
           throw new Error(`API error: All media endpoint variants failed. Last error: ${lastMediaError}. Please verify the 360Messenger API endpoint structure.`);
         }
 
-        apiResponse = await mediaResponse.json();
+        // Only parse JSON if we have a successful response
+        if (mediaResponse && mediaResponse.ok) {
+          try {
+            apiResponse = await mediaResponse.json();
+          } catch (parseError) {
+            // If JSON parsing fails, create a simple success response
+            apiResponse = { success: true, status: mediaResponse.status, statusText: mediaResponse.statusText };
+          }
+        } else {
+          // This should never happen due to the check above, but just in case
+          throw new Error('Unexpected error: No successful media response received');
+        }
       } else {
-        // Send text message
-        // Try multiple endpoint formats as 360Messenger API structure may vary
-        const endpointVariants = [
-          '/api/v1/messages/text',
-          '/v1/messages/text',
-          '/api/messages/text',
-          '/messages/text',
-          '/api/v1/messages',
-          '/v1/messages',
-          '/messages/send',
-          '/api/send',
-          '/send',
-          '/api/v1/send',
-          '/v1/send',
-          '/messages',
-          '/api/messages',
-        ];
+        // Send text message using 360Messenger API
+        // Based on official 360Messenger API documentation from plugin source code
+        // Endpoint: /sendMessage/{api_key}
+        // Method: POST
+        // Content-Type: application/x-www-form-urlencoded
+        // Parameters: phonenumber, text, 360notify-medium (optional)
+        
+        const endpoint = `/sendMessage/${apiKey}`;
+        const fullUrl = `${apiUrl}${endpoint}`;
+        
+        console.log(`📤 Sending WhatsApp message via 360Messenger API: ${fullUrl}`);
+        console.log(`📱 To: ${customer.whatsapp_number}, Message length: ${messageContent.length} chars`);
+
+        // Build form-encoded request body (not JSON)
+        const formData = new URLSearchParams();
+        formData.append('phonenumber', customer.whatsapp_number);
+        formData.append('text', messageContent);
+        formData.append('360notify-medium', 'wordpress_order_notification'); // Optional but recommended
 
         let textResponse: Response | null = null;
         let lastError: string = '';
-        const attemptedEndpoints: string[] = [];
 
-        // Also try with API key as query parameter (some APIs use this)
-        const requestBodies = [
-          {
-            to: customer.whatsapp_number,
-            message: messageContent,
-            template_id: templateIdToUse,
-          },
-          {
-            phone: customer.whatsapp_number,
-            text: messageContent,
-            template_id: templateIdToUse,
-          },
-          {
-            recipient: customer.whatsapp_number,
-            message: messageContent,
-            template_id: templateIdToUse,
-          },
-        ];
+        try {
+          textResponse = await fetch(fullUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString(),
+          });
 
-        for (const endpoint of endpointVariants) {
-          for (const requestBody of requestBodies) {
+          if (textResponse.ok) {
+            console.log(`✅ Successfully sent WhatsApp message. Status: ${textResponse.status}`);
+          } else {
+            let errorData: any = { error: 'Unknown error' };
             try {
-              const fullUrl = `${apiUrl}${endpoint}`;
-              attemptedEndpoints.push(fullUrl);
-              
-              // Try with Bearer token
-              textResponse = await fetch(fullUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${apiKey}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody),
-              });
-
-              if (textResponse.ok) {
-                console.log(`✅ Success with endpoint: ${endpoint}, body format: ${JSON.stringify(Object.keys(requestBody))}`);
-                break; // Success, exit both loops
-              } else {
-                const errorData = await textResponse.json().catch(() => ({ error: 'Unknown error' }));
-                lastError = `Endpoint ${endpoint} (${JSON.stringify(Object.keys(requestBody))}): ${JSON.stringify(errorData)}`;
-                console.log(`❌ Tried ${endpoint}, got ${textResponse.status}:`, errorData);
-                textResponse = null;
+              if (textResponse) {
+                const responseText = await textResponse.text();
+                if (responseText) {
+                  try {
+                    errorData = JSON.parse(responseText);
+                    // Ensure errorData has an error property
+                    if (!errorData || typeof errorData !== 'object') {
+                      errorData = { error: responseText || 'Unknown error' };
+                    } else if (!errorData.error && errorData.message) {
+                      errorData.error = errorData.message;
+                    }
+                  } catch (parseError) {
+                    errorData = { error: responseText || 'Failed to parse response' };
+                  }
+                } else {
+                  errorData = { 
+                    error: textResponse.status ? `HTTP ${textResponse.status} ${textResponse.statusText || ''}` : 'Empty response' 
+                  };
+                }
               }
-            } catch (err) {
-              lastError = `Endpoint ${endpoint}: ${err instanceof Error ? err.message : 'Unknown error'}`;
-              console.log(`❌ Error trying ${endpoint}:`, err);
-              textResponse = null;
+            } catch (parseError) {
+              errorData = { 
+                error: textResponse && textResponse.status 
+                  ? `Failed to parse response: ${textResponse.status} ${textResponse.statusText || ''}` 
+                  : 'Failed to read response' 
+              };
             }
-            
-            if (textResponse && textResponse.ok) break; // Exit inner loop if successful
+            const statusInfo = textResponse ? `${textResponse.status}` : 'No response';
+            lastError = `API returned ${statusInfo}: ${JSON.stringify(errorData)}`;
+            console.log(`❌ Failed to send WhatsApp message. ${lastError}`);
           }
-          if (textResponse && textResponse.ok) break; // Exit outer loop if successful
-        }
-
-        // If Bearer token failed, try with API key as query parameter
-        if (!textResponse || !textResponse.ok) {
-          console.log('Trying with API key as query parameter...');
-          for (const endpoint of endpointVariants.slice(0, 5)) { // Try top 5 endpoints
-            try {
-              const fullUrl = `${apiUrl}${endpoint}?api_key=${apiKey}`;
-              attemptedEndpoints.push(fullUrl);
-              
-              textResponse = await fetch(fullUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  to: customer.whatsapp_number,
-                  message: messageContent,
-                  template_id: templateIdToUse,
-                }),
-              });
-
-              if (textResponse.ok) {
-                console.log(`✅ Success with endpoint (query param): ${endpoint}`);
-                break;
-              } else {
-                const errorData = await textResponse.json().catch(() => ({ error: 'Unknown error' }));
-                lastError = `Endpoint ${endpoint} (query param): ${JSON.stringify(errorData)}`;
-                console.log(`❌ Tried ${endpoint} (query param), got ${textResponse.status}:`, errorData);
-                textResponse = null;
-              }
-            } catch (err) {
-              lastError = `Endpoint ${endpoint} (query param): ${err instanceof Error ? err.message : 'Unknown error'}`;
-              console.log(`❌ Error trying ${endpoint} (query param):`, err);
-              textResponse = null;
-            }
-            if (textResponse && textResponse.ok) break;
-          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err || 'Unknown error');
+          lastError = `Network/Request error: ${errorMsg}`;
+          console.log(`❌ Error sending WhatsApp message: ${errorMsg}`);
         }
 
         if (!textResponse || !textResponse.ok) {
           const errorDetails = {
-            message: 'All endpoint variants failed',
-            attemptedEndpoints: attemptedEndpoints.slice(0, 10), // Show first 10 attempts
-            lastError,
+            message: 'Failed to send WhatsApp message via 360Messenger API',
+            endpoint: fullUrl,
+            lastError: lastError || 'No response received',
+            lastResponseStatus: textResponse 
+              ? `${textResponse.status || 'unknown'} ${textResponse.statusText || ''}`.trim() || 'No status'
+              : 'No response',
             apiUrl,
-            suggestion: 'Please check 360Messenger API documentation or contact support for the correct endpoint format'
+            apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : 'missing',
+            suggestion: 'Please verify: 1) API URL is correct (https://api.360messenger.com), 2) API key is valid, 3) Phone number format is correct (+country code), 4) Check 360Messenger account balance'
           };
-          console.error('All endpoint attempts failed:', errorDetails);
-          throw new Error(`API error: ${JSON.stringify(errorDetails)}`);
+          console.error('WhatsApp API call failed:', JSON.stringify(errorDetails, null, 2));
+          throw new Error(`API error: ${JSON.stringify(errorDetails, null, 2)}`);
         }
 
-        apiResponse = await textResponse.json();
+        // Parse response
+        if (textResponse && textResponse.ok) {
+          try {
+            const responseText = await textResponse.text();
+            if (responseText) {
+              try {
+                apiResponse = JSON.parse(responseText);
+              } catch (parseError) {
+                // If JSON parsing fails, create a simple success response
+                apiResponse = { 
+                  success: true, 
+                  status: textResponse.status, 
+                  statusText: textResponse.statusText,
+                  rawResponse: responseText.substring(0, 200) // Include first 200 chars for debugging
+                };
+              }
+            } else {
+              apiResponse = { success: true, status: textResponse.status, statusText: textResponse.statusText };
+            }
+          } catch (parseError) {
+            // If parsing fails, create a simple success response
+            const status = textResponse?.status || 200;
+            const statusText = textResponse?.statusText || 'OK';
+            apiResponse = { success: true, status, statusText };
+          }
+        } else {
+          // This should never happen due to the check above, but just in case
+          throw new Error('Unexpected error: No successful response received');
+        }
       }
 
       // Step 6: Update log with success
@@ -390,16 +431,23 @@ serve(async (req) => {
       );
     } catch (apiError) {
       // Update log with failure
-      const errorMessage = apiError instanceof Error ? apiError.message : 'Unknown error';
+      const errorMessage = apiError instanceof Error ? apiError.message : String(apiError || 'Unknown error');
 
-      await supabase
-        .from('whatsapp_message_logs')
-        .update({
-          status: 'failed',
-          failure_reason: errorMessage,
-          retry_count: 0, // Will be incremented by retry function
-        })
-        .eq('id', logId);
+      // Only update log if logId exists
+      if (logId) {
+        try {
+          await supabase
+            .from('whatsapp_message_logs')
+            .update({
+              status: 'failed',
+              failure_reason: errorMessage,
+              retry_count: 0, // Will be incremented by retry function
+            })
+            .eq('id', logId);
+        } catch (updateError) {
+          console.error('Failed to update log entry:', updateError);
+        }
+      }
 
       // Send failure notification if max retries exceeded (handled by retry function)
       // For now, just return error
@@ -407,7 +455,7 @@ serve(async (req) => {
         JSON.stringify({
           success: false,
           error: errorMessage,
-          messageLogId: logId,
+          messageLogId: logId || null,
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

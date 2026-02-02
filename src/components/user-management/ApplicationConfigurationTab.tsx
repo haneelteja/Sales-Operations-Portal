@@ -23,7 +23,6 @@ import { StorageProviderSelect } from './StorageProviderSelect';
 import { BackupLogsDialog } from './BackupLogsDialog';
 import { EditBackupFolderDialog } from './EditBackupFolderDialog';
 import { EditNotificationEmailDialog } from './EditNotificationEmailDialog';
-import { WhatsAppConfigurationSection } from './WhatsAppConfigurationSection';
 import { triggerManualBackup, getBackupConfig, type BackupConfig } from '@/services/backupService';
 import { Database, Play } from 'lucide-react';
 
@@ -323,9 +322,6 @@ const ApplicationConfigurationTab: React.FC = () => {
           )}
         </CardContent>
       </Card>
-
-      {/* WhatsApp Configuration Section */}
-      <WhatsAppConfigurationSection />
 
       {/* Backup Section */}
       <Card>
