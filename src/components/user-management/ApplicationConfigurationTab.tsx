@@ -73,16 +73,25 @@ const ApplicationConfigurationTab: React.FC = () => {
 
   // Filter configurations based on search query
   // Exclude WhatsApp and Backup configurations (they have their own sections)
+  const mainConfigsCount = useMemo(() => {
+    if (!configurations) return 0;
+    return configurations.filter(
+      (c) =>
+        !c.config_key.startsWith('whatsapp_') &&
+        !c.config_key.startsWith('backup_')
+    ).length;
+  }, [configurations]);
+
   const filteredConfigurations = useMemo(() => {
     if (!configurations) return [];
-    
+
     // Filter out WhatsApp and Backup configurations (they have dedicated sections)
     const mainConfigs = configurations.filter(
-      (config) => 
+      (config) =>
         !config.config_key.startsWith('whatsapp_') &&
         !config.config_key.startsWith('backup_')
     );
-    
+
     if (!searchQuery.trim()) return mainConfigs;
 
     const query = searchQuery.toLowerCase();
@@ -314,10 +323,10 @@ const ApplicationConfigurationTab: React.FC = () => {
             </div>
           )}
 
-          {/* Pagination Info (for future scalability) */}
+          {/* Pagination Info - counts only configs in this section (excludes WhatsApp & Backup) */}
           {filteredConfigurations.length > 0 && (
             <div className="mt-4 text-sm text-gray-600 text-center">
-              Showing {filteredConfigurations.length} of {configurations?.length || 0} configurations
+              Showing {filteredConfigurations.length} of {mainConfigsCount} configurations
             </div>
           )}
         </CardContent>
