@@ -161,9 +161,12 @@ serve(async (req) => {
       };
 
       // Replace placeholders in template
-      messageContent = messageContent.replace(/\{(\w+)\}/g, (match, key) => {
+      messageContent = (messageContent ?? '').replace(/\{(\w+)\}/g, (match, key) => {
         return defaultPlaceholders[key] || match;
       });
+    }
+    if (!messageContent) {
+      throw new Error('Message content is required');
     }
 
     // Step 4: Create message log entry
@@ -193,34 +196,54 @@ serve(async (req) => {
     const logId = logEntry.id;
 
     // Step 5: Send message via 360Messenger API
+    // When attachment is present: send text first (main path), then try media as fallback (provider may support PDF).
     try {
-      let apiResponse;
+      let apiResponse: any;
 
-      if (attachmentUrl && attachmentType) {
-        // Send media message
-        // Note: 360Messenger API may require file download and multipart upload
-        // For now, we'll send the URL and let the API handle it
-        // Try multiple endpoint formats
+      // --- Helper: send text message (reliable path) ---
+      const sendTextMessage = async (): Promise<any> => {
+        const endpoint = `/sendMessage/${apiKey}`;
+        const fullUrl = `${apiUrl}${endpoint}`;
+        console.log(`📤 Sending WhatsApp message via 360Messenger API: ${fullUrl}`);
+        console.log(`📱 To: ${customer.whatsapp_number}, Message length: ${messageContent.length} chars`);
+        const formData = new URLSearchParams();
+        formData.append('phonenumber', customer.whatsapp_number);
+        formData.append('text', messageContent);
+        formData.append('360notify-medium', 'wordpress_order_notification');
+        const textResponse = await fetch(fullUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString(),
+        });
+        if (!textResponse.ok) {
+          const responseText = await textResponse.text();
+          let errorData: any = { error: responseText || 'Unknown error' };
+          try {
+            if (responseText) errorData = JSON.parse(responseText);
+            if (!errorData.error) errorData.error = errorData.message || errorData.statusText || 'Unknown error';
+          } catch (_) {}
+          throw new Error(`API returned ${textResponse.status}: ${JSON.stringify(errorData)}`);
+        }
+        try {
+          const responseText = await textResponse.text();
+          return responseText ? JSON.parse(responseText) : { success: true, status: textResponse.status };
+        } catch (_) {
+          return { success: true, status: textResponse.status, statusText: textResponse.statusText };
+        }
+      };
+
+      // --- Helper: try to send media (fallback; do not throw) ---
+      const trySendMedia = async (): Promise<boolean> => {
+        if (!attachmentUrl || !attachmentType) return false;
         const mediaEndpointVariants = [
-          '/api/v1/messages/media',
-          '/v1/messages/media',
-          '/api/messages/media',
-          '/messages/media',
-          '/api/v1/messages',
-          '/v1/messages',
+          '/api/v1/messages/media', '/v1/messages/media', '/api/messages/media',
+          '/messages/media', '/api/v1/messages', '/v1/messages',
         ];
-
-        let mediaResponse: Response | null = null;
-        let lastMediaError: string = '';
-
         for (const endpoint of mediaEndpointVariants) {
           try {
-            mediaResponse = await fetch(`${apiUrl}${endpoint}`, {
+            const mediaResponse = await fetch(`${apiUrl}${endpoint}`, {
               method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-              },
+              headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 to: customer.whatsapp_number,
                 message: messageContent,
@@ -228,187 +251,25 @@ serve(async (req) => {
                 media_type: attachmentType,
               }),
             });
-
             if (mediaResponse.ok) {
-              break; // Success, exit loop
-            } else {
-              let errorData: any = { error: 'Unknown error' };
-              try {
-                if (mediaResponse) {
-                  const responseText = await mediaResponse.text();
-                  if (responseText) {
-                    try {
-                      errorData = JSON.parse(responseText);
-                      // Ensure errorData has an error property
-                      if (!errorData || typeof errorData !== 'object') {
-                        errorData = { error: responseText || 'Unknown error' };
-                      } else if (!errorData.error) {
-                        errorData.error = errorData.message || errorData.statusText || 'Unknown error';
-                      }
-                    } catch (parseError) {
-                      errorData = { error: responseText || 'Failed to parse response' };
-                    }
-                  } else {
-                    errorData = { 
-                      error: mediaResponse.status ? `HTTP ${mediaResponse.status} ${mediaResponse.statusText || ''}` : 'Empty response' 
-                    };
-                  }
-                }
-              } catch (parseError) {
-                errorData = { 
-                  error: mediaResponse && mediaResponse.status 
-                    ? `Failed to parse response: ${mediaResponse.status} ${mediaResponse.statusText || ''}` 
-                    : 'Failed to read response' 
-                };
-              }
-              lastMediaError = `Endpoint ${endpoint}: ${JSON.stringify(errorData)}`;
-              const statusInfo = mediaResponse ? `${mediaResponse.status}` : 'No response';
-              console.log(`Tried ${endpoint}, got ${statusInfo}:`, errorData);
-              mediaResponse = null;
+              console.log(`✅ Media (PDF) sent successfully via ${endpoint}`);
+              return true;
             }
           } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : String(err || 'Unknown error');
-            lastMediaError = `Endpoint ${endpoint}: ${errorMsg}`;
-            console.log(`Error trying ${endpoint}:`, err);
-            mediaResponse = null;
+            console.log(`Media endpoint ${endpoint} failed:`, err instanceof Error ? err.message : err);
           }
         }
+        console.log('Media fallback: provider did not accept PDF; text+link was already sent.');
+        return false;
+      };
 
-        if (!mediaResponse || !mediaResponse.ok) {
-          throw new Error(`API error: All media endpoint variants failed. Last error: ${lastMediaError}. Please verify the 360Messenger API endpoint structure.`);
-        }
-
-        // Only parse JSON if we have a successful response
-        if (mediaResponse && mediaResponse.ok) {
-          try {
-            apiResponse = await mediaResponse.json();
-          } catch (parseError) {
-            // If JSON parsing fails, create a simple success response
-            apiResponse = { success: true, status: mediaResponse.status, statusText: mediaResponse.statusText };
-          }
-        } else {
-          // This should never happen due to the check above, but just in case
-          throw new Error('Unexpected error: No successful media response received');
-        }
+      if (attachmentUrl && attachmentType) {
+        // Main path: send text first (reliable). Then try media as fallback; do not fail if media fails.
+        apiResponse = await sendTextMessage();
+        const mediaSent = await trySendMedia();
+        apiResponse = { ...apiResponse, mediaSent };
       } else {
-        // Send text message using 360Messenger API
-        // Based on official 360Messenger API documentation from plugin source code
-        // Endpoint: /sendMessage/{api_key}
-        // Method: POST
-        // Content-Type: application/x-www-form-urlencoded
-        // Parameters: phonenumber, text, 360notify-medium (optional)
-        
-        const endpoint = `/sendMessage/${apiKey}`;
-        const fullUrl = `${apiUrl}${endpoint}`;
-        
-        console.log(`📤 Sending WhatsApp message via 360Messenger API: ${fullUrl}`);
-        console.log(`📱 To: ${customer.whatsapp_number}, Message length: ${messageContent.length} chars`);
-
-        // Build form-encoded request body (not JSON)
-        const formData = new URLSearchParams();
-        formData.append('phonenumber', customer.whatsapp_number);
-        formData.append('text', messageContent);
-        formData.append('360notify-medium', 'wordpress_order_notification'); // Optional but recommended
-
-        let textResponse: Response | null = null;
-        let lastError: string = '';
-
-        try {
-          textResponse = await fetch(fullUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData.toString(),
-          });
-
-          if (textResponse.ok) {
-            console.log(`✅ Successfully sent WhatsApp message. Status: ${textResponse.status}`);
-          } else {
-            let errorData: any = { error: 'Unknown error' };
-            try {
-              if (textResponse) {
-                const responseText = await textResponse.text();
-                if (responseText) {
-                  try {
-                    errorData = JSON.parse(responseText);
-                    // Ensure errorData has an error property
-                    if (!errorData || typeof errorData !== 'object') {
-                      errorData = { error: responseText || 'Unknown error' };
-                    } else if (!errorData.error && errorData.message) {
-                      errorData.error = errorData.message;
-                    }
-                  } catch (parseError) {
-                    errorData = { error: responseText || 'Failed to parse response' };
-                  }
-                } else {
-                  errorData = { 
-                    error: textResponse.status ? `HTTP ${textResponse.status} ${textResponse.statusText || ''}` : 'Empty response' 
-                  };
-                }
-              }
-            } catch (parseError) {
-              errorData = { 
-                error: textResponse && textResponse.status 
-                  ? `Failed to parse response: ${textResponse.status} ${textResponse.statusText || ''}` 
-                  : 'Failed to read response' 
-              };
-            }
-            const statusInfo = textResponse ? `${textResponse.status}` : 'No response';
-            lastError = `API returned ${statusInfo}: ${JSON.stringify(errorData)}`;
-            console.log(`❌ Failed to send WhatsApp message. ${lastError}`);
-          }
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err || 'Unknown error');
-          lastError = `Network/Request error: ${errorMsg}`;
-          console.log(`❌ Error sending WhatsApp message: ${errorMsg}`);
-        }
-
-        if (!textResponse || !textResponse.ok) {
-          const errorDetails = {
-            message: 'Failed to send WhatsApp message via 360Messenger API',
-            endpoint: fullUrl,
-            lastError: lastError || 'No response received',
-            lastResponseStatus: textResponse 
-              ? `${textResponse.status || 'unknown'} ${textResponse.statusText || ''}`.trim() || 'No status'
-              : 'No response',
-            apiUrl,
-            apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : 'missing',
-            suggestion: 'Please verify: 1) API URL is correct (https://api.360messenger.com), 2) API key is valid, 3) Phone number format is correct (+country code), 4) Check 360Messenger account balance'
-          };
-          console.error('WhatsApp API call failed:', JSON.stringify(errorDetails, null, 2));
-          throw new Error(`API error: ${JSON.stringify(errorDetails, null, 2)}`);
-        }
-
-        // Parse response
-        if (textResponse && textResponse.ok) {
-          try {
-            const responseText = await textResponse.text();
-            if (responseText) {
-              try {
-                apiResponse = JSON.parse(responseText);
-              } catch (parseError) {
-                // If JSON parsing fails, create a simple success response
-                apiResponse = { 
-                  success: true, 
-                  status: textResponse.status, 
-                  statusText: textResponse.statusText,
-                  rawResponse: responseText.substring(0, 200) // Include first 200 chars for debugging
-                };
-              }
-            } else {
-              apiResponse = { success: true, status: textResponse.status, statusText: textResponse.statusText };
-            }
-          } catch (parseError) {
-            // If parsing fails, create a simple success response
-            const status = textResponse?.status || 200;
-            const statusText = textResponse?.statusText || 'OK';
-            apiResponse = { success: true, status, statusText };
-          }
-        } else {
-          // This should never happen due to the check above, but just in case
-          throw new Error('Unexpected error: No successful response received');
-        }
+        apiResponse = await sendTextMessage();
       }
 
       // Step 6: Update log with success

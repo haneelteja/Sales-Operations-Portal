@@ -109,12 +109,13 @@ export function useInvoiceGeneration() {
           uploadResult.folderPath
         );
 
-        // Send WhatsApp message with invoice PDF (if enabled)
+        // Send WhatsApp message (if enabled)
         await sendInvoiceWhatsAppMessage(
           updatedInvoice,
           customer,
           transaction,
-          invoiceData
+          invoiceData,
+          { toast }
         );
 
         return updatedInvoice;
@@ -241,6 +242,9 @@ async function regenerateInvoice(
   // Mark as regenerated
   await markInvoiceRegenerated(existingInvoice.id);
 
+  // Send WhatsApp for regenerated invoice too (same as first-time generation)
+  await sendInvoiceWhatsAppMessage(updatedInvoice, customer, transaction, invoiceData, {});
+
   return updatedInvoice;
 }
 
@@ -251,7 +255,8 @@ async function sendInvoiceWhatsAppMessage(
   invoice: Invoice,
   customer: Customer,
   transaction: SalesTransaction,
-  invoiceData: any
+  invoiceData: any,
+  options?: { toast?: (p: { title: string; description: string }) => void }
 ): Promise<void> {
   try {
     // Check if WhatsApp is enabled
@@ -277,28 +282,32 @@ async function sendInvoiceWhatsAppMessage(
       return;
     }
 
-    // Prepare placeholders for template
+    // Prepare placeholders for template (amount without ₹ - template already has "for ₹{amount}")
     const placeholders: Record<string, string> = {
       customerName: customerWithWhatsApp.client_name,
       invoiceNumber: invoice.invoice_number,
       invoiceDate: new Date(invoice.invoice_date).toLocaleDateString('en-IN'),
-      amount: `₹${transaction.amount?.toLocaleString('en-IN') || '0'}`,
+      amount: transaction.amount != null ? String(transaction.amount.toLocaleString('en-IN')) : '0',
       dueDate: invoice.due_date ? new Date(invoice.due_date).toLocaleDateString('en-IN') : 'N/A',
       invoiceLink: invoice.pdf_file_url || invoice.word_file_url || '',
     };
 
-    // Send WhatsApp message with PDF attachment
+    // Send WhatsApp: text+link first (main path), then edge function tries PDF as media fallback when provider supports it
     const result = await sendWhatsAppMessage({
       customerId: customerWithWhatsApp.id,
       messageType: 'invoice',
       triggerType: 'auto',
-      attachmentUrl: invoice.pdf_file_url || null,
-      attachmentType: invoice.pdf_file_url ? 'application/pdf' : undefined,
       placeholders,
+      attachmentUrl: invoice.pdf_file_url || undefined,
+      attachmentType: invoice.pdf_file_url ? 'application/pdf' : undefined,
     });
 
     if (result.success) {
       logger.info(`WhatsApp invoice message sent successfully for invoice ${invoice.invoice_number}`);
+      options?.toast?.({
+        title: 'WhatsApp sent',
+        description: 'Invoice notification sent to customer.',
+      });
     } else {
       logger.warn(`Failed to send WhatsApp invoice message: ${result.error}`);
     }

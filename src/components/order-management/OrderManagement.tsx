@@ -208,7 +208,8 @@ const OrderManagement: React.FC = () => {
 
       if (deleteError) throw deleteError;
 
-      // Send "Stock Delivered" WhatsApp notification if enabled
+      // Send "Stock Delivered" WhatsApp notification if enabled.
+      // NOTE: Message text can be changed later via User Management → WhatsApp Configurations → templates (whatsapp_templates).
       try {
         const whatsappConfig = await getWhatsAppConfig();
         if (whatsappConfig.whatsapp_enabled && whatsappConfig.whatsapp_stock_delivered_enabled) {

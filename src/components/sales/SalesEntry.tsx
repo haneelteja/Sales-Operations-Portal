@@ -103,6 +103,19 @@ const InvoiceActions = ({
   );
 };
 
+/** Cell that shows invoice number for a transaction (sales only). */
+const InvoiceNumberCell = ({
+  transactionId,
+  transactionType,
+}: {
+  transactionId: string;
+  transactionType: string;
+}) => {
+  const { data: invoice } = useInvoice(transactionType === 'sale' ? transactionId : null);
+  if (transactionType !== 'sale') return <span className="text-muted-foreground">—</span>;
+  return <span>{invoice?.invoice_number ?? '—'}</span>;
+};
+
 const SalesEntry = () => {
   const { isMobileDevice } = useMobileDetection();
   const [activeTab, setActiveTab] = useState<string>("sale");
@@ -2625,6 +2638,9 @@ const SalesEntry = () => {
                     />
                   </div>
                 </TableHead>
+                <TableHead className="font-semibold text-emerald-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-emerald-200/50">
+                  Invoice #
+                </TableHead>
                 <TableHead className="text-right font-semibold text-emerald-800 text-xs uppercase tracking-widest py-6 px-6 border-r border-emerald-200/50">
                   Customer Outstanding
                 </TableHead>
@@ -2639,7 +2655,7 @@ const SalesEntry = () => {
             <TableBody>
               {transactionsLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
+                  <TableCell colSpan={11} className="text-center py-8">
                     <div className="flex items-center justify-center space-x-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                       <span className="text-muted-foreground">Loading transactions...</span>
@@ -2648,7 +2664,7 @@ const SalesEntry = () => {
                 </TableRow>
               ) : transactionsError ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
+                  <TableCell colSpan={11} className="text-center py-8">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <div className="text-red-500 text-sm">
                         ⚠️ Error loading transactions
@@ -2694,6 +2710,9 @@ const SalesEntry = () => {
                     <TableCell>{transaction.sku || '-'}</TableCell>
                     <TableCell className="text-right">{transaction.quantity || '-'}</TableCell>
                     <TableCell className="text-right">₹{transaction.amount?.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <InvoiceNumberCell transactionId={transaction.id} transactionType={transaction.transaction_type} />
+                    </TableCell>
                     <TableCell className="text-right">
                       ₹{(Number((transaction as unknown as { outstanding?: number }).outstanding) || 0).toLocaleString()}
                     </TableCell>
@@ -2744,7 +2763,7 @@ const SalesEntry = () => {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                   {searchTerm ? "No transactions found matching your search" : "No recent transactions found"}
                 </TableCell>
               </TableRow>

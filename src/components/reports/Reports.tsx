@@ -9,6 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import * as XLSX from 'xlsx';
+import { useInvoice } from "@/hooks/useInvoiceGeneration";
+
+/** Cell that shows invoice number for a transaction (sales only). */
+const InvoiceNumberCell = memo(({ transactionId, transactionType }: { transactionId: string; transactionType: string }) => {
+  const { data: invoice } = useInvoice(transactionType === 'sale' ? transactionId : null);
+  if (transactionType !== 'sale') return <span className="text-muted-foreground">—</span>;
+  return <span>{invoice?.invoice_number ?? '—'}</span>;
+});
+InvoiceNumberCell.displayName = 'InvoiceNumberCell';
 
 const Reports = memo(() => {
   const [adminComments, setAdminComments] = useState<{[key: string]: string}>({});
@@ -327,7 +336,8 @@ const Reports = memo(() => {
                     <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-green-200/50">Customer</TableHead>
                     <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-center border-r border-green-200/50">Type</TableHead>
                     <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-green-200/50">Description</TableHead>
-                    <TableHead className="text-right font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6">Amount</TableHead>
+                    <TableHead className="text-right font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 border-r border-green-200/50">Amount</TableHead>
+                    <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-left">Invoice #</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -337,7 +347,10 @@ const Reports = memo(() => {
                       <TableCell>{transaction.customers?.client_name}</TableCell>
                       <TableCell>{transaction.transaction_type}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-right">₹{transaction.amount?.toLocaleString()}</TableCell>
+                      <TableCell className="text-right border-r border-green-200/50">₹{transaction.amount?.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <InvoiceNumberCell transactionId={transaction.id} transactionType={transaction.transaction_type} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
