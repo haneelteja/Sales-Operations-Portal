@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Send } from "lucide-react";
+import { getWhatsAppConfig, sendWhatsAppMessage } from "@/services/whatsappService";
+import { logger } from "@/lib/logger";
 import * as XLSX from "xlsx";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -205,6 +207,51 @@ const OrderManagement: React.FC = () => {
         .eq("id", orderId);
 
       if (deleteError) throw deleteError;
+
+      // Send "Stock Delivered" WhatsApp notification if enabled
+      try {
+        const whatsappConfig = await getWhatsAppConfig();
+        if (whatsappConfig.whatsapp_enabled && whatsappConfig.whatsapp_stock_delivered_enabled) {
+          const clientName = (orderData.client || orderData.client_name || "").trim();
+          const branch = (orderData.branch || "").trim();
+          if (clientName && branch) {
+            const { data: customerRows } = await supabase
+              .from("customers")
+              .select("id, client_name, whatsapp_number")
+              .eq("client_name", clientName)
+              .eq("branch", branch)
+              .not("whatsapp_number", "is", null)
+              .limit(1);
+
+            const customerRow = Array.isArray(customerRows) ? customerRows[0] : customerRows;
+            if (customerRow?.id && customerRow.whatsapp_number) {
+              const deliveryDate = orderData.tentative_delivery_date
+                ? new Date(orderData.tentative_delivery_date).toLocaleDateString("en-IN")
+                : "—";
+              const items = `${orderData.sku || ""} - ${orderData.number_of_cases ?? 0} cases`;
+              const result = await sendWhatsAppMessage({
+                customerId: customerRow.id,
+                messageType: "stock_delivered",
+                triggerType: "auto",
+                placeholders: {
+                  customerName: customerRow.client_name || clientName,
+                  orderNumber: orderId.slice(0, 8),
+                  deliveryDate,
+                  items,
+                },
+              });
+              if (result?.success) {
+                toast({
+                  title: "WhatsApp sent",
+                  description: "Stock delivered notification sent to customer.",
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn("Stock delivered WhatsApp notification skipped or failed", err);
+      }
     },
     onSuccess: () => {
       toast({

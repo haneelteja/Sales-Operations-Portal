@@ -109,6 +109,14 @@ export function useInvoiceGeneration() {
           uploadResult.folderPath
         );
 
+        // Send WhatsApp message with invoice PDF (if enabled)
+        await sendInvoiceWhatsAppMessage(
+          updatedInvoice,
+          customer,
+          transaction,
+          invoiceData
+        );
+
         return updatedInvoice;
       } catch (error) {
         logger.error('Error generating invoice:', error);
@@ -254,15 +262,24 @@ async function sendInvoiceWhatsAppMessage(
       return;
     }
 
-    // Check if customer has WhatsApp number
+    // Ensure we have customer with whatsapp_number (in case cache did not include it)
+    let customerWithWhatsApp = customer;
     if (!customer.whatsapp_number) {
+      const { data: fresh } = await supabase
+        .from('customers')
+        .select('id, client_name, whatsapp_number')
+        .eq('id', customer.id)
+        .maybeSingle();
+      if (fresh?.whatsapp_number) customerWithWhatsApp = { ...customer, whatsapp_number: fresh.whatsapp_number };
+    }
+    if (!customerWithWhatsApp.whatsapp_number) {
       logger.info(`Customer ${customer.client_name} does not have WhatsApp number, skipping...`);
       return;
     }
 
     // Prepare placeholders for template
     const placeholders: Record<string, string> = {
-      customerName: customer.client_name,
+      customerName: customerWithWhatsApp.client_name,
       invoiceNumber: invoice.invoice_number,
       invoiceDate: new Date(invoice.invoice_date).toLocaleDateString('en-IN'),
       amount: `₹${transaction.amount?.toLocaleString('en-IN') || '0'}`,
@@ -272,7 +289,7 @@ async function sendInvoiceWhatsAppMessage(
 
     // Send WhatsApp message with PDF attachment
     const result = await sendWhatsAppMessage({
-      customerId: customer.id,
+      customerId: customerWithWhatsApp.id,
       messageType: 'invoice',
       triggerType: 'auto',
       attachmentUrl: invoice.pdf_file_url || null,

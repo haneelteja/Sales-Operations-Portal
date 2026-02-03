@@ -118,18 +118,14 @@ export async function getInvoiceByTransactionId(
       .from('invoices')
       .select('*')
       .eq('transaction_id', transactionId)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        // No rows returned
-        return null;
-      }
       logger.error('Failed to get invoice:', error);
       throw new Error(`Failed to get invoice: ${error.message}`);
     }
 
-    return data as Invoice;
+    return data as Invoice | null;
   } catch (error) {
     logger.error('Error getting invoice:', error);
     throw error;

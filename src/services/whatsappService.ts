@@ -45,7 +45,6 @@ export interface WhatsAppConfig {
   whatsapp_stock_delivered_enabled: boolean;
   whatsapp_invoice_enabled: boolean;
   whatsapp_payment_reminder_enabled: boolean;
-  whatsapp_festival_enabled: boolean;
   whatsapp_api_key: string;
   whatsapp_api_url: string;
   whatsapp_retry_max: number;
@@ -151,7 +150,6 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig> {
         'whatsapp_stock_delivered_enabled': 'whatsapp_stock_delivered_enabled',
         'whatsapp_invoice_enabled': 'whatsapp_invoice_enabled',
         'whatsapp_payment_reminder_enabled': 'whatsapp_payment_reminder_enabled',
-        'whatsapp_festival_enabled': 'whatsapp_festival_enabled',
         'whatsapp_api_key': 'whatsapp_api_key',
         'whatsapp_api_url': 'whatsapp_api_url',
         'whatsapp_retry_max': 'whatsapp_retry_max',
@@ -181,7 +179,6 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig> {
       whatsapp_stock_delivered_enabled: config.whatsapp_stock_delivered_enabled ?? false,
       whatsapp_invoice_enabled: config.whatsapp_invoice_enabled ?? false,
       whatsapp_payment_reminder_enabled: config.whatsapp_payment_reminder_enabled ?? false,
-      whatsapp_festival_enabled: config.whatsapp_festival_enabled ?? false,
       whatsapp_api_key: config.whatsapp_api_key ?? '',
       whatsapp_api_url: config.whatsapp_api_url ?? 'https://api.360messenger.com',
       whatsapp_retry_max: config.whatsapp_retry_max ?? 3,

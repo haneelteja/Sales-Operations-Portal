@@ -62,7 +62,6 @@ export const WhatsAppConfigurationSection: React.FC = () => {
     whatsapp_stock_delivered_enabled: false,
     whatsapp_invoice_enabled: false,
     whatsapp_payment_reminder_enabled: false,
-    whatsapp_festival_enabled: false,
     whatsapp_api_key: '',
     whatsapp_api_url: 'https://api.360messenger.com',
     whatsapp_retry_max: 3,
@@ -159,20 +158,6 @@ export const WhatsAppConfigurationSection: React.FC = () => {
               <Switch
                 checked={displayConfig.whatsapp_payment_reminder_enabled}
                 onCheckedChange={(checked) => handleToggle('whatsapp_payment_reminder_enabled', checked)}
-                disabled={!displayConfig.whatsapp_enabled || updateMutation.isPending}
-              />
-            </div>
-
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="space-y-0.5">
-                <Label>Festival / Salutation Messages</Label>
-                <p className="text-xs text-muted-foreground">
-                  Send festival greetings and salutation messages
-                </p>
-              </div>
-              <Switch
-                checked={displayConfig.whatsapp_festival_enabled}
-                onCheckedChange={(checked) => handleToggle('whatsapp_festival_enabled', checked)}
                 disabled={!displayConfig.whatsapp_enabled || updateMutation.isPending}
               />
             </div>

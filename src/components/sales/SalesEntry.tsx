@@ -304,7 +304,7 @@ const SalesEntry = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, client_name, branch, sku, price_per_case, created_at")
+          .select("id, client_name, branch, sku, price_per_case, created_at, whatsapp_number")
           .eq("is_active", true)
           .order("client_name", { ascending: true });
         
