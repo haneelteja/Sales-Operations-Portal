@@ -292,7 +292,7 @@ async function sendInvoiceWhatsAppMessage(
       invoiceLink: invoice.pdf_file_url || invoice.word_file_url || '',
     };
 
-    // Send WhatsApp: text+link first (main path), then edge function tries PDF as media fallback when provider supports it
+    // Send WhatsApp: text first, then edge function sends PDF as document (direct-download URL or file upload when supported)
     const result = await sendWhatsAppMessage({
       customerId: customerWithWhatsApp.id,
       messageType: 'invoice',
@@ -300,6 +300,7 @@ async function sendInvoiceWhatsAppMessage(
       placeholders,
       attachmentUrl: invoice.pdf_file_url || undefined,
       attachmentType: invoice.pdf_file_url ? 'application/pdf' : undefined,
+      attachmentFileId: invoice.pdf_file_id || undefined,
     });
 
     if (result.success) {

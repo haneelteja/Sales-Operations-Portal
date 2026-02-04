@@ -14,6 +14,8 @@ interface WhatsAppSendRequest {
   customMessage?: string;
   attachmentUrl?: string;
   attachmentType?: string;
+  /** Google Drive file ID; used to build direct-download URL for sending PDF as document */
+  attachmentFileId?: string;
   scheduledFor?: string;
   placeholders?: Record<string, string>; // Custom placeholder values
 }
@@ -39,9 +41,17 @@ serve(async (req) => {
       customMessage,
       attachmentUrl,
       attachmentType,
+      attachmentFileId,
       scheduledFor,
       placeholders = {},
     }: WhatsAppSendRequest = await req.json();
+
+    // Prefer direct-download URL for PDF so WhatsApp provider receives the file (not a Drive page).
+    // Google Drive files must be shared "Anyone with the link" for this URL to return the PDF.
+    const documentUrl =
+      attachmentFileId && (attachmentType === 'application/pdf' || attachmentType === 'document')
+        ? `https://drive.google.com/uc?export=download&id=${attachmentFileId}`
+        : attachmentUrl;
 
     // Validate required fields
     if (!customerId || !messageType || !triggerType) {
@@ -232,42 +242,74 @@ serve(async (req) => {
         }
       };
 
-      // --- Helper: try to send media (fallback; do not throw) ---
-      const trySendMedia = async (): Promise<boolean> => {
-        if (!attachmentUrl || !attachmentType) return false;
-        const mediaEndpointVariants = [
+      // --- Helper: try to send document/PDF (fallback; do not throw) ---
+      const trySendDocument = async (): Promise<boolean> => {
+        if (!documentUrl || !attachmentType) return false;
+        const docUrl = documentUrl;
+        const endpoints = [
+          { path: '/sendDocument/' + apiKey, body: (): string => new URLSearchParams({
+            phonenumber: customer.whatsapp_number,
+            document: docUrl,
+            caption: (messageContent || '').slice(0, 1024),
+            '360notify-medium': 'wordpress_order_notification',
+          }).toString(), contentType: 'application/x-www-form-urlencoded' },
+          { path: '/sendMessage/' + apiKey, body: (): string => new URLSearchParams({
+            phonenumber: customer.whatsapp_number,
+            document: docUrl,
+            text: (messageContent || '').slice(0, 1024),
+            '360notify-medium': 'wordpress_order_notification',
+          }).toString(), contentType: 'application/x-www-form-urlencoded' },
+        ];
+        for (const { path, body, contentType } of endpoints) {
+          try {
+            const res = await fetch(`${apiUrl}${path}`, {
+              method: 'POST',
+              headers: { 'Content-Type': contentType },
+              body: body(),
+            });
+            if (res.ok) {
+              console.log(`✅ Document (PDF) sent successfully via ${path}`);
+              return true;
+            }
+          } catch (err) {
+            console.log(`Document endpoint ${path} failed:`, err instanceof Error ? err.message : err);
+          }
+        }
+        // JSON-style endpoints (document_link / media_url)
+        const jsonEndpoints = [
           '/api/v1/messages/media', '/v1/messages/media', '/api/messages/media',
           '/messages/media', '/api/v1/messages', '/v1/messages',
         ];
-        for (const endpoint of mediaEndpointVariants) {
+        for (const ep of jsonEndpoints) {
           try {
-            const mediaResponse = await fetch(`${apiUrl}${endpoint}`, {
+            const res = await fetch(`${apiUrl}${ep}`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 to: customer.whatsapp_number,
                 message: messageContent,
-                media_url: attachmentUrl,
+                media_url: docUrl,
+                document_link: docUrl,
                 media_type: attachmentType,
               }),
             });
-            if (mediaResponse.ok) {
-              console.log(`✅ Media (PDF) sent successfully via ${endpoint}`);
+            if (res.ok) {
+              console.log(`✅ Document (PDF) sent via ${ep}`);
               return true;
             }
           } catch (err) {
-            console.log(`Media endpoint ${endpoint} failed:`, err instanceof Error ? err.message : err);
+            console.log(`JSON media endpoint ${ep} failed:`, err instanceof Error ? err.message : err);
           }
         }
-        console.log('Media fallback: provider did not accept PDF; text+link was already sent.');
+        console.log('Document fallback: provider did not accept PDF; text+link was already sent.');
         return false;
       };
 
-      if (attachmentUrl && attachmentType) {
-        // Main path: send text first (reliable). Then try media as fallback; do not fail if media fails.
+      if ((documentUrl || attachmentUrl) && attachmentType) {
+        // Main path: send text first (reliable). Then try document/PDF; do not fail if document send fails.
         apiResponse = await sendTextMessage();
-        const mediaSent = await trySendMedia();
-        apiResponse = { ...apiResponse, mediaSent };
+        const documentSent = await trySendDocument();
+        apiResponse = { ...apiResponse, documentSent };
       } else {
         apiResponse = await sendTextMessage();
       }

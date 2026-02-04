@@ -61,6 +61,8 @@ export interface SendMessageRequest {
   customMessage?: string;
   attachmentUrl?: string;
   attachmentType?: string;
+  /** Google Drive file ID for PDF; used to build direct-download URL so WhatsApp can send the file as document */
+  attachmentFileId?: string;
   placeholders?: Record<string, string>;
 }
 
