@@ -29,6 +29,7 @@ export interface BackupConfig {
   backup_notification_email: string;
   backup_enabled: boolean;
   backup_retention_days: number;
+  backup_schedule_time_ist?: string;
 }
 
 /**
@@ -110,6 +111,7 @@ export async function getBackupConfig(): Promise<BackupConfig> {
       backup_notification_email: 'pega2023test@gmail.com',
       backup_enabled: true,
       backup_retention_days: 15,
+      backup_schedule_time_ist: '14:00',
     };
 
     (data || []).forEach((item) => {
@@ -180,6 +182,34 @@ export async function updateBackupNotificationEmail(email: string): Promise<void
     }
   } catch (error) {
     logger.error('Error in updateBackupNotificationEmail:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update backup schedule time (IST), e.g. "14:00"
+ */
+export async function updateBackupScheduleTime(timeIST: string): Promise<void> {
+  const validation = validateBackupScheduleTime(timeIST);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from('invoice_configurations')
+      .update({
+        config_value: timeIST.trim(),
+        updated_by: user?.id || null,
+      })
+      .eq('config_key', 'backup_schedule_time_ist');
+
+    if (error) {
+      logger.error('Error updating backup schedule time:', error);
+      throw new Error(`Failed to update backup schedule time: ${error.message}`);
+    }
+  } catch (error) {
+    logger.error('Error in updateBackupScheduleTime:', error);
     throw error;
   }
 }
