@@ -98,7 +98,7 @@ export const EditBackupFolderDialog: React.FC<EditBackupFolderDialogProps> = ({
                 setFolderPath(e.target.value);
                 setError(null);
               }}
-              placeholder="MyDrive/DatabaseBackups"
+              placeholder="MyDrive/Invoice"
               disabled={loading}
             />
             <p className="text-sm text-gray-500">

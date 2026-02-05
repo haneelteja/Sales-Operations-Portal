@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RETENTION_DAYS = 15;
+const DEFAULT_RETENTION_DAYS = 15;
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -21,11 +21,11 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get backup configuration
+    // Get backup configuration (including retention from DAILY_BACKUP_SPECIFICATION_2PM_IST)
     const { data: configData, error: configError } = await supabase
       .from('invoice_configurations')
       .select('config_key, config_value')
-      .in('config_key', ['backup_folder_path', 'backup_notification_email']);
+      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_retention_days']);
 
     if (configError) {
       throw new Error(`Failed to fetch backup config: ${configError.message}`);
@@ -38,10 +38,11 @@ serve(async (req) => {
 
     const backupFolderPath = config.backup_folder_path || 'MyDrive/DatabaseBackups';
     const notificationEmail = config.backup_notification_email || 'pega2023test@gmail.com';
+    const retentionDays = Math.max(1, Math.min(365, parseInt(config.backup_retention_days || String(DEFAULT_RETENTION_DAYS), 10) || DEFAULT_RETENTION_DAYS));
 
-    // Calculate cutoff date (15 days ago)
+    // Calculate cutoff date (retention days ago)
     const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - RETENTION_DAYS);
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
     // Find backup logs for files older than retention period
     const { data: oldBackups, error: queryError } = await supabase

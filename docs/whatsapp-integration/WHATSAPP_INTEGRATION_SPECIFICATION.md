@@ -272,6 +272,16 @@ Body:
   media_type: pdf
 ```
 
+### 5.1.1 360Messenger API v1.0 vs v2.0 (for invoice PDF)
+
+| Use case | Recommended API | Notes |
+|----------|-----------------|--------|
+| **Send text message** | v1.0 **Send Message** (`POST /sendMessage/{apiKey}`) | Currently used; works with form params `phonenumber`, `text`, `360notify-medium`. |
+| **Send invoice PDF** | v1.0 **Send Message** with `file_url` first; then v2.0 **Send Message** / **URL Download Media** if documented | Our edge function tries v1 `/sendMessage` with `file_url`, `document_url`, etc.; then v2-style paths (`/v2/sendMessage`, `/v2/messages`, `/v2/media/url`) with JSON body. If the PDF still does not appear in WhatsApp, check 360Messenger’s Postman/API docs for the exact v2.0 **Send Message** or **URL Download Media** path and body (e.g. document link). |
+| **Get status / pending** | v1.0 `getStatus`, `pending` or v2.0 **Get Sent Message Status**, **Get All Pending Messages** | Use for delivery status or retries. |
+
+**Suitable for our app:** Keep using **WhatsApp API v1.0 → Send Message** for text (and for document when `file_url` is supported). If 360Messenger provides a dedicated v2.0 **Send Message** or **URL Download Media** endpoint that accepts a document URL, add that exact path/body to the edge function.
+
 ### 5.2 Edge Function: `whatsapp-send`
 
 **Purpose:** Send WhatsApp messages via 360Messenger API

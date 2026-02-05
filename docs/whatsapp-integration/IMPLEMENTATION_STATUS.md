@@ -68,6 +68,20 @@
 
 ---
 
+## 📌 Known Limitation: PDF Filename in WhatsApp
+
+**Issue:** The PDF attachment in WhatsApp may display as **"Untitled"** instead of the invoice number (e.g. `INV-2026-02-027.pdf`).
+
+**What we do:** The `whatsapp-pdf-proxy` edge function serves the PDF with:
+- Correct filename in the URL path: `.../whatsapp-pdf-proxy/INV-2026-02-027.pdf?path=...`
+- `Content-Disposition: attachment; filename="INV-2026-02-027.pdf"`
+
+**Cause:** 360Messenger/WhatsApp may not use the URL path or `Content-Disposition` for the displayed document name.
+
+**Action taken:** A ticket has been raised with 360Messenger to clarify how they determine the document filename (URL path vs Content-Disposition vs API parameter) and whether they can use it for the displayed name. Until they support it, the PDF will continue to open correctly but may show as "Untitled" in the chat.
+
+---
+
 ## 🔄 Next Steps
 
 1. Complete Edge Function: whatsapp-retry

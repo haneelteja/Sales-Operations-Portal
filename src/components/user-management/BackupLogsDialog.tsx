@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Download, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
-import { getBackupLogs, formatFileSize, type BackupLog } from '@/services/backupService';
+import { getBackupLogs, formatFileSize, formatDateInIST, formatDuration, type BackupLog } from '@/services/backupService';
 import { useToast } from '@/hooks/use-toast';
 
 interface BackupLogsDialogProps {
@@ -53,8 +53,8 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
   const [typeFilter, setTypeFilter] = useState<'all' | 'automatic' | 'manual'>('all');
   const [dateRange, setDateRange] = useState<'7days' | '30days' | 'all'>('30days');
 
-  // Sorting
-  const [sortBy, setSortBy] = useState<'started_at' | 'file_size_bytes' | 'status'>('started_at');
+  // Sorting (per spec: Date & time, File size, Execution duration, Status)
+  const [sortBy, setSortBy] = useState<'started_at' | 'file_size_bytes' | 'status' | 'execution_duration_seconds'>('started_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
@@ -222,34 +222,46 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
                     {sortBy === 'file_size_bytes' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
                   </button>
                 </TableHead>
-                <TableHead>Google Drive</TableHead>
+                <TableHead>
+                  <button
+                    onClick={() => handleSort('execution_duration_seconds')}
+                    className="flex items-center gap-1 hover:text-primary"
+                  >
+                    Duration
+                    {sortBy === 'execution_duration_seconds' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
+                  </button>
+                </TableHead>
+                <TableHead>Storage location</TableHead>
                 <TableHead>Failure Reason</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
+                  <TableCell colSpan={8} className="text-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
               ) : logs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                     No backup logs found
                   </TableCell>
                 </TableRow>
               ) : (
                 logs.map((log) => (
                   <TableRow key={log.id}>
-                    <TableCell>
-                      {new Date(log.started_at).toLocaleString()}
+                    <TableCell title={`UTC: ${log.started_at}`}>
+                      {formatDateInIST(log.started_at)}
                     </TableCell>
                     <TableCell>{getTypeBadge(log.backup_type)}</TableCell>
                     <TableCell>{getStatusBadge(log.status)}</TableCell>
                     <TableCell className="font-mono text-sm">{log.file_name}</TableCell>
                     <TableCell>
-                      {log.file_size_bytes ? formatFileSize(log.file_size_bytes) : '-'}
+                      {log.file_size_bytes ? formatFileSize(log.file_size_bytes) : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {formatDuration(log.execution_duration_seconds)}
                     </TableCell>
                     <TableCell>
                       {log.google_drive_path ? (
@@ -263,7 +275,7 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
                           View
                         </a>
                       ) : (
-                        '-'
+                        '—'
                       )}
                     </TableCell>
                     <TableCell className="max-w-xs">
@@ -274,7 +286,7 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
                             : log.failure_reason}
                         </span>
                       ) : (
-                        '-'
+                        '—'
                       )}
                     </TableCell>
                   </TableRow>

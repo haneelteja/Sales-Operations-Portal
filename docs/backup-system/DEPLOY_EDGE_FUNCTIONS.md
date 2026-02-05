@@ -17,6 +17,9 @@ supabase functions deploy database-backup
 
 # Deploy cleanup-old-backups function
 supabase functions deploy cleanup-old-backups
+
+# Deploy backup-scheduler (optional; use when backup time is configurable from Application Configuration)
+supabase functions deploy backup-scheduler
 ```
 
 ### Option 2: Using Supabase Dashboard
@@ -33,6 +36,11 @@ supabase functions deploy cleanup-old-backups
    - Copy code from: `supabase/functions/cleanup-old-backups/index.ts`
    - Paste into the editor
    - Click **"Deploy"**
+5. **Function 3 (optional): `backup-scheduler`** — for configurable backup time from Application Configuration
+   - Name: `backup-scheduler`
+   - Copy code from: `supabase/functions/backup-scheduler/index.ts`
+   - Click **"Deploy"**
+   - Schedule to run every 15 minutes (see CRON_SETUP.md)
 
 ---
 

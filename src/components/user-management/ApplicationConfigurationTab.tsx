@@ -22,6 +22,7 @@ import { AutoInvoiceToggle } from './AutoInvoiceToggle';
 import { StorageProviderSelect } from './StorageProviderSelect';
 import { BackupLogsDialog } from './BackupLogsDialog';
 import { EditBackupFolderDialog } from './EditBackupFolderDialog';
+import { EditBackupTimeDialog } from './EditBackupTimeDialog';
 import { EditNotificationEmailDialog } from './EditNotificationEmailDialog';
 import { triggerManualBackup, getBackupConfig, type BackupConfig } from '@/services/backupService';
 import { Database, Play } from 'lucide-react';
@@ -32,6 +33,7 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isBackupLogsOpen, setIsBackupLogsOpen] = useState(false);
   const [isBackupFolderDialogOpen, setIsBackupFolderDialogOpen] = useState(false);
+  const [isBackupTimeDialogOpen, setIsBackupTimeDialogOpen] = useState(false);
   const [isNotificationEmailDialogOpen, setIsNotificationEmailDialogOpen] = useState(false);
   const [isRunningBackup, setIsRunningBackup] = useState(false);
   const { toast } = useToast();
@@ -71,31 +73,30 @@ const ApplicationConfigurationTab: React.FC = () => {
     },
   });
 
-  // Filter configurations based on search query
-  // Exclude WhatsApp and Backup configurations (they have their own sections)
+  // Filter configurations: exclude WhatsApp; include main configs + Database Backup Folder Path + Database Backup Time
+  const backupTableKeys = ['backup_folder_path', 'backup_schedule_time_ist'];
   const mainConfigsCount = useMemo(() => {
     if (!configurations) return 0;
     return configurations.filter(
       (c) =>
         !c.config_key.startsWith('whatsapp_') &&
-        !c.config_key.startsWith('backup_')
+        (!c.config_key.startsWith('backup_') || backupTableKeys.includes(c.config_key))
     ).length;
   }, [configurations]);
 
   const filteredConfigurations = useMemo(() => {
     if (!configurations) return [];
 
-    // Filter out WhatsApp and Backup configurations (they have dedicated sections)
-    const mainConfigs = configurations.filter(
+    const mainAndBackupConfigs = configurations.filter(
       (config) =>
         !config.config_key.startsWith('whatsapp_') &&
-        !config.config_key.startsWith('backup_')
+        (!config.config_key.startsWith('backup_') || backupTableKeys.includes(config.config_key))
     );
 
-    if (!searchQuery.trim()) return mainConfigs;
+    if (!searchQuery.trim()) return mainAndBackupConfigs;
 
     const query = searchQuery.toLowerCase();
-    return mainConfigs.filter((config) =>
+    return mainAndBackupConfigs.filter((config) =>
       config.description?.toLowerCase().includes(query)
     );
   }, [configurations, searchQuery]);
@@ -149,6 +150,12 @@ const ApplicationConfigurationTab: React.FC = () => {
   const handleBackupFolderEdit = (config: InvoiceConfiguration) => {
     setEditingConfig(config);
     setIsBackupFolderDialogOpen(true);
+  };
+
+  // Handle backup time edit
+  const handleBackupTimeEdit = (config: InvoiceConfiguration) => {
+    setEditingConfig(config);
+    setIsBackupTimeDialogOpen(true);
   };
 
   // Handle notification email edit
@@ -304,6 +311,16 @@ const ApplicationConfigurationTab: React.FC = () => {
                             <Edit className="h-4 w-4" />
                             Edit
                           </Button>
+                        ) : config.config_key === 'backup_schedule_time_ist' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleBackupTimeEdit(config)}
+                            className="flex items-center gap-2"
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit
+                          </Button>
                         ) : config.config_key === 'backup_notification_email' ? (
                           <Button
                             variant="outline"
@@ -409,6 +426,16 @@ const ApplicationConfigurationTab: React.FC = () => {
           open={isBackupFolderDialogOpen}
           onOpenChange={setIsBackupFolderDialogOpen}
           currentPath={backupConfig.backup_folder_path}
+          onSuccess={handleBackupConfigRefresh}
+        />
+      )}
+
+      {/* Edit Backup Time Dialog */}
+      {editingConfig && editingConfig.config_key === 'backup_schedule_time_ist' && backupConfig && (
+        <EditBackupTimeDialog
+          open={isBackupTimeDialogOpen}
+          onOpenChange={setIsBackupTimeDialogOpen}
+          currentTime={backupConfig.backup_schedule_time_ist}
           onSuccess={handleBackupConfigRefresh}
         />
       )}

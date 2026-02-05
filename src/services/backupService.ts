@@ -15,6 +15,7 @@ export interface BackupLog {
   google_drive_file_id: string | null;
   google_drive_path: string | null;
   failure_reason: string | null;
+  execution_duration_seconds: number | null;
   triggered_by: string | null;
   started_at: string;
   completed_at: string | null;
@@ -27,6 +28,7 @@ export interface BackupConfig {
   backup_folder_path: string;
   backup_notification_email: string;
   backup_enabled: boolean;
+  backup_retention_days: number;
 }
 
 /**
@@ -41,7 +43,7 @@ export async function getBackupLogs(
     startDate?: string;
     endDate?: string;
   },
-  sortBy: 'started_at' | 'file_size_bytes' | 'status' = 'started_at',
+  sortBy: 'started_at' | 'file_size_bytes' | 'status' | 'execution_duration_seconds' = 'started_at',
   sortOrder: 'asc' | 'desc' = 'desc'
 ): Promise<{ logs: BackupLog[]; total: number }> {
   try {
@@ -96,7 +98,7 @@ export async function getBackupConfig(): Promise<BackupConfig> {
     const { data, error } = await supabase
       .from('invoice_configurations')
       .select('config_key, config_value')
-      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled']);
+      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled', 'backup_retention_days', 'backup_schedule_time_ist']);
 
     if (error) {
       logger.error('Error fetching backup config:', error);
@@ -107,6 +109,7 @@ export async function getBackupConfig(): Promise<BackupConfig> {
       backup_folder_path: 'MyDrive/DatabaseBackups',
       backup_notification_email: 'pega2023test@gmail.com',
       backup_enabled: true,
+      backup_retention_days: 15,
     };
 
     (data || []).forEach((item) => {
@@ -116,6 +119,11 @@ export async function getBackupConfig(): Promise<BackupConfig> {
         config.backup_notification_email = item.config_value;
       } else if (item.config_key === 'backup_enabled') {
         config.backup_enabled = item.config_value === 'true';
+      } else if (item.config_key === 'backup_retention_days') {
+        const n = parseInt(item.config_value, 10);
+        config.backup_retention_days = Number.isFinite(n) ? Math.max(1, Math.min(365, n)) : 15;
+      } else if (item.config_key === 'backup_schedule_time_ist') {
+        config.backup_schedule_time_ist = item.config_value?.trim() || '14:00';
       }
     });
 
@@ -245,6 +253,24 @@ export function validateBackupFolderPath(path: string): { valid: boolean; error?
 }
 
 /**
+ * Validate backup schedule time (IST): HH:MM 24-hour, 00:00-23:59
+ */
+export function validateBackupScheduleTime(time: string): { valid: boolean; error?: string } {
+  if (!time || typeof time !== 'string') {
+    return { valid: false, error: 'Backup time is required' };
+  }
+  const trimmed = time.trim();
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(trimmed);
+  if (!match) {
+    return {
+      valid: false,
+      error: 'Enter a valid time in HH:MM format (24-hour). Example: 14:00 for 2:00 PM IST.',
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Validate email address
  */
 export function validateEmail(email: string): { valid: boolean; error?: string } {
@@ -274,4 +300,26 @@ export function formatFileSize(bytes: number | null): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+/** IST timezone for backup log display (DAILY_BACKUP_SPECIFICATION_2PM_IST) */
+const IST_TIMEZONE = 'Asia/Kolkata';
+
+/**
+ * Format a UTC ISO date string for display in IST
+ */
+export function formatDateInIST(isoDate: string | null): string {
+  if (!isoDate) return '—';
+  return new Date(isoDate).toLocaleString('en-IN', { timeZone: IST_TIMEZONE });
+}
+
+/**
+ * Format execution duration (seconds) as human-readable e.g. "2m 30s"
+ */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || seconds < 0) return '—';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }

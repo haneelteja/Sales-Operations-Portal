@@ -46,12 +46,13 @@ serve(async (req) => {
       placeholders = {},
     }: WhatsAppSendRequest = await req.json();
 
-    // Prefer direct-download URL for PDF so WhatsApp provider receives the file (not a Drive page).
-    // Google Drive files must be shared "Anyone with the link" for this URL to return the PDF.
-    const documentUrl =
-      attachmentFileId && (attachmentType === 'application/pdf' || attachmentType === 'document')
-        ? `https://drive.google.com/uc?export=download&id=${attachmentFileId}`
-        : attachmentUrl;
+    // Do NOT pass Google Drive uc?export=download URL to the API: it often returns an HTML virus-scan
+    // page (uc.html) instead of the PDF, so the recipient gets an HTML file. We fetch the real PDF
+    // in the edge function and send it only as binary (multipart). Use documentUrl only when it's
+    // not a Drive link (e.g. a direct CDN URL).
+    const isDrivePdf =
+      attachmentFileId && (attachmentType === 'application/pdf' || attachmentType === 'document');
+    const documentUrl = !isDrivePdf ? attachmentUrl : undefined;
 
     // Validate required fields
     if (!customerId || !messageType || !triggerType) {
@@ -242,71 +243,276 @@ serve(async (req) => {
         }
       };
 
+      // --- Helper: fetch real PDF bytes from Google Drive ---
+      // Prefer Drive API (same OAuth as upload) so we get raw bytes; fallback to public URLs with browser User-Agent.
+      const driveFetchHeaders: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      };
+      const logDriveFetch = (label: string, res: Response, bodyPreview?: string) => {
+        const ct = res.headers.get('content-type') || '';
+        if (!res.ok || !ct.includes('application/pdf')) {
+          console.log(`[Drive fetch] ${label} status=${res.status} contentType=${ct.slice(0, 50)}${bodyPreview != null ? ` bodyPreview=${bodyPreview.slice(0, 120)}` : ''}`);
+        }
+      };
+      const fetchGoogleDrivePdfBytes = async (fileId: string): Promise<ArrayBuffer | null> => {
+        // 1) Drive API with OAuth (same token as upload) – most reliable
+        try {
+          const tokenRes = await fetch(`${supabaseUrl}/functions/v1/google-drive-token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({}),
+          });
+          if (tokenRes.ok) {
+            const { accessToken } = await tokenRes.json();
+            if (accessToken) {
+              const apiRes = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+                { headers: { 'Authorization': `Bearer ${accessToken}` } }
+              );
+              const ct = (apiRes.headers.get('content-type') || '').toLowerCase();
+              if (apiRes.ok && (ct.includes('application/pdf') || ct.includes('application/octet-stream'))) {
+                const buf = await apiRes.arrayBuffer();
+                if (buf.byteLength > 0 && buf.byteLength < 20 * 1024 * 1024) {
+                  console.log(`[Drive fetch] Got PDF via Drive API, size=${buf.byteLength}`);
+                  return buf;
+                }
+              }
+              logDriveFetch('Drive API', apiRes);
+            }
+          } else {
+            console.log(`[Drive fetch] google-drive-token failed status=${tokenRes.status}`);
+          }
+        } catch (e) {
+          console.log('[Drive fetch] Drive API error:', e instanceof Error ? e.message : String(e));
+        }
+
+        // 2) Public URLs with browser User-Agent (avoid 403 / HTML)
+        const tryPublicUrl = async (url: string): Promise<ArrayBuffer | null> => {
+          const r = await fetch(url, { redirect: 'follow', headers: driveFetchHeaders });
+          const ct = (r.headers.get('content-type') || '').toLowerCase();
+          if (r.ok && ct.includes('application/pdf')) {
+            const buf = await r.arrayBuffer();
+            if (buf.byteLength > 0 && buf.byteLength < 20 * 1024 * 1024) return buf;
+          }
+          if (ct.includes('text/html')) {
+            const html = await r.text();
+            logDriveFetch('public URL (HTML)', r, html.slice(0, 200));
+            const m = html.match(/confirm=([a-zA-Z0-9_-]+)/) || html.match(/["']confirm["']\s*:\s*["']([^"']+)["']/);
+            if (m) {
+              const sep = url.includes('?') ? '&' : '?';
+              const withConfirm = url.includes('confirm=') ? url : `${url}${sep}confirm=${m[1]}`;
+              const r2 = await fetch(withConfirm, { redirect: 'follow', headers: driveFetchHeaders });
+              const ct2 = (r2.headers.get('content-type') || '').toLowerCase();
+              if (r2.ok && ct2.includes('application/pdf')) {
+                const buf = await r2.arrayBuffer();
+                if (buf.byteLength > 0 && buf.byteLength < 20 * 1024 * 1024) return buf;
+              }
+              logDriveFetch('public URL +confirm', r2);
+            }
+          } else {
+            logDriveFetch('public URL', r);
+          }
+          return null;
+        };
+        const urls = [
+          `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`,
+          `https://drive.google.com/u/0/uc?export=download&id=${fileId}&confirm=t`,
+          `https://drive.google.com/uc?export=download&id=${fileId}`,
+        ];
+        for (const url of urls) {
+          try {
+            const buf = await tryPublicUrl(url);
+            if (buf) return buf;
+          } catch (_) {}
+        }
+        return null;
+      };
+
       // --- Helper: try to send document/PDF (fallback; do not throw) ---
       const trySendDocument = async (): Promise<boolean> => {
+        const logResponse = async (res: Response, label: string) => {
+          if (!res.ok) {
+            const body = await res.text();
+            console.log(`[WhatsApp document] ${label} status=${res.status} body=${body.slice(0, 300)}`);
+          }
+        };
+
+        // When we have a Drive file ID: fetch PDF, then send via URL so 360Messenger can fetch the file.
+        // 360Messenger has no /sendDocument (404) and /sendMessage with multipart returns 200 but only delivers text.
+        // So we upload the PDF to Supabase Storage, get a signed URL, and send that URL via /sendMessage (url param).
+        if (attachmentFileId && (attachmentType === 'application/pdf' || attachmentType === 'document')) {
+          const pdfBytes = await fetchGoogleDrivePdfBytes(attachmentFileId);
+          if (pdfBytes && pdfBytes.byteLength > 0) {
+            const caption = (messageContent || '').slice(0, 1024);
+            let documentUrlToSend: string | null = null;
+
+            // Upload PDF to Supabase Storage and get a signed URL (360Messenger will fetch this URL to get the PDF).
+            // Use invoice number as filename so WhatsApp shows e.g. "INV-2026-02-022.pdf" instead of "Untitled".
+            const whatsappBucket = 'whatsapp-attachments';
+            const invoiceNumber = (placeholders?.invoiceNumber ?? placeholders?.invoice_number ?? 'invoice').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'invoice';
+            const pdfFileName = `${invoiceNumber}.pdf`;
+            const tempPath = `temp/${pdfFileName}`;
+            try {
+              const { error: uploadError } = await supabase.storage
+                .from(whatsappBucket)
+                .upload(tempPath, pdfBytes, { contentType: 'application/pdf', upsert: true });
+              if (!uploadError) {
+                // Option 2: Use proxy URL so the PDF is served with Content-Disposition filename (fixes "Untitled" in WhatsApp)
+                const proxyAccessKey = Deno.env.get('WHATSAPP_PDF_PROXY_ACCESS_KEY');
+                if (proxyAccessKey) {
+                  // Put filename in URL path so 360Messenger/WhatsApp may use it when they ignore Content-Disposition
+                  const proxyUrl = `${supabaseUrl}/functions/v1/whatsapp-pdf-proxy/${encodeURIComponent(pdfFileName)}?path=${encodeURIComponent(tempPath)}&access_key=${encodeURIComponent(proxyAccessKey)}`;
+                  documentUrlToSend = proxyUrl;
+                  console.log('[WhatsApp document] Using whatsapp-pdf-proxy URL for PDF (Content-Disposition filename)');
+                } else {
+                  const { data: signed, error: signError } = await supabase.storage
+                    .from(whatsappBucket)
+                    .createSignedUrl(tempPath, 3600); // 1 hour for 360Messenger to fetch
+                  if (!signError && signed?.signedUrl) {
+                    documentUrlToSend = signed.signedUrl;
+                    console.log('[WhatsApp document] Using Supabase Storage signed URL for PDF (set WHATSAPP_PDF_PROXY_ACCESS_KEY for filename fix)');
+                  } else {
+                    console.log('[WhatsApp document] createSignedUrl failed:', signError?.message ?? 'no url');
+                  }
+                }
+              } else {
+                console.log('[WhatsApp document] Storage upload failed:', uploadError.message, '(create bucket', whatsappBucket, 'in Supabase Dashboard if missing)');
+              }
+            } catch (e) {
+              console.log('[WhatsApp document] Storage error:', e instanceof Error ? e.message : String(e));
+            }
+
+            if (documentUrlToSend) {
+              // Send document via /sendMessage with url param (360Messenger fetches URL and sends as media)
+              const urlParamNames = ['url', 'file_url', 'document_url', 'document', 'file', 'media_url'];
+              for (const param of urlParamNames) {
+                try {
+                  const formParams: Record<string, string> = {
+                    phonenumber: customer.whatsapp_number,
+                    text: caption,
+                    '360notify-medium': 'wordpress_order_notification',
+                    [param]: documentUrlToSend,
+                  };
+                  const res = await fetch(`${apiUrl}/sendMessage/${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams(formParams).toString(),
+                  });
+                  if (res.ok) {
+                    console.log(`✅ Document (PDF) sent via /sendMessage with param ${param}`);
+                    return true;
+                  }
+                  await logResponse(res, `/sendMessage ${param}`);
+                } catch (err) {
+                  console.log(`Document /sendMessage ${param} failed:`, err instanceof Error ? err.message : err);
+                }
+              }
+            }
+
+            // Fallback: /sendMessage multipart (returns 200 but 360Messenger may only deliver text)
+            try {
+              const form = new FormData();
+              form.append('phonenumber', customer.whatsapp_number);
+              form.append('text', caption);
+              form.append('360notify-medium', 'wordpress_order_notification');
+              form.append('file', new Blob([pdfBytes], { type: 'application/pdf' }), 'invoice.pdf');
+              const uploadRes = await fetch(`${apiUrl}/sendMessage/${apiKey}`, { method: 'POST', body: form });
+              if (uploadRes.ok) {
+                console.log('✅ Document (PDF) sent via /sendMessage multipart file (fallback)');
+                return true;
+              }
+              await logResponse(uploadRes, '/sendMessage multipart');
+            } catch (err) {
+              console.log('Document /sendMessage multipart failed:', err instanceof Error ? err.message : err);
+            }
+          } else {
+            console.log('Could not fetch PDF bytes from Google Drive; skipping document send to avoid sending HTML.');
+          }
+          return false;
+        }
+
+        // When we only have a non-Drive URL (e.g. CDN): pass URL to API.
         if (!documentUrl || !attachmentType) return false;
         const docUrl = documentUrl;
-        const endpoints = [
+        const formParamNames = ['url', 'file_url', 'document_url', 'document', 'file', 'image_url', 'media_url'];
+        for (const param of formParamNames) {
+          try {
+            const formParams: Record<string, string> = {
+              phonenumber: customer.whatsapp_number,
+              text: (messageContent || '').slice(0, 1024),
+              '360notify-medium': 'wordpress_order_notification',
+              [param]: docUrl,
+            };
+            const res = await fetch(`${apiUrl}/sendMessage/${apiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams(formParams).toString(),
+            });
+            if (res.ok) {
+              console.log(`✅ Document sent via /sendMessage with param ${param}`);
+              return true;
+            }
+            await logResponse(res, `/sendMessage ${param}`);
+          } catch (err) {
+            console.log(`Document /sendMessage ${param} failed:`, err instanceof Error ? err.message : err);
+          }
+        }
+        const chatId = customer.whatsapp_number.replace(/\D/g, '') + '@c.us';
+        const v2SendPaths = ['/v2/message/send', '/v2/message/sendMessage'];
+        for (const path of v2SendPaths) {
+          try {
+            const res = await fetch(`${apiUrl}${path}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+              body: JSON.stringify({ chatId, text: (messageContent || '').slice(0, 1024), url: docUrl }),
+            });
+            if (res.ok) {
+              console.log(`✅ Document sent via v2 ${path}`);
+              return true;
+            }
+            await logResponse(res, `v2 ${path}`);
+          } catch (err) {
+            console.log(`Document v2 ${path} failed:`, err instanceof Error ? err.message : err);
+          }
+        }
+        const docEndpoints = [
           { path: '/sendDocument/' + apiKey, body: (): string => new URLSearchParams({
             phonenumber: customer.whatsapp_number,
             document: docUrl,
             caption: (messageContent || '').slice(0, 1024),
             '360notify-medium': 'wordpress_order_notification',
-          }).toString(), contentType: 'application/x-www-form-urlencoded' },
-          { path: '/sendMessage/' + apiKey, body: (): string => new URLSearchParams({
+          }).toString() },
+          { path: '/sendDocument/' + apiKey, body: (): string => new URLSearchParams({
             phonenumber: customer.whatsapp_number,
-            document: docUrl,
-            text: (messageContent || '').slice(0, 1024),
+            file_url: docUrl,
             '360notify-medium': 'wordpress_order_notification',
-          }).toString(), contentType: 'application/x-www-form-urlencoded' },
+          }).toString() },
         ];
-        for (const { path, body, contentType } of endpoints) {
+        for (const { path, body } of docEndpoints) {
           try {
             const res = await fetch(`${apiUrl}${path}`, {
               method: 'POST',
-              headers: { 'Content-Type': contentType },
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
               body: body(),
             });
             if (res.ok) {
-              console.log(`✅ Document (PDF) sent successfully via ${path}`);
+              console.log(`✅ Document sent via ${path}`);
               return true;
             }
+            await logResponse(res, path);
           } catch (err) {
             console.log(`Document endpoint ${path} failed:`, err instanceof Error ? err.message : err);
-          }
-        }
-        // JSON-style endpoints (document_link / media_url)
-        const jsonEndpoints = [
-          '/api/v1/messages/media', '/v1/messages/media', '/api/messages/media',
-          '/messages/media', '/api/v1/messages', '/v1/messages',
-        ];
-        for (const ep of jsonEndpoints) {
-          try {
-            const res = await fetch(`${apiUrl}${ep}`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                to: customer.whatsapp_number,
-                message: messageContent,
-                media_url: docUrl,
-                document_link: docUrl,
-                media_type: attachmentType,
-              }),
-            });
-            if (res.ok) {
-              console.log(`✅ Document (PDF) sent via ${ep}`);
-              return true;
-            }
-          } catch (err) {
-            console.log(`JSON media endpoint ${ep} failed:`, err instanceof Error ? err.message : err);
           }
         }
         console.log('Document fallback: provider did not accept PDF; text+link was already sent.');
         return false;
       };
 
-      if ((documentUrl || attachmentUrl) && attachmentType) {
-        // Main path: send text first (reliable). Then try document/PDF; do not fail if document send fails.
+      const hasDocument = attachmentType && (documentUrl || attachmentUrl || (attachmentFileId && (attachmentType === 'application/pdf' || attachmentType === 'document')));
+      if (hasDocument) {
         apiResponse = await sendTextMessage();
         const documentSent = await trySendDocument();
         apiResponse = { ...apiResponse, documentSent };

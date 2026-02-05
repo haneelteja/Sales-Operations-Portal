@@ -28,11 +28,11 @@ serve(async (req) => {
     const { trigger, triggered_by }: BackupRequest = await req.json().catch(() => ({}));
     const backupType = trigger || 'automatic';
 
-    // Get backup configuration
+    // Get backup configuration (including schedule time for automatic filename)
     const { data: configData, error: configError } = await supabase
       .from('invoice_configurations')
       .select('config_key, config_value')
-      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled']);
+      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled', 'backup_schedule_time_ist']);
 
     if (configError) {
       throw new Error(`Failed to fetch backup config: ${configError.message}`);
@@ -51,14 +51,19 @@ serve(async (req) => {
       );
     }
 
-    const backupFolderPath = config.backup_folder_path || 'MyDrive/DatabaseBackups';
+    const backupFolderPath = config.backup_folder_path || 'MyDrive/Invoice';
     const notificationEmail = config.backup_notification_email || 'pega2023test@gmail.com';
 
-    // Generate backup file name
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-').substring(0, 5); // HH-MM
-    const fileName = `DB_Backup_${dateStr}_${timeStr}.sql.gz`;
+    // Generate backup file name (IST-aware). Automatic: use backup_schedule_time_ist (e.g. 14:00 -> 14-00); Manual: current IST time
+    const { dateStr: istDateStr, timeStr: istTimeStr } = getISTDateAndTime();
+    const scheduleTime = (config.backup_schedule_time_ist || '14:00').trim();
+    const scheduledTimeStr = /^([01]?\d|2[0-3]):[0-5]\d$/.test(scheduleTime)
+      ? scheduleTime.replace(':', '-')
+      : '14-00';
+    const timeStr = backupType === 'automatic' ? scheduledTimeStr : istTimeStr;
+    const fileName = `SQL_Backup_${istDateStr}_${timeStr}_IST.sql.gz`;
+
+    const startedAtMs = Date.now();
 
     // Create backup log entry
     const { data: logEntry, error: logError } = await supabase
@@ -136,10 +141,12 @@ serve(async (req) => {
 
       const uploadResult = await uploadResponse.json();
 
-      // Step 3: Update backup log with success
+      // Step 3: Update backup log with success and execution duration
       const fileId = uploadResult.id || uploadResult.fileId;
       const fileUrl = uploadResult.webViewLink || uploadResult.fileUrl || uploadResult.webContentLink;
-      
+      const completedAt = new Date().toISOString();
+      const executionDurationSeconds = Math.round((Date.now() - startedAtMs) / 1000 * 100) / 100;
+
       await supabase
         .from('backup_logs')
         .update({
@@ -147,7 +154,8 @@ serve(async (req) => {
           file_size_bytes: compressed.length,
           google_drive_file_id: fileId,
           google_drive_path: fileUrl || `${backupFolderPath}/${fileName}`,
-          completed_at: new Date().toISOString(),
+          completed_at: completedAt,
+          execution_duration_seconds: executionDurationSeconds,
         })
         .eq('id', logId);
 
@@ -206,6 +214,21 @@ serve(async (req) => {
     );
   }
 });
+
+/**
+ * Get current date and time in IST (UTC+5:30) for backup filename
+ */
+function getISTDateAndTime(): { dateStr: string; timeStr: string } {
+  const now = new Date();
+  const utcMs = now.getTime();
+  const istOffsetMs = (5 * 60 + 30) * 60 * 1000;
+  const istDate = new Date(utcMs + istOffsetMs);
+  const dateStr = istDate.toISOString().slice(0, 10);
+  const h = istDate.getUTCHours();
+  const m = istDate.getUTCMinutes();
+  const timeStr = `${String(h).padStart(2, '0')}-${String(m).padStart(2, '0')}`;
+  return { dateStr, timeStr };
+}
 
 /**
  * Compress data using gzip

@@ -19,9 +19,15 @@ supabase functions deploy whatsapp-send
 supabase functions deploy whatsapp-retry
 ```
 
-**Or deploy both at once:**
+**Deploy whatsapp-pdf-proxy (serves PDFs with correct filename for WhatsApp):**
 ```bash
-supabase functions deploy whatsapp-send whatsapp-retry
+supabase functions deploy whatsapp-pdf-proxy
+```
+**Note:** `supabase/config.toml` has `verify_jwt = false` for this function so 360Messenger can GET the PDF URL without an Authorization header. The proxy still validates the `access_key` query param.
+
+**Or deploy all at once:**
+```bash
+supabase functions deploy whatsapp-send whatsapp-retry whatsapp-pdf-proxy
 ```
 
 ---
@@ -38,6 +44,9 @@ supabase functions deploy whatsapp-send whatsapp-retry
 supabase secrets set SUPABASE_URL=your_supabase_url
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 supabase secrets set SUPABASE_ANON_KEY=your_anon_key
+
+# Optional: for correct PDF filename in WhatsApp (recommended)
+supabase secrets set WHATSAPP_PDF_PROXY_ACCESS_KEY=your_long_random_secret_32_chars_or_more
 ```
 
 **Or via Supabase Dashboard:**
@@ -167,7 +176,7 @@ Then update Edge Function to read from `Deno.env.get('WHATSAPP_API_KEY')` as fal
 
 ## 📋 Configuration Checklist
 
-- [ ] Edge Functions deployed (`whatsapp-send`, `whatsapp-retry`)
+- [ ] Edge Functions deployed (`whatsapp-send`, `whatsapp-retry`, `whatsapp-pdf-proxy`)
 - [ ] Required secrets configured (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`)
 - [ ] 360Messenger API key configured
 - [ ] WhatsApp enabled in settings
