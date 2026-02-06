@@ -15,7 +15,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-backup-cron-secret',
 };
 
 /** Get current time in IST as HH:MM (24h) */
@@ -48,6 +48,22 @@ function isTimeInCurrentWindow(configuredTime: string, windowMinutes: number = 1
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  // Auth: require BACKUP_CRON_SECRET (this function has verify_jwt = false)
+  const cronSecret = Deno.env.get('BACKUP_CRON_SECRET');
+  const customHeader = req.headers.get('x-backup-cron-secret')?.trim() ?? '';
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const headerSecret = customHeader || bearer;
+  if (!cronSecret || headerSecret !== cronSecret) {
+    const reason = !cronSecret
+      ? 'BACKUP_CRON_SECRET not set in Supabase Edge Function secrets'
+      : 'Secret mismatch or missing. Send header: x-backup-cron-secret with the exact secret, or Authorization: Bearer <secret>';
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized', message: reason }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 
   try {

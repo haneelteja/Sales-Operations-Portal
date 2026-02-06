@@ -2,6 +2,8 @@
 
 **Quick Reference for Scheduling Automated Backups**
 
+> **Note:** Supabase does **not** provide a built-in Cron UI for Edge Functions. You must schedule runs using either **pg_cron** inside the database (if available on your plan) or an **external scheduler** (cron-job.org, GitHub Actions, Vercel Cron, etc.).
+
 **Current setup:** Backup scheduler runs **every 15 minutes** (`*/15 * * * *`). It checks the configured `backup_schedule_time_ist` (e.g. 14:00) and triggers **database-backup** only when the current IST time matches. You can change the backup time later in Application Configuration without changing cron.
 
 **Configurable backup time:** Use **backup-scheduler** (runs every 15 min, reads `backup_schedule_time_ist` from Application Configuration).  
@@ -9,7 +11,53 @@
 
 ---
 
-## Option 1A: Configurable Backup Time (backup-scheduler) — Recommended
+## If you don't have pg_cron (recommended: external cron)
+
+Many Supabase projects don't have **pg_cron** enabled or prefer not to use it. Use one of these instead:
+
+| Method | Best for |
+|--------|----------|
+| **cron-job.org** | Easiest: free, no code, just URL + headers (see Option 4) |
+| **GitHub Actions** | If your repo is on GitHub (see Option 2) |
+| **Vercel Cron** | If the app is on Vercel (see Option 3) |
+
+**URL to call for configurable backup time (backup-scheduler every 15 min):**
+```
+POST https://[YOUR_PROJECT_REF].supabase.co/functions/v1/backup-scheduler
+Authorization: Bearer [YOUR_CRON_SECRET]
+Content-Type: application/json
+Body: {}
+```
+
+**Schedule:** Every 15 minutes → `*/15 * * * *` (in cron-job.org use "Every 15 minutes" or equivalent).
+
+### Secret-based auth (recommended for cron-job.org)
+
+The **backup-scheduler** function uses a **shared secret** instead of the Supabase JWT, so you don't need the legacy service_role key.
+
+1. **Create a secret**  
+   Use a long random string (e.g. 32+ characters). Example: `openssl rand -hex 24` or any password generator.
+
+2. **Add it in Supabase**  
+   Dashboard → **Edge Functions** → **backup-scheduler** → **Secrets** (or **Settings** → **Edge Function Secrets**).  
+   Add: **Name** = `BACKUP_CRON_SECRET`, **Value** = your chosen secret.
+
+3. **Redeploy the function** (so the secret is available):
+   ```bash
+   supabase functions deploy backup-scheduler
+   ```
+
+4. **In cron-job.org**  
+   Request headers:  
+   - **Authorization** = `Bearer YOUR_SAME_SECRET`  
+   (literally the word `Bearer`, a space, then the exact same string you set as `BACKUP_CRON_SECRET`).
+
+5. **Test run**  
+   Use "Perform test run" in cron-job.org; you should get **200** and a JSON body (e.g. `triggered: false, reason: "Current time does not match schedule"` is normal outside the backup window).
+
+---
+
+## Option 1A: Configurable Backup Time (backup-scheduler) — pg_cron (if available)
 
 The **backup-scheduler** edge function runs every 15 minutes, reads `backup_schedule_time_ist` and `backup_enabled` from the database, and triggers **database-backup** only when the current time in IST matches the configured time. This allows the "Database Backup Time" setting in Application Configuration to control when the backup runs.
 
@@ -205,21 +253,31 @@ Create API routes:
 
 ---
 
-## Option 4: External Cron Service
+## Option 4: External Cron Service (no pg_cron needed)
 
-### Using cron-job.org:
+### Using cron-job.org (configurable backup time — recommended)
 
-1. Create account at https://cron-job.org
-2. Create new cron job:
-   - **URL:** `https://[PROJECT].supabase.co/functions/v1/database-backup`
-   - **Schedule:** `30 8 * * *` (08:30 UTC = 2:00 PM IST)
+1. Create a free account at https://cron-job.org
+2. Create a new cron job:
+   - **Title:** e.g. `Backup Scheduler (Supabase)`
+   - **URL:** `https://[YOUR_PROJECT_REF].supabase.co/functions/v1/backup-scheduler`
+   - **Schedule:** Every 15 minutes (e.g. "Every 15 minutes" or `*/15 * * * *`)
+   - **Request Method:** POST
+   - **Request Headers:**
+     - `Authorization` = `Bearer [SERVICE_ROLE_KEY]`
+     - `Content-Type` = `application/json`
+   - **Request Body:** `{}` (empty JSON)
+3. Save. The scheduler will run every 15 minutes; the Edge Function will trigger **database-backup** only when the current IST time matches your Application Configuration **backup_schedule_time_ist** (e.g. 14:00).
+
+### Using cron-job.org (fixed 2:00 PM IST only)
+
+1. Create a cron job:
+   - **URL:** `https://[YOUR_PROJECT_REF].supabase.co/functions/v1/database-backup`
+   - **Schedule:** Daily at 08:30 UTC (= 2:00 PM IST) → `30 8 * * *`
    - **Method:** POST
-   - **Headers:**
-     - `Authorization: Bearer [SERVICE_ROLE_KEY]`
-     - `Content-Type: application/json`
+   - **Headers:** `Authorization: Bearer [SERVICE_ROLE_KEY]`, `Content-Type: application/json`
    - **Body:** `{"trigger": "automatic"}`
-
-3. Repeat for cleanup job (e.g. `30 9 * * *` = 09:30 UTC)
+2. Optionally add a second job for cleanup at 09:30 UTC: URL `.../functions/v1/cleanup-old-backups`, same headers, body `{}`.
 
 ---
 

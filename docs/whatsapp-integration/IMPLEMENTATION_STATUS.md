@@ -76,9 +76,11 @@
 - Correct filename in the URL path: `.../whatsapp-pdf-proxy/INV-2026-02-027.pdf?path=...`
 - `Content-Disposition: attachment; filename="INV-2026-02-027.pdf"`
 
-**Cause:** 360Messenger/WhatsApp may not use the URL path or `Content-Disposition` for the displayed document name.
+**Cause (confirmed external):** 360Messenger has acknowledged a temporary issue after a recent WhatsApp update where the app may ignore the `Content-Disposition` header and URL path when choosing the displayed document name.
 
-**Action taken:** A ticket has been raised with 360Messenger to clarify how they determine the document filename (URL path vs Content-Disposition vs API parameter) and whether they can use it for the displayed name. Until they support it, the PDF will continue to open correctly but may show as "Untitled" in the chat.
+**Action taken:** Ticket **#SAO-094165** was raised with 360Messenger to confirm filename behaviour (URL path vs `Content-Disposition` vs API parameter). Their support response confirms this is a **known bug on their side** and will be fixed in an upcoming update.
+
+**Status:** Our implementation for filenames is correct and complete; **no further backend changes are required** on our side. Until 360Messenger rolls out their fix, PDFs will continue to open correctly but may still appear as "Untitled" in the WhatsApp UI.
 
 ---
 
