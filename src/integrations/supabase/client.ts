@@ -2,19 +2,18 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-// Force new project configuration - clear any cached values
-// Use environment variables for configuration
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://qkvmdrtfhpcvwvqjuyuu.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFrdm1kcnRmaHBjdnd2cWp1eXV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMjgyMTgsImV4cCI6MjA3NDgwNDIxOH0.DJeoI0LFeMArVs5s6DV2HP0kYnjWcIVLQEbiCQr97CE";
+// Use environment variables for configuration (no hardcoded fallbacks for production)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
-// Clear any cached auth data
+// Clear cached auth from any previous Supabase project to avoid mixing sessions
 if (typeof window !== 'undefined') {
   localStorage.removeItem('supabase.auth.token');
   localStorage.removeItem('supabase.auth.refresh_token');
-  localStorage.removeItem('sb-yltbknkksjgtexluhtau-auth-token');
-  localStorage.removeItem('sb-yltbknkksjgtexluhtau-auth-refresh-token');
-  localStorage.removeItem('sb-qkvmdrtfhpcvwvqjuyuu-auth-token');
-  localStorage.removeItem('sb-qkvmdrtfhpcvwvqjuyuu-auth-refresh-token');
+  ['yltbknkksjgtexluhtau', 'qkvmdrtfhpcvwvqjuyuu', 'ksfkgzlwgvwijjkaoaqq'].forEach((ref) => {
+    localStorage.removeItem(`sb-${ref}-auth-token`);
+    localStorage.removeItem(`sb-${ref}-auth-refresh-token`);
+  });
 }
 
 // Import the supabase client like this:

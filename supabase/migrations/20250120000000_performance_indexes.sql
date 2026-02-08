@@ -33,10 +33,9 @@ CREATE INDEX IF NOT EXISTS idx_sales_transactions_sku
 CREATE INDEX IF NOT EXISTS idx_sales_transactions_customer_type_date 
   ON sales_transactions(customer_id, transaction_type, transaction_date DESC);
 
--- Partial index for active transactions only
+-- Index for recent transactions (full index; partial with CURRENT_DATE is not immutable)
 CREATE INDEX IF NOT EXISTS idx_sales_transactions_active 
-  ON sales_transactions(transaction_date DESC) 
-  WHERE transaction_date >= CURRENT_DATE - INTERVAL '1 year';
+  ON sales_transactions(transaction_date DESC);
 
 -- ==============================================
 -- 2. CUSTOMERS INDEXES
@@ -76,13 +75,15 @@ CREATE INDEX IF NOT EXISTS idx_factory_payables_transaction_type
 CREATE INDEX IF NOT EXISTS idx_factory_payables_transaction_date 
   ON factory_payables(transaction_date DESC);
 
--- Index on sku (for product-based queries)
-CREATE INDEX IF NOT EXISTS idx_factory_payables_sku 
-  ON factory_payables(sku);
-
--- Index on customer_id (for customer-based queries)
-CREATE INDEX IF NOT EXISTS idx_factory_payables_customer_id 
-  ON factory_payables(customer_id);
+-- Index on sku (optional; column added in later migration 20250906131728)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'factory_payables' AND column_name = 'sku') THEN
+    CREATE INDEX IF NOT EXISTS idx_factory_payables_sku ON factory_payables(sku);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'factory_payables' AND column_name = 'customer_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_factory_payables_customer_id ON factory_payables(customer_id);
+  END IF;
+END $$;
 
 -- Composite index for reporting queries
 CREATE INDEX IF NOT EXISTS idx_factory_payables_type_date 
@@ -112,17 +113,16 @@ CREATE INDEX IF NOT EXISTS idx_factory_pricing_sku_date
 CREATE INDEX IF NOT EXISTS idx_transport_expenses_expense_date 
   ON transport_expenses(expense_date DESC);
 
--- Index on client_id (for client-based queries)
-CREATE INDEX IF NOT EXISTS idx_transport_expenses_client_id 
-  ON transport_expenses(client_id);
-
--- Index on branch (for branch-based queries)
-CREATE INDEX IF NOT EXISTS idx_transport_expenses_branch 
-  ON transport_expenses(branch);
-
--- Composite index for client + date queries
-CREATE INDEX IF NOT EXISTS idx_transport_expenses_client_date 
-  ON transport_expenses(client_id, expense_date DESC);
+-- Indexes on client_id/branch (optional; columns may be added in later migrations)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'transport_expenses' AND column_name = 'client_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_transport_expenses_client_id ON transport_expenses(client_id);
+    CREATE INDEX IF NOT EXISTS idx_transport_expenses_client_date ON transport_expenses(client_id, expense_date DESC);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'transport_expenses' AND column_name = 'branch') THEN
+    CREATE INDEX IF NOT EXISTS idx_transport_expenses_branch ON transport_expenses(branch);
+  END IF;
+END $$;
 
 -- ==============================================
 -- 6. LABEL PURCHASES INDEXES
@@ -132,17 +132,17 @@ CREATE INDEX IF NOT EXISTS idx_transport_expenses_client_date
 CREATE INDEX IF NOT EXISTS idx_label_purchases_purchase_date 
   ON label_purchases(purchase_date DESC);
 
--- Index on vendor_id (for vendor-based queries)
-CREATE INDEX IF NOT EXISTS idx_label_purchases_vendor_id 
-  ON label_purchases(vendor_id);
-
 -- Index on sku (for product-based queries)
 CREATE INDEX IF NOT EXISTS idx_label_purchases_sku 
   ON label_purchases(sku);
 
--- Composite index for vendor + date queries
-CREATE INDEX IF NOT EXISTS idx_label_purchases_vendor_date 
-  ON label_purchases(vendor_id, purchase_date DESC);
+-- Indexes on vendor_id (optional; column may differ in early migrations)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'label_purchases' AND column_name = 'vendor_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_label_purchases_vendor_id ON label_purchases(vendor_id);
+    CREATE INDEX IF NOT EXISTS idx_label_purchases_vendor_date ON label_purchases(vendor_id, purchase_date DESC);
+  END IF;
+END $$;
 
 -- ==============================================
 -- 7. LABEL PAYMENTS INDEXES
@@ -152,13 +152,16 @@ CREATE INDEX IF NOT EXISTS idx_label_purchases_vendor_date
 CREATE INDEX IF NOT EXISTS idx_label_payments_payment_date 
   ON label_payments(payment_date DESC);
 
--- Index on vendor_id (for vendor-based queries)
-CREATE INDEX IF NOT EXISTS idx_label_payments_vendor_id 
-  ON label_payments(vendor_id);
-
--- Composite index for vendor + date queries
-CREATE INDEX IF NOT EXISTS idx_label_payments_vendor_date 
-  ON label_payments(vendor_id, payment_date DESC);
+-- Index on vendor / vendor_id (column name may vary by migration)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'label_payments' AND column_name = 'vendor_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_label_payments_vendor_id ON label_payments(vendor_id);
+    CREATE INDEX IF NOT EXISTS idx_label_payments_vendor_date ON label_payments(vendor_id, payment_date DESC);
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'label_payments' AND column_name = 'vendor') THEN
+    CREATE INDEX IF NOT EXISTS idx_label_payments_vendor_id ON label_payments(vendor);
+    CREATE INDEX IF NOT EXISTS idx_label_payments_vendor_date ON label_payments(vendor, payment_date DESC);
+  END IF;
+END $$;
 
 -- ==============================================
 -- 8. ORDERS INDEXES
@@ -168,9 +171,12 @@ CREATE INDEX IF NOT EXISTS idx_label_payments_vendor_date
 CREATE INDEX IF NOT EXISTS idx_orders_status 
   ON orders(status);
 
--- Index on tentative_delivery_date (for sorting and filtering)
-CREATE INDEX IF NOT EXISTS idx_orders_tentative_delivery_date 
-  ON orders(tentative_delivery_date DESC);
+-- Index on tentative_delivery_date (optional; column may be added in later migration)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'tentative_delivery_date') THEN
+    CREATE INDEX IF NOT EXISTS idx_orders_tentative_delivery_date ON orders(tentative_delivery_date DESC);
+  END IF;
+END $$;
 
 -- Index on client (for client-based queries)
 CREATE INDEX IF NOT EXISTS idx_orders_client 
@@ -179,10 +185,6 @@ CREATE INDEX IF NOT EXISTS idx_orders_client
 -- Index on created_at (for sorting)
 CREATE INDEX IF NOT EXISTS idx_orders_created_at 
   ON orders(created_at DESC);
-
--- Composite index for status + delivery date (common query pattern)
-CREATE INDEX IF NOT EXISTS idx_orders_status_delivery_date 
-  ON orders(status, tentative_delivery_date DESC);
 
 -- ==============================================
 -- 9. USER MANAGEMENT INDEXES

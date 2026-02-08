@@ -50,8 +50,9 @@ $$;
 -- OPTIMIZED ORDERS SORTING FUNCTION
 -- ==============================================
 -- Sorts orders by status (pending first) and delivery date
--- Expected impact: 40-60% reduction in sorting time
+-- Drop first so return type can change (date column added)
 -- ==============================================
+DROP FUNCTION IF EXISTS get_orders_sorted() CASCADE;
 
 CREATE OR REPLACE FUNCTION get_orders_sorted()
 RETURNS TABLE (
