@@ -1,0 +1,258 @@
+<style>
+        .invoice-container {
+            font-family: 'Times New Roman', serif;
+            margin: 0;
+            padding: 20mm;
+            width: 210mm;
+            min-height: 297mm;
+            box-sizing: border-box;
+            font-size: 11pt;
+            line-height: 1.4;
+            color: #000;
+            background-color: #ffffff;
+        }
+        
+        /* Header Section */
+        .header {
+            text-align: center;
+            margin-bottom: 15mm;
+        }
+        
+        .header h1 {
+            font-size: 14pt;
+            font-weight: bold;
+            margin: 0 0 8mm 0;
+            text-transform: capitalize;
+            text-decoration: underline;
+        }
+        
+        .company-details {
+            font-size: 11pt;
+            margin-bottom: 10mm;
+            line-height: 1.6;
+        }
+        
+        .company-name {
+            font-weight: bold;
+            margin-bottom: 2mm;
+        }
+        
+        /* Bill To and Invoice Details Section */
+        .invoice-details-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10mm;
+            align-items: flex-start;
+        }
+        
+        .bill-to {
+            flex: 0 0 auto;
+        }
+        
+        .bill-to-label {
+            font-weight: bold;
+            font-size: 11pt;
+            margin-bottom: 3mm;
+        }
+        
+        .client-name {
+            font-size: 11pt;
+            margin-bottom: 2mm;
+        }
+        
+        .client-branch {
+            font-size: 11pt;
+        }
+        
+        .invoice-meta {
+            text-align: right;
+            flex: 0 0 auto;
+        }
+        
+        .invoice-meta div {
+            font-size: 11pt;
+            margin-bottom: 2mm;
+        }
+        
+        /* Table Section */
+        .table-section {
+            margin: 8mm 0;
+        }
+        
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 5mm;
+        }
+        
+        .invoice-table th {
+            font-weight: bold;
+            font-size: 10pt;
+            text-align: left;
+            padding: 3mm 2mm;
+            border-bottom: 0.5pt solid #000;
+        }
+        
+        .invoice-table th.amount-header,
+        .invoice-table td.amount-cell {
+            text-align: right;
+        }
+        
+        .invoice-table td {
+            font-size: 10pt;
+            padding: 3mm 2mm;
+            border-bottom: 0.5pt solid #000;
+        }
+        
+        .invoice-table .sno-col {
+            width: 8%;
+        }
+        
+        .invoice-table .description-col {
+            width: 35%;
+        }
+        
+        .invoice-table .sku-col {
+            width: 15%;
+        }
+        
+        .invoice-table .qty-col {
+            width: 12%;
+        }
+        
+        .invoice-table .rate-col {
+            width: 15%;
+        }
+        
+        .invoice-table .amount-col {
+            width: 15%;
+            text-align: right;
+        }
+        
+        /* Total Section */
+        .total-section {
+            text-align: right;
+            margin: 5mm 0;
+            font-weight: bold;
+            font-size: 11pt;
+        }
+        
+        .total-row {
+            margin-bottom: 2mm;
+        }
+        
+        /* Amount in Words */
+        .amount-words {
+            margin: 6mm 0;
+            font-size: 11pt;
+        }
+        
+        /* Account Details */
+        .account-details {
+            margin: 8mm 0;
+        }
+        
+        .account-details-title {
+            font-weight: bold;
+            font-size: 11pt;
+            margin-bottom: 3mm;
+        }
+        
+        .account-details div {
+            font-size: 10pt;
+            margin-bottom: 2mm;
+        }
+        
+        /* Signatures */
+        .signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15mm;
+            font-size: 10pt;
+        }
+        
+        .signature-left,
+        .signature-right {
+            width: 45%;
+        }
+    </style>
+<div class="invoice-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Bill of supply</h1>
+        </div>
+        
+        <!-- Company Details -->
+        <div class="company-details">
+            <div class="company-name">AAMODHA ENTERPRISES</div>
+            <div>#1-8-56, north kamala Nagar,</div>
+            <div>kapra, Hyderabad, 500051</div>
+        </div>
+        
+        <!-- Bill To and Invoice Details -->
+        <div class="invoice-details-section">
+            <div class="bill-to">
+                <div class="bill-to-label">Bill to:</div>
+                <div class="client-name">{{clientName}},</div>
+                <div class="client-branch">{{branch}}.</div>
+            </div>
+            <div class="invoice-meta">
+                <div>Bill No: {{invoiceNumber}}</div>
+                <div>Date: {{invoiceDate}}</div>
+                <div>Dispatch Through: AUTO</div>
+            </div>
+        </div>
+        
+        <!-- Table Section -->
+        <div class="table-section">
+            <table class="invoice-table">
+                <thead>
+                    <tr>
+                        <th class="sno-col">S.No:</th>
+                        <th class="description-col">Description of Goods</th>
+                        <th class="sku-col">SKU</th>
+                        <th class="qty-col">Qty</th>
+                        <th class="rate-col">Rate</th>
+                        <th class="amount-col amount-header">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1.</td>
+                        <td>Elma 500 ml</td>
+                        <td>{{sku}}</td>
+                        <td>{{quantity}} cases</td>
+                        <td>{{unitPrice}}</td>
+                        <td class="amount-cell">{{amount}}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Total Section -->
+        <div class="total-section">
+            <div class="total-row">
+                Total amount {{totalAmount}}
+            </div>
+        </div>
+        
+        <!-- Amount in Words -->
+        <div class="amount-words">
+            Amount in words: {{amountInWords}}
+        </div>
+        
+        <!-- Account Details -->
+        <div class="account-details">
+            <div class="account-details-title">Account Details:</div>
+            <div>Account Name: M/S Aamodha Enterprises</div>
+            <div>Bank: HDFC Bank</div>
+            <div>Account Number: 50200082063860</div>
+            <div>IFSC Code: HDFC0009611</div>
+        </div>
+        
+        <!-- Signatures -->
+        <div class="signatures">
+            <div class="signature-left">Dispatch Signature:</div>
+            <div class="signature-right" style="text-align: right;">Received Signature:</div>
+        </div>
+</div>

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { supabase } from "@/integrations/supabase/client";
+import { getQueryConfig } from "@/lib/query-configs";
 import { 
   DollarSign, 
   AlertTriangle, 
@@ -50,6 +51,7 @@ const Dashboard = memo(() => {
   // Fetch profit data for Profitability Summary
   const { data: profitData } = useQuery({
     queryKey: ["dashboard-profit"],
+    ...getQueryConfig("dashboard-profit"),
     queryFn: async () => {
       // Get client transactions
       const { data: clientTransactions } = await supabase
@@ -99,6 +101,7 @@ const Dashboard = memo(() => {
   // Fetch client receivables data (limited to recent transactions for performance)
   const { data: receivables } = useQuery({
     queryKey: ["receivables"],
+    ...getQueryConfig("receivables"),
     queryFn: async () => {
       // Limit to last 90 days or max 2000 records for performance
       const ninetyDaysAgo = new Date();
@@ -194,6 +197,7 @@ const Dashboard = memo(() => {
   // Fetch key metrics - depends on receivables being loaded
   const { data: metrics } = useQuery({
     queryKey: ["dashboard-metrics", receivables],
+    ...getQueryConfig("dashboard-metrics"),
     queryFn: async () => {
       // Total clients
       const { count: totalClients } = await supabase

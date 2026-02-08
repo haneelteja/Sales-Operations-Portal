@@ -6,13 +6,14 @@ import {
   Truck, 
   Tag, 
   UserPlus,
-  Settings,
   FileText,
   Cog,
   LogOut,
   User,
   ShoppingCart,
-  Shield
+  Shield,
+  Settings,
+  MessageSquare
 } from "lucide-react";
 
 import {
@@ -51,8 +52,9 @@ const menuItems: MenuItem[] = [
   { id: "labels", title: "Labels", icon: Tag },
   { id: "configurations", title: "Configurations", icon: Cog },
   { id: "reports", title: "Reports", icon: FileText },
-  { id: "adjustments", title: "Adjustments", icon: Settings, roles: ['manager'] }, // Only visible to managers
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
+  { id: "application-configuration", title: "Application Configuration", icon: Settings, roles: ['manager', 'admin'] }, // Only visible to managers and admins
+  { id: "whatsapp-configuration", title: "WhatsApp Configurations", icon: MessageSquare, roles: ['manager', 'admin'] }, // Only visible to managers and admins
 ];
 
 export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {

@@ -14,9 +14,9 @@ const TransportExpenses = lazy(() => import("@/components/transport/TransportExp
 const Labels = lazy(() => import("@/components/labels/Labels"));
 const ConfigurationManagement = lazy(() => import("@/components/configurations/ConfigurationManagement"));
 const Reports = lazy(() => import("@/components/reports/Reports"));
-const Adjustments = lazy(() => import("@/components/adjustments/Adjustments"));
 const UserManagement = lazy(() => import("@/components/user-management/UserManagement"));
-// const OrderManagement = lazy(() => import("@/components/order-management/OrderManagement"));
+const ApplicationConfigurationTab = lazy(() => import("@/components/user-management/ApplicationConfigurationTab"));
+const WhatsAppConfigurationTab = lazy(() => import("@/components/user-management/WhatsAppConfigurationTab"));
 
 // Loading component for route transitions
 const RouteLoader = () => (
@@ -82,24 +82,6 @@ const Index = () => {
             <Reports />
           </Suspense>
         );
-      case "adjustments":
-        // Only allow managers to access adjustments
-        if (profile?.role !== 'manager') {
-          return (
-            <Alert className="m-6">
-              <Shield className="h-4 w-4" />
-              <AlertDescription>
-                Access denied. The Adjustments tab is only available to users with Manager role.
-                Your current role: {profile?.role || 'Unknown'}
-              </AlertDescription>
-            </Alert>
-          );
-        }
-        return (
-          <Suspense fallback={<RouteLoader />}>
-            <Adjustments />
-          </Suspense>
-        );
       case "user-management":
         // Only allow managers to access user management
         if (profile?.role !== 'manager') {
@@ -116,6 +98,42 @@ const Index = () => {
         return (
           <Suspense fallback={<RouteLoader />}>
             <UserManagement />
+          </Suspense>
+        );
+      case "application-configuration":
+        // Only allow managers and admins to access application configuration
+        if (profile?.role !== 'manager' && profile?.role !== 'admin') {
+          return (
+            <Alert className="m-6">
+              <Shield className="h-4 w-4" />
+              <AlertDescription>
+                Access denied. The Application Configuration tab is only available to users with Manager or Admin role.
+                Your current role: {profile?.role || 'Unknown'}
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return (
+          <Suspense fallback={<RouteLoader />}>
+            <ApplicationConfigurationTab />
+          </Suspense>
+        );
+      case "whatsapp-configuration":
+        // Only allow managers and admins to access WhatsApp configuration
+        if (profile?.role !== 'manager' && profile?.role !== 'admin') {
+          return (
+            <Alert className="m-6">
+              <Shield className="h-4 w-4" />
+              <AlertDescription>
+                Access denied. The WhatsApp Configuration tab is only available to users with Manager or Admin role.
+                Your current role: {profile?.role || 'Unknown'}
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return (
+          <Suspense fallback={<RouteLoader />}>
+            <WhatsAppConfigurationTab />
           </Suspense>
         );
       default:
@@ -140,7 +158,7 @@ const Index = () => {
               </h1>
             </div>
           </header>
-          <main className="flex-1 p-6 bg-background">
+          <main className="flex-1 p-4 bg-background">
             {renderContent()}
           </main>
         </div>

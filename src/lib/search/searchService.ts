@@ -304,7 +304,6 @@ export class SearchService {
       transport_expenses: ['expense_group', 'description'],
       label_purchases: ['vendor_id', 'sku'],
       label_payments: ['vendor', 'payment_method'],
-      adjustments: ['adjustment_type', 'description'],
       sku_configurations: ['sku'],
       factory_pricing: ['sku'],
     };

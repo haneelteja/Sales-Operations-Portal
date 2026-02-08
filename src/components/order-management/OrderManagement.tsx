@@ -1,6 +1,8 @@
-import React, { useMemo, useCallback, useState } from "react";
+import React, { useMemo, useCallback, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { getQueryConfig } from "@/lib/query-configs";
+import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +12,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Send } from "lucide-react";
+import { getWhatsAppConfig, sendWhatsAppMessage } from "@/services/whatsappService";
+import { logger } from "@/lib/logger";
 import * as XLSX from "xlsx";
+import { ColumnFilter } from "@/components/ui/column-filter";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 interface OrderRow {
   id: string;
@@ -37,18 +43,63 @@ interface DispatchRow {
 const OrderManagement: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { invalidateRelated } = useCacheInvalidation();
 
   // Form state for order registration
   const [orderForm, setOrderForm] = useState({
     expense_date: new Date().toISOString().split("T")[0],
     client_id: "",
     branch: "",
+    sku: "",
     number_of_cases: "",
     tentative_delivery_date: "",
   });
 
+  // Filter and sort states for Current Orders table
+  const [ordersSearchTerm, setOrdersSearchTerm] = useState("");
+  const debouncedOrdersSearchTerm = useDebouncedValue(ordersSearchTerm, 300);
+  const [ordersColumnFilters, setOrdersColumnFilters] = useState({
+    client: "",
+    branch: "",
+    sku: "",
+    number_of_cases: "",
+    tentative_delivery_date: "",
+    status: "",
+  });
+  const [ordersColumnSorts, setOrdersColumnSorts] = useState<{
+    [key: string]: 'asc' | 'desc' | null;
+  }>({
+    client: null,
+    branch: null,
+    sku: null,
+    number_of_cases: null,
+    tentative_delivery_date: null,
+    status: null,
+  });
+
+  // Filter and sort states for Orders Dispatched table
+  const [dispatchSearchTerm, setDispatchSearchTerm] = useState("");
+  const debouncedDispatchSearchTerm = useDebouncedValue(dispatchSearchTerm, 300);
+  const [dispatchColumnFilters, setDispatchColumnFilters] = useState({
+    client: "",
+    branch: "",
+    sku: "",
+    cases: "",
+    delivery_date: "",
+  });
+  const [dispatchColumnSorts, setDispatchColumnSorts] = useState<{
+    [key: string]: 'asc' | 'desc' | null;
+  }>({
+    client: null,
+    branch: null,
+    sku: null,
+    cases: null,
+    delivery_date: null,
+  });
+
   const { data: ordersData, isLoading: ordersLoading, error: ordersError } = useQuery({
     queryKey: ["orders"],
+    ...getQueryConfig("orders"),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("get_orders_sorted");
       if (error) {
@@ -67,13 +118,14 @@ const OrderManagement: React.FC = () => {
     },
   });
 
-  // Fetch customers for dropdown
+  // Fetch customers for dropdown (including SKU)
   const { data: customers } = useQuery({
     queryKey: ["customers"],
+    ...getQueryConfig("customers"),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, client_name, branch")
+        .select("id, client_name, branch, sku")
         .eq("is_active", true)
         .order("client_name", { ascending: true });
 
@@ -99,14 +151,19 @@ const OrderManagement: React.FC = () => {
         title: "Success",
         description: "Order created successfully!",
       });
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      invalidateRelated('orders');
       // Reset form
+      const today = new Date().toISOString().split("T")[0];
+      const defaultDeliveryDate = new Date();
+      defaultDeliveryDate.setDate(defaultDeliveryDate.getDate() + 5);
+      
       setOrderForm({
-        expense_date: new Date().toISOString().split("T")[0],
+        expense_date: today,
         client_id: "",
         branch: "",
+        sku: "",
         number_of_cases: "",
-        tentative_delivery_date: "",
+        tentative_delivery_date: defaultDeliveryDate.toISOString().split("T")[0],
       });
     },
     onError: (error: any) => {
@@ -150,14 +207,59 @@ const OrderManagement: React.FC = () => {
         .eq("id", orderId);
 
       if (deleteError) throw deleteError;
+
+      // Send "Stock Delivered" WhatsApp notification if enabled.
+      // NOTE: Message text can be changed later via User Management → WhatsApp Configurations → templates (whatsapp_templates).
+      try {
+        const whatsappConfig = await getWhatsAppConfig();
+        if (whatsappConfig.whatsapp_enabled && whatsappConfig.whatsapp_stock_delivered_enabled) {
+          const clientName = (orderData.client || orderData.client_name || "").trim();
+          const branch = (orderData.branch || "").trim();
+          if (clientName && branch) {
+            const { data: customerRows } = await supabase
+              .from("customers")
+              .select("id, client_name, whatsapp_number")
+              .eq("client_name", clientName)
+              .eq("branch", branch)
+              .not("whatsapp_number", "is", null)
+              .limit(1);
+
+            const customerRow = Array.isArray(customerRows) ? customerRows[0] : customerRows;
+            if (customerRow?.id && customerRow.whatsapp_number) {
+              const deliveryDate = orderData.tentative_delivery_date
+                ? new Date(orderData.tentative_delivery_date).toLocaleDateString("en-IN")
+                : "—";
+              const items = `${orderData.sku || ""} - ${orderData.number_of_cases ?? 0} cases`;
+              const result = await sendWhatsAppMessage({
+                customerId: customerRow.id,
+                messageType: "stock_delivered",
+                triggerType: "auto",
+                placeholders: {
+                  customerName: customerRow.client_name || clientName,
+                  orderNumber: orderId.slice(0, 8),
+                  deliveryDate,
+                  items,
+                },
+              });
+              if (result?.success) {
+                toast({
+                  title: "WhatsApp sent",
+                  description: "Stock delivered notification sent to customer.",
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn("Stock delivered WhatsApp notification skipped or failed", err);
+      }
     },
     onSuccess: () => {
       toast({
         title: "Success",
         description: "Order dispatched successfully!",
       });
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["orders-dispatch"] });
+      invalidateRelated('orders');
     },
     onError: (error: any) => {
       toast({
@@ -183,7 +285,7 @@ const OrderManagement: React.FC = () => {
         title: "Success",
         description: "Order deleted successfully!",
       });
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      invalidateRelated('orders');
     },
     onError: (error: any) => {
       toast({
@@ -196,6 +298,7 @@ const OrderManagement: React.FC = () => {
 
   const { data: dispatchData, isLoading: dispatchLoading, error: dispatchError } = useQuery({
     queryKey: ["orders-dispatch"],
+    ...getQueryConfig("orders-dispatch"),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders_dispatch")
@@ -226,44 +329,6 @@ const OrderManagement: React.FC = () => {
       });
   }, [ordersData]);
 
-  const exportOrdersToExcel = useCallback(() => {
-    if (!normalizedOrders.length) return;
-
-    const exportData = normalizedOrders.map((order) => ({
-      Client: order.client,
-      Branch: order.branch,
-      SKU: order.sku,
-      "Number of Cases": order.number_of_cases,
-      "Tentative Delivery Date": order.tentative_delivery_date,
-      Status: order.status,
-      "Created At": new Date(order.created_at).toLocaleString(),
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Current Orders");
-    const fileName = `Current_Orders_${new Date().toISOString().split("T")[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  }, [normalizedOrders]);
-
-  const exportDispatchToExcel = useCallback(() => {
-    if (!dispatchData || !dispatchData.length) return;
-
-    const exportData = (dispatchData as DispatchRow[]).map((row) => ({
-      Client: row.client,
-      Branch: row.branch,
-      SKU: row.sku,
-      Cases: row.cases,
-      "Delivery Date": row.delivery_date,
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Orders Dispatch");
-    const fileName = `Orders_Dispatch_${new Date().toISOString().split("T")[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  }, [dispatchData]);
-
   const renderStatus = (status: string) => {
     if (status === "pending") return <Badge variant="secondary">Pending</Badge>;
     if (status === "dispatched") return <Badge variant="outline">Dispatched</Badge>;
@@ -271,7 +336,7 @@ const OrderManagement: React.FC = () => {
   };
 
   // Get unique branches for selected customer
-  const getAvailableBranches = (clientId: string) => {
+  const getAvailableBranches = useCallback((clientId: string) => {
     if (!customers || !clientId) return [];
     const selectedCustomer = customers.find(c => c.id === clientId);
     if (!selectedCustomer) return [];
@@ -283,16 +348,51 @@ const OrderManagement: React.FC = () => {
       .sort();
     
     return branches;
-  };
+  }, [customers]);
+
+  // Get available SKUs for selected customer and branch
+  const getAvailableSKUs = useCallback(() => {
+    if (!customers || !orderForm.client_id || !orderForm.branch) return [];
+    
+    const selectedCustomer = customers.find(c => c.id === orderForm.client_id);
+    if (!selectedCustomer) return [];
+    
+    const skus = customers
+      .filter(c => 
+        c.client_name === selectedCustomer.client_name && 
+        c.branch === orderForm.branch &&
+        c.sku && 
+        c.sku.trim() !== ''
+      )
+      .map(c => c.sku)
+      .filter((sku, index, self) => self.indexOf(sku) === index)
+      .sort();
+    
+    return skus;
+  }, [customers, orderForm.client_id, orderForm.branch]);
 
   // Handle order form submission
   const handleOrderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!orderForm.client_id || !orderForm.branch || !orderForm.number_of_cases) {
+    // Validation: Check required fields
+    if (!orderForm.client_id || !orderForm.branch || !orderForm.number_of_cases || !orderForm.tentative_delivery_date) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validation: Tentative delivery date must be greater than order date
+    const orderDate = new Date(orderForm.expense_date);
+    const deliveryDate = new Date(orderForm.tentative_delivery_date);
+    
+    if (deliveryDate <= orderDate) {
+      toast({
+        title: "Validation Error",
+        description: "Tentative delivery date must be greater than order date",
         variant: "destructive",
       });
       return;
@@ -312,7 +412,7 @@ const OrderManagement: React.FC = () => {
       client: selectedCustomer.client_name,
       client_name: selectedCustomer.client_name,
       branch: orderForm.branch,
-      sku: "", // Optional for now
+      sku: orderForm.sku || "",
       number_of_cases: parseInt(orderForm.number_of_cases),
       tentative_delivery_date: orderForm.tentative_delivery_date,
       status: "pending",
@@ -321,37 +421,121 @@ const OrderManagement: React.FC = () => {
     createOrderMutation.mutate(newOrder);
   };
 
-  // Handle client change - auto-calculate delivery date
+  // Handle client change - auto-populate branch if single, reset SKU
   const handleClientChange = (clientId: string) => {
+    // If client is cleared (empty string), reset the form
+    if (!clientId || clientId === "") {
+      setOrderForm({
+        ...orderForm,
+        client_id: "",
+        branch: "",
+        sku: "",
+      });
+      return;
+    }
+    
+    const availableBranches = getAvailableBranches(clientId);
+    const autoBranch = availableBranches.length === 1 ? availableBranches[0] : "";
+    
     setOrderForm({
       ...orderForm,
       client_id: clientId,
-      branch: "",
+      branch: autoBranch,
+      sku: "", // Reset SKU when client changes
+    });
+  };
+
+  // Handle branch change - auto-populate SKU if single
+  const handleBranchChange = (branch: string) => {
+    const selectedCustomer = customers?.find(c => c.id === orderForm.client_id);
+    if (!selectedCustomer) {
+      setOrderForm({
+        ...orderForm,
+        branch: branch,
+        sku: "",
+      });
+      return;
+    }
+
+    const availableSKUs = customers
+      ?.filter(c => 
+        c.client_name === selectedCustomer.client_name && 
+        c.branch === branch &&
+        c.sku && 
+        c.sku.trim() !== ''
+      )
+      .map(c => c.sku)
+      .filter((sku, index, self) => self.indexOf(sku) === index) || [];
+    
+    const autoSKU = availableSKUs.length === 1 ? availableSKUs[0] : "";
+    
+    setOrderForm({
+      ...orderForm,
+      branch: branch,
+      sku: autoSKU,
     });
   };
 
   // Handle date change and auto-calculate delivery
   const handleDateChange = (date: string) => {
     const selectedDate = new Date(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Validation: Cannot select future date
+    if (selectedDate > today) {
+      toast({
+        title: "Validation Error",
+        description: "Cannot select a future date",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const deliveryDate = new Date(selectedDate);
     deliveryDate.setDate(deliveryDate.getDate() + 5);
-
-    setOrderForm({
-      ...orderForm,
-      expense_date: date,
-      tentative_delivery_date: deliveryDate.toISOString().split("T")[0],
-    });
+    
+    // Ensure delivery date is always set
+    const newDeliveryDate = orderForm.tentative_delivery_date || deliveryDate.toISOString().split("T")[0];
+    
+    // If current delivery date is before or equal to new order date, update it
+    const currentDeliveryDate = new Date(newDeliveryDate);
+    if (currentDeliveryDate <= selectedDate) {
+      setOrderForm({
+        ...orderForm,
+        expense_date: date,
+        tentative_delivery_date: deliveryDate.toISOString().split("T")[0],
+      });
+    } else {
+      setOrderForm({
+        ...orderForm,
+        expense_date: date,
+        tentative_delivery_date: newDeliveryDate,
+      });
+    }
   };
 
-  // Get unique customers for form dropdown
+  // Initialize tentative delivery date on component mount
+  useEffect(() => {
+    if (!orderForm.tentative_delivery_date) {
+      const defaultDeliveryDate = new Date(orderForm.expense_date);
+      defaultDeliveryDate.setDate(defaultDeliveryDate.getDate() + 5);
+      setOrderForm(prev => ({
+        ...prev,
+        tentative_delivery_date: defaultDeliveryDate.toISOString().split("T")[0],
+      }));
+    }
+  }, []);
+
+  // Get unique customers for form dropdown (by client_name, not by id)
   const getUniqueCustomers = useCallback(() => {
     if (!customers) return [];
-    const seenIds = new Set<string>();
+    const seenNames = new Set<string>();
     const unique = [];
     
     for (const customer of customers) {
-      if (!seenIds.has(customer.id)) {
-        seenIds.add(customer.id);
+      if (!seenNames.has(customer.client_name)) {
+        seenNames.add(customer.client_name);
         unique.push(customer);
       }
     }
@@ -359,20 +543,263 @@ const OrderManagement: React.FC = () => {
     return unique.sort((a, b) => a.client_name.localeCompare(b.client_name));
   }, [customers]);
 
+  // Filtered and sorted Current Orders
+  const filteredAndSortedOrders = useMemo(() => {
+    if (!normalizedOrders) return [];
+
+    return normalizedOrders.filter(order => {
+      // Global search
+      if (debouncedOrdersSearchTerm) {
+        const searchLower = debouncedOrdersSearchTerm.toLowerCase();
+        const matchesGlobalSearch = (
+          order.client?.toLowerCase().includes(searchLower) ||
+          order.branch?.toLowerCase().includes(searchLower) ||
+          order.sku?.toLowerCase().includes(searchLower) ||
+          order.number_of_cases?.toString().includes(searchLower) ||
+          order.tentative_delivery_date?.includes(searchLower) ||
+          order.status?.toLowerCase().includes(searchLower)
+        );
+        if (!matchesGlobalSearch) return false;
+      }
+
+      // Column filters
+      if (ordersColumnFilters.client && !order.client?.toLowerCase().includes(ordersColumnFilters.client.toLowerCase())) return false;
+      if (ordersColumnFilters.branch && !order.branch?.toLowerCase().includes(ordersColumnFilters.branch.toLowerCase())) return false;
+      if (ordersColumnFilters.sku && !order.sku?.toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
+      if (ordersColumnFilters.number_of_cases && order.number_of_cases?.toString() !== ordersColumnFilters.number_of_cases) return false;
+      if (ordersColumnFilters.tentative_delivery_date && !order.tentative_delivery_date?.includes(ordersColumnFilters.tentative_delivery_date)) return false;
+      if (ordersColumnFilters.status && order.status !== ordersColumnFilters.status) return false;
+
+      return true;
+    }).sort((a, b) => {
+      // Apply sorting
+      const sortKey = Object.keys(ordersColumnSorts).find(key => ordersColumnSorts[key] !== null);
+      if (!sortKey) {
+        // Default sort: status first, then date
+        const statusA = a.status === "pending" ? 1 : 2;
+        const statusB = b.status === "pending" ? 1 : 2;
+        if (statusA !== statusB) return statusA - statusB;
+        const dateA = new Date(a.tentative_delivery_date).getTime();
+        const dateB = new Date(b.tentative_delivery_date).getTime();
+        return dateB - dateA;
+      }
+
+      const direction = ordersColumnSorts[sortKey];
+      if (!direction) return 0;
+
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortKey) {
+        case 'client':
+          aValue = (a.client || '').toLowerCase();
+          bValue = (b.client || '').toLowerCase();
+          break;
+        case 'branch':
+          aValue = (a.branch || '').toLowerCase();
+          bValue = (b.branch || '').toLowerCase();
+          break;
+        case 'sku':
+          aValue = (a.sku || '').toLowerCase();
+          bValue = (b.sku || '').toLowerCase();
+          break;
+        case 'number_of_cases':
+          aValue = a.number_of_cases || 0;
+          bValue = b.number_of_cases || 0;
+          break;
+        case 'tentative_delivery_date':
+          aValue = new Date(a.tentative_delivery_date).getTime();
+          bValue = new Date(b.tentative_delivery_date).getTime();
+          break;
+        case 'status':
+          aValue = a.status === "pending" ? 1 : 2;
+          bValue = b.status === "pending" ? 1 : 2;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [normalizedOrders, debouncedOrdersSearchTerm, ordersColumnFilters, ordersColumnSorts]);
+
+  // Filtered and sorted Orders Dispatched
+  const filteredAndSortedDispatch = useMemo(() => {
+    if (!dispatchData) return [];
+
+    return (dispatchData as DispatchRow[]).filter(order => {
+      // Global search
+      if (debouncedDispatchSearchTerm) {
+        const searchLower = debouncedDispatchSearchTerm.toLowerCase();
+        const matchesGlobalSearch = (
+          order.client?.toLowerCase().includes(searchLower) ||
+          order.branch?.toLowerCase().includes(searchLower) ||
+          order.sku?.toLowerCase().includes(searchLower) ||
+          order.cases?.toString().includes(searchLower) ||
+          order.delivery_date?.includes(searchLower)
+        );
+        if (!matchesGlobalSearch) return false;
+      }
+
+      // Column filters
+      if (dispatchColumnFilters.client && !order.client?.toLowerCase().includes(dispatchColumnFilters.client.toLowerCase())) return false;
+      if (dispatchColumnFilters.branch && !order.branch?.toLowerCase().includes(dispatchColumnFilters.branch.toLowerCase())) return false;
+      if (dispatchColumnFilters.sku && !order.sku?.toLowerCase().includes(dispatchColumnFilters.sku.toLowerCase())) return false;
+      if (dispatchColumnFilters.cases && order.cases?.toString() !== dispatchColumnFilters.cases) return false;
+      if (dispatchColumnFilters.delivery_date && !order.delivery_date?.includes(dispatchColumnFilters.delivery_date)) return false;
+
+      return true;
+    }).sort((a, b) => {
+      // Apply sorting
+      const sortKey = Object.keys(dispatchColumnSorts).find(key => dispatchColumnSorts[key] !== null);
+      if (!sortKey) {
+        // Default sort: by delivery date descending
+        const dateA = new Date(a.delivery_date).getTime();
+        const dateB = new Date(b.delivery_date).getTime();
+        return dateB - dateA;
+      }
+
+      const direction = dispatchColumnSorts[sortKey];
+      if (!direction) return 0;
+
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortKey) {
+        case 'client':
+          aValue = (a.client || '').toLowerCase();
+          bValue = (b.client || '').toLowerCase();
+          break;
+        case 'branch':
+          aValue = (a.branch || '').toLowerCase();
+          bValue = (b.branch || '').toLowerCase();
+          break;
+        case 'sku':
+          aValue = (a.sku || '').toLowerCase();
+          bValue = (b.sku || '').toLowerCase();
+          break;
+        case 'cases':
+          aValue = a.cases || 0;
+          bValue = b.cases || 0;
+          break;
+        case 'delivery_date':
+          aValue = new Date(a.delivery_date).getTime();
+          bValue = new Date(b.delivery_date).getTime();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [dispatchData, debouncedDispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts]);
+
+  // Export functions (defined after filteredAndSortedOrders and filteredAndSortedDispatch)
+  const exportOrdersToExcel = useCallback(() => {
+    if (!filteredAndSortedOrders.length) return;
+
+    const exportData = filteredAndSortedOrders.map((order) => ({
+      Client: order.client,
+      Branch: order.branch,
+      SKU: order.sku,
+      "Number of Cases": order.number_of_cases,
+      "Tentative Delivery Date": order.tentative_delivery_date,
+      Status: order.status,
+      "Created At": new Date(order.created_at).toLocaleString(),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Current Orders");
+    const fileName = `Current_Orders_${new Date().toISOString().split("T")[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }, [filteredAndSortedOrders]);
+
+  const exportDispatchToExcel = useCallback(() => {
+    if (!filteredAndSortedDispatch.length) return;
+
+    const exportData = filteredAndSortedDispatch.map((row) => ({
+      Client: row.client,
+      Branch: row.branch,
+      SKU: row.sku,
+      Cases: row.cases,
+      "Delivery Date": row.delivery_date,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Orders Dispatch");
+    const fileName = `Orders_Dispatch_${new Date().toISOString().split("T")[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }, [filteredAndSortedDispatch]);
+
+  // Handle column filter changes for Current Orders
+  const handleOrdersColumnFilterChange = useCallback((columnKey: string, value: string) => {
+    setOrdersColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: value
+    }));
+  }, []);
+
+  const handleOrdersColumnSortChange = useCallback((columnKey: string, direction: "asc" | "desc" | null) => {
+    setOrdersColumnSorts(prev => {
+      const newSorts = { ...prev };
+      Object.keys(newSorts).forEach(key => {
+        if (key !== columnKey) {
+          newSorts[key] = null;
+        }
+      });
+      newSorts[columnKey] = direction;
+      return newSorts;
+    });
+  }, []);
+
+  // Handle column filter changes for Orders Dispatched
+  const handleDispatchColumnFilterChange = useCallback((columnKey: string, value: string) => {
+    setDispatchColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: value
+    }));
+  }, []);
+
+  const handleDispatchColumnSortChange = useCallback((columnKey: string, direction: "asc" | "desc" | null) => {
+    setDispatchColumnSorts(prev => {
+      const newSorts = { ...prev };
+      Object.keys(newSorts).forEach(key => {
+        if (key !== columnKey) {
+          newSorts[key] = null;
+        }
+      });
+      newSorts[columnKey] = direction;
+      return newSorts;
+    });
+  }, []);
+
+  // Get unique values for filter options
+  const getUniqueOrderValues = useCallback((key: keyof OrderRow) => {
+    if (!normalizedOrders) return [];
+    const values = normalizedOrders.map(order => order[key]).filter(Boolean);
+    return Array.from(new Set(values)).sort();
+  }, [normalizedOrders]);
+
+  const getUniqueDispatchValues = useCallback((key: keyof DispatchRow) => {
+    if (!dispatchData) return [];
+    const values = (dispatchData as DispatchRow[]).map(order => order[key]).filter(Boolean);
+    return Array.from(new Set(values)).sort();
+  }, [dispatchData]);
+
+  // Get max date (today) for date input
+  const maxDate = new Date().toISOString().split("T")[0];
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Order Management</h2>
-          <p className="text-sm text-muted-foreground">Create, manage, and dispatch customer orders.</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={exportOrdersToExcel} disabled={!normalizedOrders.length}>
-            Export Orders
-          </Button>
-          <Button variant="outline" onClick={exportDispatchToExcel} disabled={!dispatchData?.length}>
-            Export Dispatch
-          </Button>
         </div>
       </div>
 
@@ -383,24 +810,27 @@ const OrderManagement: React.FC = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleOrderSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* First Row: Date, Client, Branch */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="order-date">Date</Label>
+                <Label htmlFor="order-date">Date *</Label>
                 <Input
                   id="order-date"
                   type="date"
+                  max={maxDate}
                   value={orderForm.expense_date}
                   onChange={(e) => handleDateChange(e.target.value)}
+                  required
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="order-client">Client *</Label>
-                <Select value={orderForm.client_id} onValueChange={handleClientChange}>
+                <Select value={orderForm.client_id || ""} onValueChange={handleClientChange}>
                   <SelectTrigger id="order-client">
                     <SelectValue placeholder="Select client" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
                     {getUniqueCustomers().map((customer) => (
                       <SelectItem key={customer.id} value={customer.id}>
                         {customer.client_name}
@@ -412,14 +842,67 @@ const OrderManagement: React.FC = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="order-branch">Branch *</Label>
-                <Select value={orderForm.branch} onValueChange={(value) => setOrderForm({ ...orderForm, branch: value })} disabled={!orderForm.client_id}>
+                <Select 
+                  value={orderForm.branch || ""} 
+                  onValueChange={handleBranchChange} 
+                  disabled={!orderForm.client_id}
+                >
                   <SelectTrigger id="order-branch">
-                    <SelectValue placeholder="Select branch" />
+                    <SelectValue placeholder={getAvailableBranches(orderForm.client_id).length === 0 ? "Select branch" : "Select branch"} />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
                     {getAvailableBranches(orderForm.client_id).map((branch, index) => (
                       <SelectItem key={index} value={branch}>
                         {branch}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Second Row: Tentative Delivery Date, SKU, Number of Cases */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="order-delivery">Tentative Delivery Date *</Label>
+                <Input
+                  id="order-delivery"
+                  type="date"
+                  min={orderForm.expense_date ? new Date(new Date(orderForm.expense_date).getTime() + 86400000).toISOString().split("T")[0] : undefined}
+                  value={orderForm.tentative_delivery_date}
+                  onChange={(e) => {
+                    const selectedDate = new Date(e.target.value);
+                    const orderDate = new Date(orderForm.expense_date);
+                    
+                    if (selectedDate <= orderDate) {
+                      toast({
+                        title: "Validation Error",
+                        description: "Tentative delivery date must be greater than order date",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    
+                    setOrderForm({ ...orderForm, tentative_delivery_date: e.target.value });
+                  }}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="order-sku">SKU</Label>
+                <Select 
+                  value={orderForm.sku || ""} 
+                  onValueChange={(value) => setOrderForm({ ...orderForm, sku: value })} 
+                  disabled={!orderForm.client_id || !orderForm.branch}
+                >
+                  <SelectTrigger id="order-sku">
+                    <SelectValue placeholder="Select SKU" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
+                    {getAvailableSKUs().map((sku, index) => (
+                      <SelectItem key={index} value={sku}>
+                        {sku}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -435,16 +918,7 @@ const OrderManagement: React.FC = () => {
                   value={orderForm.number_of_cases}
                   onChange={(e) => setOrderForm({ ...orderForm, number_of_cases: e.target.value })}
                   placeholder="Number of cases"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="order-delivery">Tentative Delivery Date</Label>
-                <Input
-                  id="order-delivery"
-                  type="date"
-                  value={orderForm.tentative_delivery_date}
-                  onChange={(e) => setOrderForm({ ...orderForm, tentative_delivery_date: e.target.value })}
+                  required
                 />
               </div>
             </div>
@@ -458,117 +932,363 @@ const OrderManagement: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="relative">
         <CardHeader>
-          <CardTitle className="text-lg font-medium text-gray-800">Current Orders</CardTitle>
+          <div className="flex flex-wrap items-center gap-4">
+            <CardTitle className="text-lg font-medium text-gray-800">Current Orders</CardTitle>
+            <div className="flex-1 min-w-[200px] max-w-sm">
+              <Input
+                placeholder="Search orders..."
+                value={ordersSearchTerm}
+                onChange={(e) => setOrdersSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="hidden md:block ml-auto">
+              <Button 
+                variant="outline" 
+                onClick={exportOrdersToExcel} 
+                disabled={!filteredAndSortedOrders.length}
+                size="sm"
+                className="whitespace-nowrap"
+              >
+                Export Orders
+              </Button>
+            </div>
+          </div>
+          {/* Mobile export button */}
+          <div className="md:hidden mt-3 flex justify-end">
+            <Button 
+              variant="outline" 
+              onClick={exportOrdersToExcel} 
+              disabled={!filteredAndSortedOrders.length}
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              Export Orders
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {ordersError && <p className="text-sm text-red-500">Failed to load orders.</p>}
           {ordersLoading ? (
             <p className="text-sm text-gray-600">Loading orders...</p>
           ) : (
-            <Table className="table-auto w-full border-collapse">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="border-b">Client</TableHead>
-                  <TableHead className="border-b">Branch</TableHead>
-                  <TableHead className="border-b">SKU</TableHead>
-                  <TableHead className="border-b text-right">Cases</TableHead>
-                  <TableHead className="border-b">Delivery</TableHead>
-                  <TableHead className="border-b">Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {normalizedOrders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50">
-                    <TableCell>{order.client || "-"}</TableCell>
-                    <TableCell>{order.branch || "-"}</TableCell>
-                    <TableCell>{order.sku || "-"}</TableCell>
-                    <TableCell className="text-right">{order.number_of_cases ?? "-"}</TableCell>
-                    <TableCell>{order.tentative_delivery_date || "-"}</TableCell>
-                    <TableCell>{renderStatus(order.status)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => dispatchOrderMutation.mutate(order.id)}
-                          disabled={dispatchOrderMutation.isPending}
-                          title="Dispatch this order"
-                          className="text-green-600 hover:text-green-700"
-                        >
-                          <Send className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (window.confirm("Are you sure you want to delete this order?")) {
-                              deleteOrderMutation.mutate(order.id);
-                            }
-                          }}
-                          disabled={deleteOrderMutation.isPending}
-                          title="Delete this order"
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+            <>
+              <div className="w-full overflow-x-auto">
+                <Table className="table-auto w-full border-collapse min-w-full">
+                <TableHeader>
+                  <TableRow className="bg-gradient-to-r from-blue-100 via-blue-50 to-blue-100 hover:from-blue-200 hover:via-blue-100 hover:to-blue-200 transition-all duration-200">
+                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Client</span>
+                        <ColumnFilter
+                          columnKey="client"
+                          columnName="Client"
+                          filterValue={ordersColumnFilters.client}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('client', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('client', '')}
+                          sortDirection={ordersColumnSorts.client}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('client', direction)}
+                          dataType="text"
+                          options={getUniqueOrderValues('client') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
                       </div>
-                    </TableCell>
+                    </TableHead>
+                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Branch</span>
+                        <ColumnFilter
+                          columnKey="branch"
+                          columnName="Branch"
+                          filterValue={ordersColumnFilters.branch}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('branch', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('branch', '')}
+                          sortDirection={ordersColumnSorts.branch}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('branch', direction)}
+                          dataType="text"
+                          options={getUniqueOrderValues('branch') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>SKU</span>
+                        <ColumnFilter
+                          columnKey="sku"
+                          columnName="SKU"
+                          filterValue={ordersColumnFilters.sku}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('sku', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('sku', '')}
+                          sortDirection={ordersColumnSorts.sku}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('sku', direction)}
+                          dataType="text"
+                          options={getUniqueOrderValues('sku') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold text-right">
+                      <div className="flex items-center justify-end gap-2 text-gray-800">
+                        <span>Cases</span>
+                        <ColumnFilter
+                          columnKey="number_of_cases"
+                          columnName="Cases"
+                          filterValue={ordersColumnFilters.number_of_cases}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('number_of_cases', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('number_of_cases', '')}
+                          sortDirection={ordersColumnSorts.number_of_cases}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('number_of_cases', direction)}
+                          dataType="number"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Delivery</span>
+                        <ColumnFilter
+                          columnKey="tentative_delivery_date"
+                          columnName="Delivery Date"
+                          filterValue={ordersColumnFilters.tentative_delivery_date}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('tentative_delivery_date', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('tentative_delivery_date', '')}
+                          sortDirection={ordersColumnSorts.tentative_delivery_date}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('tentative_delivery_date', direction)}
+                          dataType="date"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Status</span>
+                        <ColumnFilter
+                          columnKey="status"
+                          columnName="Status"
+                          filterValue={ordersColumnFilters.status}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('status', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('status', '')}
+                          sortDirection={ordersColumnSorts.status}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('status', direction)}
+                          dataType="text"
+                          options={['pending', 'dispatched']}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="text-right text-gray-800 font-semibold border-b border-blue-200/50">Actions</TableHead>
                   </TableRow>
-                ))}
-                {!normalizedOrders.length && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-sm text-gray-600 py-8">
-                      No orders found.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredAndSortedOrders.map((order) => (
+                    <TableRow key={order.id} className="hover:bg-gray-50">
+                      <TableCell>{order.client || "-"}</TableCell>
+                      <TableCell>{order.branch || "-"}</TableCell>
+                      <TableCell>{order.sku || "-"}</TableCell>
+                      <TableCell className="text-right">{order.number_of_cases ?? "-"}</TableCell>
+                      <TableCell>{order.tentative_delivery_date || "-"}</TableCell>
+                      <TableCell>{renderStatus(order.status)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => dispatchOrderMutation.mutate(order.id)}
+                            disabled={dispatchOrderMutation.isPending}
+                            title="Dispatch this order"
+                            className="text-green-600 hover:text-green-700"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (window.confirm("Are you sure you want to delete this order?")) {
+                                deleteOrderMutation.mutate(order.id);
+                              }
+                            }}
+                            disabled={deleteOrderMutation.isPending}
+                            title="Delete this order"
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!filteredAndSortedOrders.length && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-sm text-gray-600 py-8">
+                        No orders found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="relative">
         <CardHeader>
-          <CardTitle className="text-lg font-medium text-gray-800">Orders Dispatch</CardTitle>
+          <div className="flex flex-wrap items-center gap-4">
+            <CardTitle className="text-lg font-medium text-gray-800">Orders Dispatched</CardTitle>
+            <div className="flex-1 min-w-[200px] max-w-sm">
+              <Input
+                placeholder="Search dispatch records..."
+                value={dispatchSearchTerm}
+                onChange={(e) => setDispatchSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="hidden md:block ml-auto">
+              <Button 
+                variant="outline" 
+                onClick={exportDispatchToExcel} 
+                disabled={!filteredAndSortedDispatch.length}
+                size="sm"
+                className="whitespace-nowrap"
+              >
+                Export Dispatch
+              </Button>
+            </div>
+          </div>
+          {/* Mobile export button */}
+          <div className="md:hidden mt-3 flex justify-end">
+            <Button 
+              variant="outline" 
+              onClick={exportDispatchToExcel} 
+              disabled={!filteredAndSortedDispatch.length}
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              Export Dispatch
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {dispatchError && <p className="text-sm text-red-500">Failed to load dispatch data.</p>}
           {dispatchLoading ? (
             <p className="text-sm text-gray-600">Loading dispatch data...</p>
           ) : (
-            <Table className="table-auto w-full border-collapse">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="border-b">Client</TableHead>
-                  <TableHead className="border-b">Branch</TableHead>
-                  <TableHead className="border-b">SKU</TableHead>
-                  <TableHead className="border-b text-right">Cases</TableHead>
-                  <TableHead className="border-b">Delivery Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(dispatchData as DispatchRow[] | undefined)?.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50">
-                    <TableCell>{order.client || "-"}</TableCell>
-                    <TableCell>{order.branch || "-"}</TableCell>
-                    <TableCell>{order.sku || "-"}</TableCell>
-                    <TableCell className="text-right">{order.cases ?? "-"}</TableCell>
-                    <TableCell>{order.delivery_date || "-"}</TableCell>
+            <>
+              <div className="w-full overflow-x-auto">
+                <Table className="table-auto w-full border-collapse min-w-full">
+                <TableHeader>
+                  <TableRow className="bg-gradient-to-r from-green-100 via-green-50 to-green-100 hover:from-green-200 hover:via-green-100 hover:to-green-200 transition-all duration-200">
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Client</span>
+                        <ColumnFilter
+                          columnKey="client"
+                          columnName="Client"
+                          filterValue={dispatchColumnFilters.client}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('client', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('client', '')}
+                          sortDirection={dispatchColumnSorts.client}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('client', direction)}
+                          dataType="text"
+                          options={getUniqueDispatchValues('client') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Branch</span>
+                        <ColumnFilter
+                          columnKey="branch"
+                          columnName="Branch"
+                          filterValue={dispatchColumnFilters.branch}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('branch', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('branch', '')}
+                          sortDirection={dispatchColumnSorts.branch}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('branch', direction)}
+                          dataType="text"
+                          options={getUniqueDispatchValues('branch') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>SKU</span>
+                        <ColumnFilter
+                          columnKey="sku"
+                          columnName="SKU"
+                          filterValue={dispatchColumnFilters.sku}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('sku', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('sku', '')}
+                          sortDirection={dispatchColumnSorts.sku}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('sku', direction)}
+                          dataType="text"
+                          options={getUniqueDispatchValues('sku') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold text-right">
+                      <div className="flex items-center justify-end gap-2 text-gray-800">
+                        <span>Cases</span>
+                        <ColumnFilter
+                          columnKey="cases"
+                          columnName="Cases"
+                          filterValue={dispatchColumnFilters.cases}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('cases', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('cases', '')}
+                          sortDirection={dispatchColumnSorts.cases}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('cases', direction)}
+                          dataType="number"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Delivery Date</span>
+                        <ColumnFilter
+                          columnKey="delivery_date"
+                          columnName="Delivery Date"
+                          filterValue={dispatchColumnFilters.delivery_date}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('delivery_date', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('delivery_date', '')}
+                          sortDirection={dispatchColumnSorts.delivery_date}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('delivery_date', direction)}
+                          dataType="date"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
                   </TableRow>
-                ))}
-                {!dispatchData?.length && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-sm text-gray-600 py-8">
-                      No dispatch records found.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredAndSortedDispatch.map((order) => (
+                    <TableRow key={order.id} className="hover:bg-gray-50">
+                      <TableCell>{order.client || "-"}</TableCell>
+                      <TableCell>{order.branch || "-"}</TableCell>
+                      <TableCell>{order.sku || "-"}</TableCell>
+                      <TableCell className="text-right">{order.cases ?? "-"}</TableCell>
+                      <TableCell>{order.delivery_date || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                  {!filteredAndSortedDispatch.length && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-sm text-gray-600 py-8">
+                        No dispatch records found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

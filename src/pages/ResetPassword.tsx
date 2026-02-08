@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -13,8 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 const RECOVERY_IN_PROGRESS_KEY = 'absolute_portal_recovery_in_progress';
 
 const ResetPassword = () => {
-  const { updatePassword, signOut } = useAuth();
+  const { updatePassword, signOut, session, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   
   const [isLoading, setIsLoading] = useState(false);
@@ -23,22 +24,74 @@ const ResetPassword = () => {
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [hasValidSession, setHasValidSession] = useState(false);
   
   const [formData, setFormData] = useState({
     newPassword: '',
     confirmPassword: '',
   });
 
+  // Check for existing session on mount
   useEffect(() => {
-    const handlePasswordReset = async () => {
-      // Check if we're on a password reset URL with hash fragments OR query parameters
+    const checkExistingSession = async () => {
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession && existingSession.user) {
+        console.log('ResetPassword: Found existing valid session on mount');
+        sessionSetRef.current = true;
+        setHasValidSession(true);
+        setIsProcessing(false);
+      }
+    };
+    checkExistingSession();
+  }, []);
+
+  // Log component mount for debugging
+  useEffect(() => {
+    console.log('ResetPassword: Component mounted', {
+      pathname: location.pathname,
+      hash: location.hash || window.location.hash,
+      search: location.search || window.location.search,
+      fullUrl: window.location.href,
+      state: location.state,
+      hasSession: !!session,
+      hasUser: !!user
+    });
+  }, [location, session, user]);
+
+  const sessionSetRef = useRef(false); // Track if session has been set to prevent re-processing
+
+  useEffect(() => {
+    let retryTimeout: NodeJS.Timeout | null = null;
+    let isMounted = true;
+    
+    const checkForTokens = (): { accessToken: string | null; refreshToken: string | null; type: string | null } => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const queryParams = new URLSearchParams(window.location.search);
       
-      // Try hash fragments first, then query parameters
       const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
       const type = hashParams.get('type') || queryParams.get('type');
+      
+      return { accessToken, refreshToken, type };
+    };
+
+    const processPasswordReset = async (retryCount: number = 0): Promise<void> => {
+      if (!isMounted || sessionSetRef.current) return; // Don't process if session already set
+      
+      const { accessToken, refreshToken, type } = checkForTokens();
+      
+      // Log for debugging (only first few times to avoid spam)
+      if (retryCount < 3 || (type === 'recovery' && accessToken)) {
+        console.log('ResetPassword: Checking for tokens', {
+          retryCount,
+          hash: window.location.hash.substring(0, 50) + '...', // Truncate for readability
+          search: window.location.search,
+          hasAccessToken: !!accessToken,
+          hasType: !!type,
+          type: type,
+          sessionAlreadySet: sessionSetRef.current
+        });
+      }
 
       if (accessToken && (type === 'recovery' || type === 'invite')) {
         try {
@@ -63,17 +116,24 @@ const ResetPassword = () => {
               variant: "destructive",
             });
             // Redirect to login after error
-            setTimeout(() => navigate('/auth'), 5000);
+            setTimeout(() => {
+              if (isMounted) navigate('/auth');
+            }, 5000);
+            setIsProcessing(false);
           } else {
-            // Mark recovery in progress so portal is not shown until password is set
+            sessionSetRef.current = true;
+            setHasValidSession(true);
             sessionStorage.setItem(RECOVERY_IN_PROGRESS_KEY, 'true');
-            // Clear the URL hash to clean up the URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
+            setTimeout(() => {
+              if (isMounted) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+              }
+            }, 500);
             toast({
               title: "Password Reset Ready",
               description: "Set your new password below. You will sign in after saving.",
             });
+            setIsProcessing(false);
           }
         } catch (err) {
           console.error('Error processing password reset:', err);
@@ -84,21 +144,95 @@ const ResetPassword = () => {
             variant: "destructive",
           });
           // Redirect to login after error
-          setTimeout(() => navigate('/auth'), 3000);
+          setTimeout(() => {
+            if (isMounted) navigate('/auth');
+          }, 3000);
+          setIsProcessing(false);
         }
-      } else {
-        // No valid reset tokens, redirect to login
-        navigate('/auth');
+      } else if (retryCount < 20 && !sessionSetRef.current) {
+        // Retry up to 20 times (2 seconds total) to allow hash fragments to be processed
+        // This handles the case where Supabase redirects asynchronously
+        if (retryCount === 0) {
+          console.log('ResetPassword: No tokens found on first check, starting retry loop...');
+        }
+        retryTimeout = setTimeout(() => {
+          if (isMounted && !sessionSetRef.current) {
+            processPasswordReset(retryCount + 1);
+          }
+        }, 100);
+      } else if (!sessionSetRef.current) {
+        // No valid reset tokens found after retries
+        console.warn('ResetPassword: No password reset tokens found in URL after retries', {
+          hash: window.location.hash.substring(0, 50) + '...',
+          search: window.location.search,
+          retryCount
+        });
+        
+        // Check if there's an existing valid session (user might have clicked expired link but is still logged in)
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (existingSession && existingSession.user) {
+          console.log('ResetPassword: Found existing session, allowing password reset');
+          sessionSetRef.current = true;
+          setHasValidSession(true);
+          setIsProcessing(false);
+          toast({
+            title: "Password Reset Ready",
+            description: "You can now set your new password.",
+          });
+        } else {
+          // No tokens and no session - show error and disable form
+          setHasValidSession(false);
+          setError('No valid password reset link found. The link may have expired (links expire after 1 hour). Please request a new password reset email.');
+          toast({
+            title: "Invalid Reset Link",
+            description: "No valid password reset link found. The link may have expired. Please request a new password reset email.",
+            variant: "destructive",
+          });
+          setIsProcessing(false);
+          // Don't redirect immediately - let user see the error and option to request new link
+        }
       }
-      
-      setIsProcessing(false);
     };
 
-    handlePasswordReset();
+    // Start processing
+    processPasswordReset();
+
+    // Also listen for hash changes (in case hash arrives after component mounts)
+    const handleHashChange = () => {
+      if (isMounted && isProcessing && !sessionSetRef.current) {
+        console.log('ResetPassword: Hash change detected, rechecking tokens');
+        processPasswordReset(0);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      sessionSetRef.current = false; // Reset on unmount
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+      window.removeEventListener('hashchange', handleHashChange);
+    };
   }, [navigate, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if we have a valid session before allowing password reset
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    if (!currentSession || !currentSession.user) {
+      setError('No valid session found. Please use a fresh password reset link.');
+      toast({
+        title: "Session Expired",
+        description: "No valid session found. Please request a new password reset email.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
     setError('');
 
@@ -128,6 +262,10 @@ const ResetPassword = () => {
         sessionStorage.removeItem(RECOVERY_IN_PROGRESS_KEY);
         await signOut();
         setSuccess(true);
+        
+        // Clear the URL hash AFTER successful password reset
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
         toast({
           title: "Password Reset Success",
           description: "Please sign in with your new password.",
@@ -152,8 +290,8 @@ const ResetPassword = () => {
 
   if (isProcessing) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-        <Card className="w-full max-w-md">
+      <div className="fixed inset-0 min-h-screen w-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4 overflow-auto">
+        <Card className="w-full max-w-md mx-auto my-auto">
           <CardHeader className="text-center">
             <div className="flex items-center justify-center mb-4">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
@@ -172,8 +310,8 @@ const ResetPassword = () => {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 p-4">
-        <Card className="w-full max-w-md">
+      <div className="fixed inset-0 min-h-screen w-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 p-4 overflow-auto">
+        <Card className="w-full max-w-md mx-auto my-auto">
           <CardHeader className="text-center">
             <div className="flex items-center justify-center mb-4">
               <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center">
@@ -196,8 +334,8 @@ const ResetPassword = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <Card className="w-full max-w-md">
+    <div className="fixed inset-0 min-h-screen w-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4 overflow-auto">
+      <Card className="w-full max-w-md mx-auto my-auto">
         <CardHeader className="text-center">
           <div className="flex items-center justify-center mb-4">
             <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
@@ -238,6 +376,7 @@ const ResetPassword = () => {
                   value={formData.newPassword}
                   onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
                   required
+                  disabled={!hasValidSession || isProcessing}
                   className="pr-10"
                 />
                 <Button
@@ -266,6 +405,7 @@ const ResetPassword = () => {
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                   required
+                  disabled={!hasValidSession || isProcessing}
                   className="pr-10"
                 />
                 <Button
@@ -284,12 +424,18 @@ const ResetPassword = () => {
               </div>
             </div>
             
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isLoading || !hasValidSession || isProcessing}
+            >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Resetting Password...
                 </>
+              ) : !hasValidSession ? (
+                'Waiting for Valid Session...'
               ) : (
                 'Reset Password'
               )}

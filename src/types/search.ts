@@ -9,7 +9,6 @@ export type SearchModule =
   | 'transport_expenses'
   | 'label_purchases'
   | 'label_payments'
-  | 'adjustments'
   | 'sku_configurations'
   | 'factory_pricing';
 
@@ -225,17 +224,6 @@ export const SEARCH_CONFIGS: Record<SearchModule, SearchConfig> = {
       { name: 'payment_date', label: 'Payment Date', type: 'date', searchable: false, filterable: true },
     ],
     defaultSort: { field: 'payment_date', order: 'desc' },
-    enableFullTextSearch: true,
-  },
-  adjustments: {
-    module: 'adjustments',
-    fields: [
-      { name: 'adjustment_type', label: 'Type', type: 'text', searchable: true, filterable: true },
-      { name: 'amount', label: 'Amount', type: 'number', searchable: false, filterable: true },
-      { name: 'description', label: 'Description', type: 'text', searchable: true, filterable: true },
-      { name: 'adjustment_date', label: 'Date', type: 'date', searchable: false, filterable: true },
-    ],
-    defaultSort: { field: 'adjustment_date', order: 'desc' },
     enableFullTextSearch: true,
   },
   sku_configurations: {

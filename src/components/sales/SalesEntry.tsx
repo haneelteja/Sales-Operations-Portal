@@ -2,6 +2,9 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
+import { getQueryConfig } from "@/lib/query-configs";
+import { useTransactionFilters } from "@/components/sales/hooks/useTransactionFilters";
 import type { 
   Customer, 
   SalesTransaction, 
@@ -18,15 +21,104 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MobileTable } from "@/components/ui/mobile-table";
 import { useMobileDetection, MOBILE_CLASSES } from "@/lib/mobile-utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Trash2, Edit, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { Pencil, Trash2, Edit, Download, ChevronLeft, ChevronRight, FileText, Loader2 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { useAutoSave } from "@/hooks/useAutoSave";
+import { saleFormSchema, paymentFormSchema, salesItemSchema } from "@/lib/validation/schemas";
+import { safeValidate } from "@/lib/validation/utils";
+import { logger } from "@/lib/logger";
+import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
+import { useInvoiceGeneration, useInvoice, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
+import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
+
+// Invoice Actions Component
+const InvoiceActions = ({ 
+  transaction, 
+  customer, 
+  onGenerate, 
+  onDownload,
+  isGenerating 
+}: { 
+  transaction: SalesTransaction;
+  customer?: Customer;
+  onGenerate: (transaction: SalesTransaction) => void;
+  onDownload: (invoice: any, format: 'word' | 'pdf') => void;
+  isGenerating: boolean;
+}) => {
+  const { data: invoice, isLoading: invoiceLoading } = useInvoice(transaction.id);
+  
+  if (transaction.transaction_type !== 'sale') return null;
+  
+  if (invoiceLoading) {
+    return (
+      <Button variant="outline" size="sm" disabled>
+        <Loader2 className="h-4 w-4 animate-spin" />
+      </Button>
+    );
+  }
+  
+  if (invoice) {
+    return (
+      <>
+        {invoice.word_file_url && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onDownload(invoice, 'word')}
+            title="Download Word Invoice"
+          >
+            <FileText className="h-4 w-4" />
+          </Button>
+        )}
+        {invoice.pdf_file_url && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onDownload(invoice, 'pdf')}
+            title="Download PDF Invoice"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        )}
+      </>
+    );
+  }
+  
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => onGenerate(transaction)}
+      disabled={isGenerating}
+      title="Generate Invoice"
+    >
+      {isGenerating ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <FileText className="h-4 w-4" />
+      )}
+    </Button>
+  );
+};
+
+/** Cell that shows invoice number for a transaction (sales only). */
+const InvoiceNumberCell = ({
+  transactionId,
+  transactionType,
+}: {
+  transactionId: string;
+  transactionType: string;
+}) => {
+  const { data: invoice } = useInvoice(transactionType === 'sale' ? transactionId : null);
+  if (transactionType !== 'sale') return <span className="text-muted-foreground">—</span>;
+  return <span>{invoice?.invoice_number ?? '—'}</span>;
+};
 
 const SalesEntry = () => {
   const { isMobileDevice } = useMobileDetection();
+  const [activeTab, setActiveTab] = useState<string>("sale");
   const [saleForm, setSaleForm] = useState({
     customer_id: "",
     amount: "",
@@ -80,36 +172,69 @@ const SalesEntry = () => {
     transaction_date: "",
     branch: ""
   });
-  const [searchTerm, setSearchTerm] = useState("");
+  // Use centralized filter state hook
+  const {
+    searchTerm,
+    columnFilters,
+    columnSorts,
+    currentPage,
+    pageSize,
+    setSearchTerm,
+    setColumnFilter,
+    clearColumnFilter,
+    setColumnSort,
+    setPage,
+    resetFilters,
+  } = useTransactionFilters(50);
+  
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
-  const [columnFilters, setColumnFilters] = useState<{
-    date: string | string[];
-    customer: string | string[];
-    branch: string | string[];
-    type: string | string[];
-    sku: string | string[];
-    amount: string | string[];
-  }>({
-    date: "",
-    customer: "",
-    branch: "",
-    type: "",
-    sku: "",
-    amount: ""
-  });
-  const [columnSorts, setColumnSorts] = useState<{[key: string]: 'asc' | 'desc' | null}>({
-    date: null,
-    customer: null,
-    branch: null,
-    type: null,
-    sku: null,
-    amount: null
-  });
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(50); // Transactions per page
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { invalidateRelated } = useCacheInvalidation();
+  
+  // Invoice generation hooks
+  const generateInvoice = useInvoiceGeneration();
+  const downloadInvoice = useInvoiceDownload();
+
+  // Auto-save form data to prevent data loss from session timeouts
+  
+  // Memoized load handlers to prevent infinite loops in useAutoSave
+  const handleSaleFormLoad = useCallback((savedData: typeof saleForm) => {
+    if (savedData && Object.values(savedData).some(v => v !== '')) {
+      setSaleForm(savedData);
+      toast({
+        title: "Form data restored",
+        description: "Your previous sale form data has been restored.",
+      });
+    }
+  }, [toast]);
+
+  const handlePaymentFormLoad = useCallback((savedData: typeof paymentForm) => {
+    if (savedData && Object.values(savedData).some(v => v !== '')) {
+      setPaymentForm(savedData);
+      toast({
+        title: "Form data restored",
+        description: "Your previous payment form data has been restored.",
+      });
+    }
+  }, [toast]);
+
+  const handleSalesItemsLoad = useCallback((savedData: { items: typeof salesItems, currentItem: typeof currentItem, isSingleSKUMode: boolean }) => {
+    if (savedData?.items && savedData.items.length > 0) {
+      setSalesItems(savedData.items);
+      if (savedData.currentItem) {
+        setCurrentItem(savedData.currentItem);
+      }
+      if (savedData.isSingleSKUMode !== undefined) {
+        setIsSingleSKUMode(savedData.isSingleSKUMode);
+      }
+      toast({
+        title: "Sales items restored",
+        description: "Your previous sales items have been restored.",
+      });
+    }
+  }, [toast]);
 
   // Auto-save form data to prevent data loss from session timeouts
   const { loadData: loadSaleFormData, clearSavedData: clearSaleFormData } = useAutoSave({
@@ -117,15 +242,7 @@ const SalesEntry = () => {
     data: saleForm,
     enabled: true,
     debounceDelay: 2000,
-    onLoad: (savedData) => {
-      if (savedData && Object.values(savedData).some(v => v !== '')) {
-        setSaleForm(savedData);
-        toast({
-          title: "Form data restored",
-          description: "Your previous sale form data has been restored.",
-        });
-      }
-    },
+    onLoad: handleSaleFormLoad,
   });
 
   const { loadData: loadPaymentFormData, clearSavedData: clearPaymentFormData } = useAutoSave({
@@ -133,15 +250,7 @@ const SalesEntry = () => {
     data: paymentForm,
     enabled: true,
     debounceDelay: 2000,
-    onLoad: (savedData) => {
-      if (savedData && Object.values(savedData).some(v => v !== '')) {
-        setPaymentForm(savedData);
-        toast({
-          title: "Form data restored",
-          description: "Your previous payment form data has been restored.",
-        });
-      }
-    },
+    onLoad: handlePaymentFormLoad,
   });
 
   const { loadData: loadSalesItemsData, clearSavedData: clearSalesItemsData } = useAutoSave({
@@ -149,38 +258,66 @@ const SalesEntry = () => {
     data: { items: salesItems, currentItem, isSingleSKUMode },
     enabled: true,
     debounceDelay: 2000,
-    onLoad: (savedData) => {
-      if (savedData?.items && savedData.items.length > 0) {
-        setSalesItems(savedData.items);
-        if (savedData.currentItem) {
-          setCurrentItem(savedData.currentItem);
-        }
-        if (savedData.isSingleSKUMode !== undefined) {
-          setIsSingleSKUMode(savedData.isSingleSKUMode);
-        }
-        toast({
-          title: "Sales items restored",
-          description: "Your previous sales items have been restored.",
-        });
-      }
-    },
+    onLoad: handleSalesItemsLoad,
   });
 
-  // Load saved data on mount
-  useEffect(() => {
-    loadSaleFormData();
-    loadPaymentFormData();
-    loadSalesItemsData();
-  }, [loadSaleFormData, loadPaymentFormData, loadSalesItemsData]);
+  // Function to reset sale form to default state
+  const resetSaleForm = useCallback(() => {
+    setSaleForm({
+      customer_id: "",
+      amount: "",
+      quantity: "",
+      sku: "",
+      description: "",
+      transaction_date: new Date().toISOString().split('T')[0],
+      branch: ""
+    });
+    setCurrentItem({
+      sku: "",
+      quantity: "",
+      price_per_case: "",
+      amount: "",
+      description: ""
+    });
+    setSalesItems([]);
+    setIsSingleSKUMode(false);
+    setSingleSKUData(null);
+    clearSaleFormData();
+    clearSalesItemsData();
+  }, [clearSaleFormData, clearSalesItemsData]);
+
+  // Function to reset payment form to default state
+  const resetPaymentForm = useCallback(() => {
+    setPaymentForm({
+      customer_id: "",
+      branch: "",
+      amount: "",
+      description: "",
+      transaction_date: new Date().toISOString().split('T')[0]
+    });
+    clearPaymentFormData();
+  }, [clearPaymentFormData]);
+
+  // Handle tab change - reset forms when switching tabs
+  const handleTabChange = useCallback((value: string) => {
+    setActiveTab(value);
+    // Reset forms when switching tabs
+    if (value === "sale") {
+      resetSaleForm();
+    } else if (value === "payment") {
+      resetPaymentForm();
+    }
+  }, [resetSaleForm, resetPaymentForm]);
 
   // Fetch customers for dropdown (must be before functions that use it)
   const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
     queryKey: ["customers"],
+    ...getQueryConfig("customers"),
     queryFn: async () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, client_name, branch, sku, price_per_case, created_at")
+          .select("id, client_name, branch, sku, price_per_case, created_at, whatsapp_number")
           .eq("is_active", true)
           .order("client_name", { ascending: true });
         
@@ -201,6 +338,48 @@ const SalesEntry = () => {
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
+
+  // Handle invoice generation (must be after customers query)
+  const handleGenerateInvoice = useCallback(async (transaction: SalesTransaction) => {
+    if (!transaction.customer_id || transaction.transaction_type !== 'sale') {
+      toast({
+        title: "Error",
+        description: "Invoice can only be generated for sale transactions",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const customer = customers?.find(c => c.id === transaction.customer_id);
+    if (!customer) {
+      toast({
+        title: "Error",
+        description: "Customer not found",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      await generateInvoice.mutateAsync({
+        transactionId: transaction.id,
+        transaction,
+        customer,
+      });
+    } catch (error) {
+      // Error is already handled by the hook's onError callback
+      logger.error('Invoice generation failed:', error);
+    }
+  }, [customers, generateInvoice, toast]);
+  
+  // Handle invoice download
+  const handleDownloadInvoice = useCallback(async (invoice: any, format: 'word' | 'pdf') => {
+    try {
+      await downloadInvoice.mutateAsync({ invoice, format });
+    } catch (error) {
+      logger.error('Invoice download failed:', error);
+    }
+  }, [downloadInvoice]);
 
   // Function to handle customer selection and auto-populate SKU options
   const handleCustomerChange = (customerName: string) => {
@@ -226,10 +405,13 @@ const SalesEntry = () => {
 
   // Function to add item to sales list
   const addItemToSales = () => {
-    if (!currentItem.sku || !currentItem.quantity || !currentItem.amount) {
+    // Validate current item using Zod schema
+    const validationResult = safeValidate(salesItemSchema, currentItem);
+    if (!validationResult.success) {
+      logger.error('Sales item validation failed:', validationResult.error);
       toast({
-        title: "Error",
-        description: "Please fill in SKU, Quantity (cases), and Amount",
+        title: "Validation Error",
+        description: validationResult.error,
         variant: "destructive"
       });
       return;
@@ -445,15 +627,10 @@ const SalesEntry = () => {
         description: ""
       });
 
-      // Invalidate queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sales-transactions-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
+      // Invalidate queries to refresh data using centralized hook
+      invalidateRelated('sales_transactions');
+      invalidateRelated('factory_payables');
+      invalidateRelated('transport_expenses');
     } catch (error) {
       toast({
         title: "Error",
@@ -635,10 +812,24 @@ const SalesEntry = () => {
 
   // Function to handle SKU selection
   const handleSKUChange = (sku: string) => {
+    // Auto-populate price per case when SKU is selected
+    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
+    let pricePerCase = "";
+    
+    if (selectedCustomer && saleForm.branch) {
+      const customerSKURecord = customers?.find(c => 
+        c.client_name === selectedCustomer.client_name && 
+        c.branch === saleForm.branch &&
+        c.sku === sku
+      );
+      pricePerCase = customerSKURecord?.price_per_case?.toString() || "";
+    }
+    
     setSaleForm({
       ...saleForm,
       sku,
-      amount: "" // Reset amount when SKU changes
+      amount: "", // Reset amount when SKU changes
+      price_per_case: pricePerCase // Auto-populate price per case
     });
   };
 
@@ -784,6 +975,7 @@ const SalesEntry = () => {
   // Fetch transactions (limited for performance, paginated client-side after filtering)
   const { data: allTransactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ["recent-transactions"],
+    ...getQueryConfig("recent-transactions"),
     queryFn: async () => {
       try {
         // Limit to last 90 days or max 2000 records for performance
@@ -805,6 +997,7 @@ const SalesEntry = () => {
             customers (client_name, branch)
           `, { count: 'exact' })
           .gte("created_at", ninetyDaysAgo.toISOString())
+          .order("transaction_date", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(2000); // Safety limit
         
@@ -822,8 +1015,6 @@ const SalesEntry = () => {
         throw error;
       }
     },
-    staleTime: 30000, // 30 seconds
-    cacheTime: 300000, // 5 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
@@ -1044,7 +1235,14 @@ const SalesEntry = () => {
         try {
           // Apply sorting
           const activeSort = Object.entries(columnSorts).find(([_, direction]) => direction !== null);
-          if (!activeSort) return 0;
+          // Default to reverse chronological order (latest first) if no sort is active
+          if (!activeSort) {
+            const dateA = new Date(a.transaction_date).getTime();
+            const dateB = new Date(b.transaction_date).getTime();
+            if (isNaN(dateA) || isNaN(dateB)) return 0;
+            // Latest first (descending)
+            return dateB - dateA;
+          }
 
           const [columnKey, direction] = activeSort;
 
@@ -1106,22 +1304,16 @@ const SalesEntry = () => {
     currentPage * pageSize
   );
 
-  // Column filter handlers
-  const handleColumnFilterChange = (columnKey: string, value: string | string[]) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [columnKey]: value
-    }));
-    setCurrentPage(1); // Reset to first page when filter changes
-  };
+  // Column filter handlers - now using hook methods
+  const handleColumnFilterChange = useCallback((columnKey: string, value: string | string[]) => {
+    setColumnFilter(columnKey, value);
+    // Page reset is handled by the hook automatically
+  }, [setColumnFilter]);
 
-  const handleClearColumnFilter = (columnKey: string) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [columnKey]: ""
-    }));
-    setCurrentPage(1); // Reset to first page when filter clears
-  };
+  const handleClearColumnFilter = useCallback((columnKey: string) => {
+    clearColumnFilter(columnKey);
+    // Page reset is handled by the hook automatically
+  }, [clearColumnFilter]);
 
   // Get unique values for multi-select filters
   const getUniqueCustomers = useMemo(() => {
@@ -1158,12 +1350,9 @@ const SalesEntry = () => {
     return Array.from(unique).sort();
   }, [recentTransactions]);
 
-  const handleColumnSortChange = (columnKey: string, direction: 'asc' | 'desc' | null) => {
-    setColumnSorts(prev => ({
-      ...prev,
-      [columnKey]: direction
-    }));
-  };
+  const handleColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
+    setColumnSort(columnKey, direction);
+  }, [setColumnSort]);
 
 
   // Export filtered recent transactions to Excel
@@ -1259,7 +1448,7 @@ const SalesEntry = () => {
       
       console.log('Inserting sales transaction:', saleData);
       
-      const { error: saleError } = await supabase
+      const { data: insertedTransactions, error: saleError } = await supabase
         .from("sales_transactions")
         .insert(saleData)
         .select();
@@ -1274,6 +1463,11 @@ const SalesEntry = () => {
         }
         
         throw saleError;
+      }
+
+      // Return the inserted transaction for auto-invoice generation
+      if (!insertedTransactions || insertedTransactions.length === 0) {
+        throw new Error("Failed to retrieve inserted transaction");
       }
 
       // Get factory pricing for amount calculation
@@ -1397,25 +1591,65 @@ const SalesEntry = () => {
         });
         throw new Error(`Transport transaction creation failed: ${transportError.message}`);
       }
+
+      // Return the inserted transaction for auto-invoice generation
+      return insertedTransactions;
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (insertedTransactions, variables) => {
       toast({ title: "Success", description: "Sale recorded successfully!" });
       
-      // Check if factory pricing exists for this SKU
-      if (variables.sku) {
-        // This will be handled in the mutation function, but we can add additional validation here
+      // Check if auto invoice generation is enabled
+      const autoEnabled = await isAutoInvoiceEnabled();
+      
+      // Auto-generate invoice for the sale transaction (only if enabled)
+      if (autoEnabled && insertedTransactions && insertedTransactions.length > 0) {
+        const transaction = insertedTransactions[0] as SalesTransaction;
+        
+        // Only generate invoice for sale transactions
+        if (transaction.transaction_type === 'sale' && transaction.customer_id) {
+          try {
+            // Get customer details (try from cache first, then fetch if needed)
+            let customer = customers?.find(c => c.id === transaction.customer_id);
+            
+            // If customer not in cache, fetch it
+            if (!customer) {
+              const { data: customerData, error: customerError } = await supabase
+                .from("customers")
+                .select("*")
+                .eq("id", transaction.customer_id)
+                .single();
+              
+              if (customerError || !customerData) {
+                throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
+              }
+              customer = customerData as Customer;
+            }
+            
+            // Generate invoice automatically (both DOCX and PDF)
+            await generateInvoice.mutateAsync({
+              transactionId: transaction.id,
+              transaction,
+              customer,
+            });
+            
+            toast({ 
+              title: "Invoice Generated", 
+              description: "Invoice (DOCX & PDF) generated and saved to Google Drive!" 
+            });
+          } catch (error) {
+            // Log error but don't block the success flow
+            logger.error('Auto-invoice generation failed:', error);
+            toast({
+              title: "Invoice Generation Warning",
+              description: "Sale recorded successfully, but invoice generation failed. You can generate it manually.",
+              variant: "destructive"
+            });
+          }
+        }
       }
       
-      setSaleForm({
-        customer_id: "",
-        amount: "",
-        quantity: "",
-        sku: "",
-        description: "",
-        transaction_date: new Date().toISOString().split('T')[0],
-        branch: "",
-        price_per_case: ""
-      });
+      // Reset form completely, including customer_id
+      resetSaleForm();
       // Clear auto-saved data after successful submission
       clearSaleFormData();
       clearSalesItemsData();
@@ -1427,14 +1661,11 @@ const SalesEntry = () => {
         amount: "",
         description: ""
       });
-      queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sales-transactions-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-summary"] });
+      // Invalidate related queries using centralized hook
+      invalidateRelated('sales_transactions');
+      invalidateRelated('factory_payables');
+      invalidateRelated('transport_expenses');
+      invalidateRelated('invoices');
     },
     onError: (error) => {
       console.error('Sale mutation error:', error);
@@ -1516,6 +1747,11 @@ const SalesEntry = () => {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: { id: string } & Partial<SaleForm>) => {
+      // Store original transaction values before update for finding related records
+      const originalDescription = editingTransaction?.description || '';
+      const originalTransactionDate = editingTransaction?.transaction_date || '';
+      const originalCustomerId = editingTransaction?.customer_id || '';
+
       // Update sales transaction
       const { error: salesError } = await supabase
         .from("sales_transactions")
@@ -1532,8 +1768,11 @@ const SalesEntry = () => {
 
       if (salesError) throw salesError;
 
+      // Get customer info for transport update
+      const selectedCustomer = customers?.find(c => c.id === data.customer_id);
+
       // Update corresponding factory transaction if it's a sale transaction
-      if (data.sku && data.quantity) {
+      if (data.sku && data.quantity && originalCustomerId) {
         // Get factory pricing for amount calculation
         const { data: factoryPricing } = await supabase
           .from("factory_pricing")
@@ -1546,35 +1785,70 @@ const SalesEntry = () => {
         const quantity = parseInt(data.quantity);
         const factoryAmount = quantity * factoryCostPerCase;
 
-        // Update factory payables transaction
+        // Get customer name for description update
+        const selectedCustomer = customers?.find(c => c.id === data.customer_id);
+        const newDescription = selectedCustomer?.client_name || "Unknown Client";
+
+        // Find and update factory payables transaction using reliable identifiers:
+        // customer_id, transaction_date, sku, and transaction_type
+        // This is more reliable than matching by description which can vary
         const { error: factoryError } = await supabase
           .from("factory_payables")
           .update({
             sku: data.sku,
             amount: factoryAmount,
             quantity: quantity,
-            description: `Production for ${data.description}`,
-            transaction_date: data.transaction_date
+            description: newDescription,
+            transaction_date: data.transaction_date,
+            customer_id: data.customer_id
           })
-          .eq("description", `Production for ${editingTransaction?.description}`)
-          .eq("transaction_date", editingTransaction?.transaction_date);
+          .eq("customer_id", originalCustomerId)
+          .eq("transaction_date", originalTransactionDate)
+          .eq("sku", editingTransaction?.sku || '')
+          .eq("transaction_type", "production");
 
         if (factoryError) {
-          console.warn("Failed to update factory transaction:", factoryError);
+          console.error("Failed to update factory transaction:", factoryError);
+          console.error("Update attempt details:", {
+            originalCustomerId,
+            originalTransactionDate,
+            originalSku: editingTransaction?.sku,
+            newCustomerId: data.customer_id,
+            newTransactionDate: data.transaction_date,
+            newSku: data.sku
+          });
+        } else {
+          console.log("Factory transaction updated successfully");
+        }
+      }
+
+      // Update corresponding transport transaction
+      if (selectedCustomer && originalCustomerId) {
+        const { error: transportError } = await supabase
+          .from("transport_expenses")
+          .update({
+            expense_date: data.transaction_date,
+            description: selectedCustomer ? `${selectedCustomer.client_name}-${selectedCustomer.branch} Transport` : 'Client-Branch Transport',
+            client_id: data.customer_id,
+            client_name: selectedCustomer?.client_name || 'N/A',
+            branch: selectedCustomer?.branch || 'N/A'
+          })
+          .eq("expense_group", "Client Sale Transport")
+          .eq("client_id", originalCustomerId)
+          .eq("expense_date", originalTransactionDate);
+
+        if (transportError) {
+          console.warn("Failed to update transport transaction:", transportError);
         }
       }
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Transaction updated successfully!" });
       setEditingTransaction(null);
-      queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sales-transactions-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
+      // Use centralized cache invalidation
+      invalidateRelated('sales_transactions');
+      invalidateRelated('factory_payables');
+      invalidateRelated('transport_expenses');
     },
     onError: (error) => {
       toast({ 
@@ -1636,14 +1910,10 @@ const SalesEntry = () => {
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Transaction deleted successfully!" });
-      queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sales-transactions-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
+      // Invalidate related queries using centralized hook
+      invalidateRelated('sales_transactions');
+      invalidateRelated('factory_payables');
+      invalidateRelated('transport_expenses');
     },
     onError: (error) => {
       toast({ 
@@ -1656,27 +1926,37 @@ const SalesEntry = () => {
 
   const handleSaleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!saleForm.customer_id || !saleForm.amount || !saleForm.sku) {
+    
+    // Validate form data using Zod schema
+    const validationResult = safeValidate(saleFormSchema, saleForm);
+    if (!validationResult.success) {
+      logger.error('Sale form validation failed:', validationResult.error);
       toast({ 
-        title: "Error", 
-        description: "Please fill in all required fields",
+        title: "Validation Error", 
+        description: validationResult.error,
         variant: "destructive"
       });
       return;
     }
+    
     saleMutation.mutate(saleForm);
   };
 
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!paymentForm.customer_id || !paymentForm.branch || !paymentForm.amount) {
+    
+    // Validate form data using Zod schema
+    const validationResult = safeValidate(paymentFormSchema, paymentForm);
+    if (!validationResult.success) {
+      logger.error('Payment form validation failed:', validationResult.error);
       toast({ 
-        title: "Error", 
-        description: "Please fill in all required fields (Customer, Branch, and Amount)",
+        title: "Validation Error", 
+        description: validationResult.error,
         variant: "destructive"
       });
       return;
     }
+    
     paymentMutation.mutate(paymentForm);
   };
 
@@ -1704,7 +1984,7 @@ const SalesEntry = () => {
     saleMutation.mutate(singleItemSale);
   };
 
-  const handleEditClick = (transaction: SalesTransaction) => {
+  const handleEditClick = useCallback((transaction: SalesTransaction) => {
     setEditingTransaction(transaction);
     setEditForm({
       customer_id: transaction.customer_id || "",
@@ -1716,7 +1996,7 @@ const SalesEntry = () => {
       branch: transaction.branch || "",
       price_per_case: ""
     });
-  };
+  }, []); // Stable function - no dependencies
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1733,15 +2013,15 @@ const SalesEntry = () => {
     });
   };
 
-  const handleDeleteClick = (id: string) => {
+  const handleDeleteClick = useCallback((id: string) => {
     if (confirm("Are you sure you want to delete this transaction?")) {
       deleteMutation.mutate(id);
     }
-  };
+  }, [deleteMutation]); // Only recreate if deleteMutation changes
 
   return (
     <div className="space-y-6">
-      <Tabs defaultValue="sale" className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="sale">Record Sale</TabsTrigger>
           <TabsTrigger value="payment">Record Customer Payment</TabsTrigger>
@@ -1764,15 +2044,28 @@ const SalesEntry = () => {
                     <Input
                       id="sale-date"
                       type="date"
+                      max={new Date().toISOString().split('T')[0]}
                       value={saleForm.transaction_date}
-                      onChange={(e) => setSaleForm({...saleForm, transaction_date: e.target.value})}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value;
+                        const today = new Date().toISOString().split('T')[0];
+                        if (selectedDate > today) {
+                          toast({
+                            title: "Validation Error",
+                            description: "Cannot select a future date",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setSaleForm({...saleForm, transaction_date: selectedDate});
+                      }}
                     />
                   </div>
                   
                   <div className="space-y-2">
                     <Label htmlFor="sale-customer">Customer *</Label>
                     <Select 
-                      value={customers?.find(c => c.id === saleForm.customer_id)?.client_name || ""} 
+                      value={saleForm.customer_id ? (customers?.find(c => c.id === saleForm.customer_id)?.client_name || undefined) : undefined}
                       onValueChange={handleCustomerChange}
                       disabled={customersLoading}
                     >
@@ -1796,7 +2089,7 @@ const SalesEntry = () => {
                   <div className="space-y-2">
                     <Label htmlFor="sale-branch">Branch *</Label>
                     <Select 
-                      value={saleForm.branch} 
+                      value={saleForm.branch || undefined}
                       onValueChange={(value) => setSaleForm({...saleForm, branch: value})}
                       disabled={!saleForm.customer_id}
                     >
@@ -2107,7 +2400,7 @@ const SalesEntry = () => {
                   <div className="space-y-2">
                     <Label htmlFor="payment-customer">Customer *</Label>
                     <Select 
-                      value={customers?.find(c => c.id === paymentForm.customer_id)?.client_name || ""} 
+                      value={paymentForm.customer_id ? (customers?.find(c => c.id === paymentForm.customer_id)?.client_name || undefined) : undefined}
                       onValueChange={(customerName) => {
                         const selectedCustomer = customers?.find(c => c.client_name === customerName);
                         setPaymentForm({...paymentForm, customer_id: selectedCustomer?.id || "", branch: ""});
@@ -2129,12 +2422,12 @@ const SalesEntry = () => {
                   <div className="space-y-2">
                     <Label htmlFor="payment-branch">Branch *</Label>
                     <Select 
-                      value={paymentForm.branch} 
+                      value={paymentForm.branch || undefined}
                       onValueChange={(branch) => setPaymentForm({...paymentForm, branch})}
                       disabled={!paymentForm.customer_id}
                     >
                       <SelectTrigger id="payment-branch">
-                        <SelectValue placeholder="Select branch" />
+                        <SelectValue placeholder={paymentForm.customer_id ? "Select branch" : "Select customer first"} />
                       </SelectTrigger>
                       <SelectContent>
                         {paymentForm.customer_id && getBranchesForCustomer(paymentForm.customer_id).map((branch) => (
@@ -2198,75 +2491,55 @@ const SalesEntry = () => {
       {/* Recent Transactions Section */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center gap-2 md:gap-4">
             <CardTitle className="mb-0">Client Transactions</CardTitle>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
               Showing {paginatedTransactions.length} of {totalFilteredTransactions} filtered transactions
               {totalTransactions !== totalFilteredTransactions && ` (${totalTransactions} total)`}
               {totalPages > 1 && ` - Page ${currentPage} of ${totalPages}`}
             </span>
+            <div className="flex-1"></div>
+            <Button
+              onClick={exportRecentTransactionsToExcel}
+              variant="outline"
+              size="sm"
+              className="flex items-center space-x-2 whitespace-nowrap"
+            >
+              <Download className="h-4 w-4" />
+              <span>Export Excel</span>
+            </Button>
           </div>
-        </CardHeader>
-        <CardContent>
-          {/* Search Filter */}
-          <div className="mb-6 space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Input
+              placeholder="Search transactions by customer, branch, SKU, description, amount, date, or type..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                // Page reset is handled by the hook automatically
+              }}
+              className="flex-1 min-w-[200px]"
+            />
+            {(searchTerm || Object.values(columnFilters).some(filter => {
+              if (Array.isArray(filter)) return filter.length > 0;
+              return filter && filter !== "";
+            }) || Object.values(columnSorts).some(sort => sort !== null)) && (
               <Button
-                onClick={exportRecentTransactionsToExcel}
                 variant="outline"
                 size="sm"
-                className="flex items-center space-x-2"
-              >
-                <Download className="h-4 w-4" />
-                <span>Export Excel</span>
-              </Button>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Input
-                placeholder="Search transactions by customer, branch, SKU, description, amount, date, or type..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1); // Reset to first page when search changes
+                onClick={() => {
+                  resetFilters();
                 }}
-                className="max-w-md"
-              />
-              {(searchTerm || Object.values(columnFilters).some(filter => {
-                if (Array.isArray(filter)) return filter.length > 0;
-                return filter && filter !== "";
-              }) || Object.values(columnSorts).some(sort => sort !== null)) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setColumnFilters({
-                      date: "",
-                      customer: "",
-                      branch: "",
-                      type: "",
-                      sku: "",
-                      amount: ""
-                    });
-                    setColumnSorts({
-                      date: null,
-                      customer: null,
-                      branch: null,
-                      type: null,
-                      sku: null,
-                      amount: null
-                    });
-                    setCurrentPage(1); // Reset to first page when clearing filters
-                  }}
-                >
-                  Clear All Filters
-                </Button>
-              )}
-            </div>
+                className="whitespace-nowrap"
+              >
+                Clear All Filters
+              </Button>
+            )}
           </div>
-          <Table>
-            <TableHeader>
+        </CardHeader>
+        <CardContent className="p-0 sm:p-6">
+          <div className="w-full overflow-x-auto">
+            <Table className="min-w-full">
+              <TableHeader>
               <TableRow className="bg-gradient-to-r from-emerald-50 via-green-50 to-emerald-50 border-b-2 border-emerald-200 hover:bg-gradient-to-r hover:from-emerald-100 hover:via-green-100 hover:to-emerald-100 transition-all duration-200">
                 <TableHead className="font-semibold text-emerald-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-emerald-200/50">
                   <div className="flex items-center justify-between">
@@ -2365,6 +2638,9 @@ const SalesEntry = () => {
                     />
                   </div>
                 </TableHead>
+                <TableHead className="font-semibold text-emerald-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-emerald-200/50">
+                  Invoice #
+                </TableHead>
                 <TableHead className="text-right font-semibold text-emerald-800 text-xs uppercase tracking-widest py-6 px-6 border-r border-emerald-200/50">
                   Customer Outstanding
                 </TableHead>
@@ -2379,7 +2655,7 @@ const SalesEntry = () => {
             <TableBody>
               {transactionsLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
+                  <TableCell colSpan={11} className="text-center py-8">
                     <div className="flex items-center justify-center space-x-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                       <span className="text-muted-foreground">Loading transactions...</span>
@@ -2388,7 +2664,7 @@ const SalesEntry = () => {
                 </TableRow>
               ) : transactionsError ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
+                  <TableCell colSpan={11} className="text-center py-8">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <div className="text-red-500 text-sm">
                         ⚠️ Error loading transactions
@@ -2434,6 +2710,9 @@ const SalesEntry = () => {
                     <TableCell>{transaction.sku || '-'}</TableCell>
                     <TableCell className="text-right">{transaction.quantity || '-'}</TableCell>
                     <TableCell className="text-right">₹{transaction.amount?.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <InvoiceNumberCell transactionId={transaction.id} transactionType={transaction.transaction_type} />
+                    </TableCell>
                     <TableCell className="text-right">
                       ₹{(Number((transaction as unknown as { outstanding?: number }).outstanding) || 0).toLocaleString()}
                     </TableCell>
@@ -2442,139 +2721,32 @@ const SalesEntry = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditClick(transaction)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Edit Transaction</DialogTitle>
-                            </DialogHeader>
-                            <form onSubmit={handleEditSubmit} className="space-y-6">
-                              {/* First Row: Date, Customer, Branch */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-date">Date *</Label>
-                                  <Input
-                                    id="edit-date"
-                                    type="date"
-                                    value={editForm.transaction_date}
-                                    onChange={(e) => setEditForm({...editForm, transaction_date: e.target.value})}
-                                  />
-                                </div>
-                                
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-customer">Customer</Label>
-                                  <Select 
-                                    value={customers?.find(c => c.id === editForm.customer_id)?.client_name || ""} 
-                                    onValueChange={handleEditCustomerChange}
-                                  >
-                                    <SelectTrigger id="edit-customer">
-                                      <SelectValue placeholder="Select customer" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {getUniqueCustomers.map((customerName) => (
-                                        <SelectItem key={customerName} value={customerName}>
-                                          {customerName}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-branch">Branch</Label>
-                                  <Select 
-                                    value={editForm.branch} 
-                                    onValueChange={(value) => setEditForm({...editForm, branch: value})}
-                                    disabled={!editForm.customer_id}
-                                  >
-                                    <SelectTrigger id="edit-branch">
-                                      <SelectValue placeholder={editForm.customer_id ? "Select branch" : "Select customer first"} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {getAvailableBranchesForEdit().map((branch) => (
-                                        <SelectItem key={branch} value={branch}>
-                                          {branch}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-
-                              {/* Second Row: SKU, Quantity (cases), Price per Case */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-sku">SKU</Label>
-                                  <Input
-                                    id="edit-sku"
-                                    value={editForm.sku}
-                                    onChange={(e) => setEditForm({...editForm, sku: e.target.value})}
-                                  />
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-quantity">Quantity (cases)</Label>
-                                  <Input
-                                    id="edit-quantity"
-                                    type="number"
-                                    value={editForm.quantity}
-                                    onChange={(e) => setEditForm({...editForm, quantity: e.target.value})}
-                                  />
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-price-per-case">Price per Case (₹)</Label>
-                                  <Input
-                                    id="edit-price-per-case"
-                                    type="number"
-                                    step="0.01"
-                                    value={getPricePerCaseForEdit()}
-                                    readOnly
-                                    className="bg-gray-50"
-                                    placeholder="Select customer and branch first"
-                                  />
-                                </div>
-                              </div>
-
-                              {/* Third Row: Amount, Description */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-amount">Amount (₹)</Label>
-                                  <Input
-                                    id="edit-amount"
-                                    type="number"
-                                    step="0.01"
-                                    value={editForm.amount}
-                                    onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
-                                  />
-                                </div>
-                                
-                                <div className="space-y-2 md:col-span-2">
-                                  <Label htmlFor="edit-description">Description</Label>
-                                  <Textarea
-                                    id="edit-description"
-                                    value={editForm.description}
-                                    onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                                  />
-                                </div>
-                              </div>
-                              
-                              <div className="flex justify-end gap-2">
-                                <Button type="submit" disabled={updateMutation.isPending}>
-                                  {updateMutation.isPending ? "Updating..." : "Update"}
-                                </Button>
-                              </div>
-                            </form>
-                          </DialogContent>
-                        </Dialog>
+                        <InvoiceActions
+                          transaction={transaction}
+                          customer={customer}
+                          onGenerate={handleGenerateInvoice}
+                          onDownload={handleDownloadInvoice}
+                          isGenerating={generateInvoice.isPending}
+                        />
+                        <EditTransactionDialog
+                          transaction={transaction}
+                          editForm={editForm}
+                          customers={customers}
+                          getUniqueCustomers={getUniqueCustomers}
+                          getAvailableBranchesForEdit={getAvailableBranchesForEdit}
+                          getPricePerCaseForEdit={getPricePerCaseForEdit}
+                          isOpen={!!editingTransaction && editingTransaction.id === transaction.id}
+                          isUpdating={updateMutation.isPending}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setEditingTransaction(null);
+                            }
+                          }}
+                          onEditClick={handleEditClick}
+                          onEditSubmit={handleEditSubmit}
+                          onFormChange={(updates) => setEditForm({...editForm, ...updates})}
+                          onCustomerChange={handleEditCustomerChange}
+                        />
                         
                         <Button
                           variant="outline"
@@ -2591,13 +2763,14 @@ const SalesEntry = () => {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                   {searchTerm ? "No transactions found matching your search" : "No recent transactions found"}
                 </TableCell>
               </TableRow>
             )}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
           
           {/* Pagination Controls */}
           {totalPages > 1 && (
@@ -2609,7 +2782,7 @@ const SalesEntry = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  onClick={() => setPage(Math.max(1, currentPage - 1))}
                   disabled={currentPage === 1 || transactionsLoading}
                 >
                   <ChevronLeft className="h-4 w-4 mr-1" />
@@ -2633,7 +2806,7 @@ const SalesEntry = () => {
                         key={pageNum}
                         variant={currentPage === pageNum ? "default" : "outline"}
                         size="sm"
-                        onClick={() => setCurrentPage(pageNum)}
+                        onClick={() => setPage(pageNum)}
                         disabled={transactionsLoading}
                         className="w-10"
                       >
@@ -2645,7 +2818,7 @@ const SalesEntry = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
                   disabled={currentPage === totalPages || transactionsLoading}
                 >
                   Next

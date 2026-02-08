@@ -2,9 +2,20 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-// Use environment variables for configuration (no hardcoded fallbacks for production)
+// Use environment variables for configuration (no hardcoded credentials)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+// Validate required environment variables
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  const missingVars = [];
+  if (!SUPABASE_URL) missingVars.push('VITE_SUPABASE_URL');
+  if (!SUPABASE_PUBLISHABLE_KEY) missingVars.push('VITE_SUPABASE_ANON_KEY');
+  throw new Error(
+    `Missing required Supabase environment variables: ${missingVars.join(', ')}\n` +
+    `Please set these variables in your .env file or environment configuration.`
+  );
+}
 
 // Clear cached auth from any previous Supabase project to avoid mixing sessions
 if (typeof window !== 'undefined') {
@@ -15,6 +26,10 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem(`sb-${ref}-auth-refresh-token`);
   });
 }
+
+// Session persistence is handled automatically by Supabase
+// The session will persist across regular page refreshes
+// Only hot reloads (HMR) in development will reset the session
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

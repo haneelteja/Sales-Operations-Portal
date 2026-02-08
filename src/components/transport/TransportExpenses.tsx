@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import type { TransportExpense, TransportExpenseForm } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,7 @@ const TransportExpenses = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { invalidateRelated } = useCacheInvalidation();
 
   const { data: customers } = useQuery({
     queryKey: ["customers"],
@@ -215,7 +217,7 @@ const TransportExpenses = () => {
         sku: "",
         no_of_cases: ""
       });
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
+      invalidateRelated('transport_expenses');
     },
     onError: (error: unknown) => {
       toast({ 
@@ -248,7 +250,7 @@ const TransportExpenses = () => {
       toast({ title: "Success", description: "Transport expense updated!" });
       setIsEditDialogOpen(false);
       setEditingExpense(null);
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
+      invalidateRelated('transport_expenses');
     },
     onError: (error: unknown) => {
       toast({ 
@@ -270,7 +272,7 @@ const TransportExpenses = () => {
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Transport expense deleted!" });
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
+      invalidateRelated('transport_expenses');
     },
     onError: (error: unknown) => {
       toast({ 
@@ -284,10 +286,10 @@ const TransportExpenses = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!form.amount || !form.client_id || !form.branch) {
+    if (!form.amount || !form.description) {
       toast({ 
         title: "Error", 
-        description: "Amount, Client, and Branch are required",
+        description: "Amount and Description are required",
         variant: "destructive"
       });
       return;
@@ -313,10 +315,10 @@ const TransportExpenses = () => {
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editForm.amount || !editForm.client_id || !editForm.branch) {
+    if (!editForm.amount || !editForm.description) {
       toast({ 
         title: "Error", 
-        description: "Amount, Client, and Branch are required",
+        description: "Amount and Description are required",
         variant: "destructive"
       });
       return;
@@ -578,7 +580,8 @@ const TransportExpenses = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* First Row: Date, Client, Branch */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="expense-date">Date</Label>
             <Input
@@ -590,33 +593,8 @@ const TransportExpenses = () => {
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="expense-amount">Amount (₹) *</Label>
-            <Input
-              id="expense-amount"
-              type="number"
-              step="0.01"
-              value={form.amount}
-              onChange={(e) => setForm({...form, amount: e.target.value})}
-              placeholder="0.00"
-            />
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="expense-description">Description *</Label>
-            <Input
-              id="expense-description"
-              value={form.description}
-              onChange={(e) => setForm({...form, description: e.target.value})}
-              placeholder="Enter expense description"
-              required
-            />
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="client">Client *</Label>
-            <Select value={form.client_id} onValueChange={(value) => setForm({ ...form, client_id: value, branch: "" })}>
+            <Label htmlFor="client">Client</Label>
+            <Select value={form.client_id || ""} onValueChange={(value) => setForm({ ...form, client_id: value, branch: "" })}>
               <SelectTrigger>
                 <SelectValue placeholder="Select client" />
               </SelectTrigger>
@@ -631,8 +609,8 @@ const TransportExpenses = () => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="branch">Branch *</Label>
-            <Select value={form.branch} onValueChange={(value) => setForm({ ...form, branch: value })} disabled={!form.client_id}>
+            <Label htmlFor="branch">Branch</Label>
+            <Select value={form.branch || ""} onValueChange={(value) => setForm({ ...form, branch: value })} disabled={!form.client_id}>
               <SelectTrigger>
                 <SelectValue placeholder="Select branch" />
               </SelectTrigger>
@@ -645,7 +623,10 @@ const TransportExpenses = () => {
               </SelectContent>
             </Select>
           </div>
+        </div>
 
+        {/* Second Row: SKU, Description, Amount */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="sku">SKU</Label>
             <Input
@@ -657,6 +638,32 @@ const TransportExpenses = () => {
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="expense-description">Description *</Label>
+            <Input
+              id="expense-description"
+              value={form.description}
+              onChange={(e) => setForm({...form, description: e.target.value})}
+              placeholder="Enter expense description"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="expense-amount">Amount (₹) *</Label>
+            <Input
+              id="expense-amount"
+              type="number"
+              step="0.01"
+              value={form.amount}
+              onChange={(e) => setForm({...form, amount: e.target.value})}
+              placeholder="0.00"
+            />
+          </div>
+        </div>
+
+        {/* Third Row: No of Cases, Expense Group */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="no_of_cases">No of Cases</Label>
             <Input
@@ -741,9 +748,10 @@ const TransportExpenses = () => {
         </div>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-slate-50 border-b border-slate-200">
+      <div className="w-full overflow-x-auto">
+        <Table className="min-w-full">
+          <TableHeader>
+            <TableRow className="bg-slate-50 border-b border-slate-200">
             <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
               <div className="flex items-center justify-between">
                 <span>Date</span>
@@ -913,6 +921,7 @@ const TransportExpenses = () => {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -958,8 +967,8 @@ const TransportExpenses = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="edit-client">Client *</Label>
-                <Select value={editForm.client_id} onValueChange={(value) => setEditForm({ ...editForm, client_id: value, branch: "" })}>
+                <Label htmlFor="edit-client">Client</Label>
+                <Select value={editForm.client_id || ""} onValueChange={(value) => setEditForm({ ...editForm, client_id: value, branch: "" })}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select client" />
                   </SelectTrigger>
@@ -974,8 +983,8 @@ const TransportExpenses = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-branch">Branch *</Label>
-                <Select value={editForm.branch} onValueChange={(value) => setEditForm({ ...editForm, branch: value })} disabled={!editForm.client_id}>
+                <Label htmlFor="edit-branch">Branch</Label>
+                <Select value={editForm.branch || ""} onValueChange={(value) => setEditForm({ ...editForm, branch: value })} disabled={!editForm.client_id}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select branch" />
                   </SelectTrigger>

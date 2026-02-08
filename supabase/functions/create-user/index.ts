@@ -87,9 +87,10 @@ serve(async (req) => {
       )
     }
 
+    // SECURITY: Use environment variables only - never hardcode credentials
     // Create Supabase client with service role key
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://qkvmdrtfhpcvwvqjuyuu.supabase.co'
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
     console.log('Supabase URL:', supabaseUrl)
     console.log('Service key exists:', !!supabaseServiceKey)

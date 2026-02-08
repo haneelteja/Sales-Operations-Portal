@@ -15,6 +15,9 @@ import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, Search, X, Shield } 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import * as XLSX from 'xlsx';
 import { useAutoSave } from "@/hooks/useAutoSave";
+import { userFormSchema, type UserFormInput } from "@/lib/validation/schemas";
+import { safeValidate } from "@/lib/validation/utils";
+import { logger } from "@/lib/logger";
 
 interface UserManagementRecord {
   id: string;
@@ -710,50 +713,27 @@ const UserManagement = () => {
       e.preventDefault();
     }
     
-    console.log('Form submission started');
-    console.log('Form data:', userForm);
-    console.log('Form data type check - role:', typeof userForm.role, userForm.role);
+    logger.debug('Form submission started', { userForm });
     
     // Prevent double submission
     if (isSubmitting) {
-      console.warn('Form is already submitting, ignoring duplicate submission');
+      logger.warn('Form is already submitting, ignoring duplicate submission');
       return;
     }
     
-    // Validate required fields
-    if (!userForm.username || !userForm.email) {
-      console.error('Validation failed: missing username or email');
+    // Validate form data using Zod schema
+    const validationResult = safeValidate(userFormSchema, userForm);
+    if (!validationResult.success) {
+      logger.error('Validation failed:', validationResult.error);
       toast({
-        title: "Error",
-        description: "Please fill in username and email.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Validate role is set
-    if (!userForm.role || !['admin', 'manager', 'client'].includes(userForm.role)) {
-      console.error('Validation failed: invalid role', userForm.role);
-      toast({
-        title: "Error",
-        description: "Please select a valid role (Admin, Manager, or Client).",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // For client role, require at least one client-branch combination
-    if (userForm.role === 'client' && userForm.associated_client_branches.length === 0) {
-      console.error('Validation failed: client role requires client-branch selection');
-      toast({
-        title: "Error",
-        description: "Please select at least one client-branch combination for client users.",
+        title: "Validation Error",
+        description: validationResult.error,
         variant: "destructive",
       });
       return;
     }
 
-    console.log('Validation passed, submitting form with role:', userForm.role);
+    logger.debug('Validation passed, submitting form', { role: userForm.role });
     setIsSubmitting(true);
     
     try {
@@ -785,12 +765,12 @@ const UserManagement = () => {
       });
       clearSavedData(); // Clear auto-saved data after successful submission
     } catch (error) {
-      console.error('Form submission error:', error);
+      logger.error('Form submission error:', error);
       // Error handling is done in the mutation onError callbacks
       // Don't reset form on error so user can correct and retry
     } finally {
       setIsSubmitting(false);
-      console.log('Form submission completed');
+      logger.debug('Form submission completed');
     }
   };
 

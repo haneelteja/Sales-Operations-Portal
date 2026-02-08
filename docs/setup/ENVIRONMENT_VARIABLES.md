@@ -20,11 +20,16 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
    - **Project URL** → `VITE_SUPABASE_URL`
    - **anon/public key** → `VITE_SUPABASE_ANON_KEY`
 
-**Example:**
+**Example (with placeholders - never commit real credentials):**
 ```env
-VITE_SUPABASE_URL=https://qkvmdrtfhpcvwvqjuyuu.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFrdm1kcnRmaHBjdnd2cWp1eXV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMjgyMTgsImV4cCI6MjA3NDgwNDIxOH0.DJeoI0LFeMArVs5s6DV2HP0kYnjWcIVLQEbiCQr97CE
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 ```
+
+**⚠️ SECURITY WARNING:** The example above uses placeholders. Never commit actual Supabase credentials to version control. Always:
+- Use `.env` files for local development (already in `.gitignore`)
+- Set values in Vercel dashboard for production
+- Use placeholders in documentation files
 
 ---
 

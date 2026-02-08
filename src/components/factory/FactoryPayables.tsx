@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { getQueryConfig } from "@/lib/query-configs";
+import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import type { 
   FactoryPayable, 
   FactoryPricing, 
@@ -78,14 +80,16 @@ const FactoryPayables = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { invalidateRelated } = useCacheInvalidation();
 
   // Fetch factory pricing data
   const { data: factoryPricing } = useQuery({
     queryKey: ["factory-pricing"],
+    ...getQueryConfig("factory-pricing"),
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_pricing")
-        .select("*")
+        .select("id, sku, cost_per_case, bottles_per_case, pricing_date")
         .order("pricing_date", { ascending: false });
       return data || [];
     },
@@ -108,6 +112,7 @@ const FactoryPayables = () => {
   // Fetch factory transactions
   const { data: transactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ["factory-transactions"],
+    ...getQueryConfig("factory-transactions"),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("factory_payables")
@@ -431,7 +436,7 @@ const FactoryPayables = () => {
         description: "",
         transaction_date: new Date().toISOString().split('T')[0]
       });
-      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
+      invalidateRelated('factory_payables');
     },
     onError: (error: unknown) => {
       toast({ 
@@ -462,8 +467,7 @@ const FactoryPayables = () => {
         description: "",
         transaction_date: new Date().toISOString().split('T')[0]
       });
-      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-summary"] });
+      invalidateRelated('factory_payables');
     },
     onError: (error: unknown) => {
       toast({ 
@@ -496,7 +500,7 @@ const FactoryPayables = () => {
     onSuccess: () => {
       toast({ title: "Success", description: "Transaction updated successfully!" });
       setEditingTransaction(null);
-      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
+      invalidateRelated('factory_payables');
     },
     onError: (error: unknown) => {
       toast({ 
@@ -519,7 +523,7 @@ const FactoryPayables = () => {
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Transaction deleted successfully!" });
-      queryClient.invalidateQueries({ queryKey: ["factory-transactions"] });
+      invalidateRelated('factory_payables');
     },
     onError: (error: unknown) => {
       toast({ 
@@ -683,7 +687,7 @@ const FactoryPayables = () => {
                 <div className="space-y-2">
                   <Label htmlFor="production-sku">SKU *</Label>
                   <Select 
-                    value={productionForm.sku} 
+                    value={productionForm.sku || ""} 
                     onValueChange={(value) => setProductionForm({...productionForm, sku: value})}
                   >
                     <SelectTrigger>
@@ -818,9 +822,10 @@ const FactoryPayables = () => {
             )}
           </div>
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-slate-50 border-b border-slate-200">
+        <div className="w-full overflow-x-auto">
+          <Table className="min-w-full">
+            <TableHeader>
+              <TableRow className="bg-slate-50 border-b border-slate-200">
               <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
                 <div className="flex items-center justify-between">
                   <span>Date</span>
@@ -1045,7 +1050,7 @@ const FactoryPayables = () => {
                                 <div className="space-y-2">
                                   <Label htmlFor="edit-sku">SKU</Label>
                                   <Select 
-                                    value={editForm.sku} 
+                                    value={editForm.sku || ""} 
                                     onValueChange={(value) => setEditForm({...editForm, sku: value})}
                                   >
                                     <SelectTrigger>
@@ -1127,6 +1132,7 @@ const FactoryPayables = () => {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </div>
   );

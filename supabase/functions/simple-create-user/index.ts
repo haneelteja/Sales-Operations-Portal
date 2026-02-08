@@ -32,9 +32,23 @@ serve(async (req) => {
     const requestData = await req.json()
     console.log('Request data:', requestData)
 
-    // Hardcode the Supabase URL and service key for testing
-    const supabaseUrl = 'https://qkvmdrtfhpcvwvqjuyuu.supabase.co'
-    const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFrdm1kcnRmaHBjdnd2cWp1eXV1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTIyODIxOCwiZXhwIjoyMDc0ODA0MjE4fQ.DJeoI0LFeMArVs5s6DV2HP0kYnjWcIVLQEbiCQr97CE'
+    // SECURITY: Use environment variables only - never hardcode credentials
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing required environment variables')
+      return new Response(
+        JSON.stringify({ 
+          error: 'Missing Supabase configuration. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set as Edge Function secrets.',
+          hint: 'Set these in Supabase Dashboard → Edge Functions → Secrets'
+        }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
     console.log('Supabase client created')

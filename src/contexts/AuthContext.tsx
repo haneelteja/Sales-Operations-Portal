@@ -64,6 +64,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
 
+  // Extract profile fetching logic to avoid duplication and fix memory leaks
+  const fetchUserProfile = useCallback(async (userId: string, email: string | undefined): Promise<UserProfile | null> => {
+    try {
+      // Try user_management first by user_id
+      const { data: userData, error: userError } = await supabase
+        .from('user_management')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      if (!userError && userData) {
+        return userData as UserProfile;
+      }
+
+      // If not found by user_id, try by email
+      if (email) {
+        const { data: userDataByEmail, error: emailError } = await supabase
+          .from('user_management')
+          .select('*')
+          .eq('email', email)
+          .single();
+        
+        if (!emailError && userDataByEmail) {
+          return userDataByEmail as UserProfile;
+        }
+      }
+
+      // Fall back to profiles table
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (!profileError && profileData) {
+        return profileData as UserProfile;
+      }
+
+      logger.error('Error fetching profile:', userError || emailError || profileError);
+      return null;
+    } catch (error) {
+      logger.error('Error fetching user profile:', error);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -83,48 +129,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Fetch user profile when user signs in
         if (session?.user) {
-          setTimeout(async () => {
-            try {
-              // Try user_management first by user_id
-              const { data: userData, error: userError } = await supabase
-                .from('user_management')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .single();
-              
-              if (userError) {
-                // If not found by user_id, try by email
-                const { data: userDataByEmail, error: emailError } = await supabase
-                  .from('user_management')
-                  .select('*')
-                  .eq('email', session.user.email || '')
-                  .single();
-                
-                if (emailError) {
-                  // Fall back to profiles table
-                  const { data: profileData, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
-                  
-                  if (profileError) {
-                    logger.error('Error fetching profile:', profileError);
-                    setProfile(null);
-                  } else {
-                    setProfile(profileData);
-                  }
-                } else {
-                  setProfile(userDataByEmail);
-                }
-              } else {
-                setProfile(userData);
-              }
-            } catch (error) {
-              logger.error('Error fetching user profile:', error);
-              setProfile(null);
+          // Use requestAnimationFrame instead of setTimeout for better cleanup handling
+          let cancelled = false;
+          const fetchProfile = async () => {
+            if (cancelled) return;
+            const profileData = await fetchUserProfile(session.user.id, session.user.email);
+            if (!cancelled) {
+              setProfile(profileData);
             }
-          }, 0);
+          };
+          
+          // Use microtask queue instead of setTimeout(0) for better performance
+          Promise.resolve().then(fetchProfile);
+          
+          // Cleanup function to prevent memory leaks
+          return () => {
+            cancelled = true;
+          };
         } else {
           setProfile(null);
         }
@@ -141,44 +162,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Try user_management first by user_id
-          const { data: userData, error: userError } = await supabase
-            .from('user_management')
-            .select('*')
-            .eq('user_id', session.user.id)
-            .single();
-          
-          if (userError) {
-            // If not found by user_id, try by email
-            const { data: userDataByEmail, error: emailError } = await supabase
-              .from('user_management')
-              .select('*')
-              .eq('email', session.user.email || '')
-              .single();
-            
-            if (emailError) {
-              // Fall back to profiles table
-              const { data: profileData, error: profileError } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', session.user.id)
-                .single();
-              
-              if (profileError) {
-                console.error('Error fetching profile:', profileError);
-                setProfile(null);
-              } else {
-                setProfile(profileData);
-              }
-            } else {
-              setProfile(userDataByEmail);
-            }
-          } else {
-            setProfile(userData);
-          }
+          const profileData = await fetchUserProfile(session.user.id, session.user.email);
+          setProfile(profileData);
         }
       } catch (error) {
-        console.error('Error initializing session:', error);
+        logger.error('Error initializing session:', error);
       } finally {
         setLoading(false);
       }
@@ -186,8 +174,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     initializeSession();
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [fetchUserProfile]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     // For production: Use real Supabase auth

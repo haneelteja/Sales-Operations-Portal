@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { getQueryConfig } from "@/lib/query-configs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,14 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import * as XLSX from 'xlsx';
+import { useInvoice } from "@/hooks/useInvoiceGeneration";
 
-const Reports = () => {
+/** Cell that shows invoice number for a transaction (sales only). */
+const InvoiceNumberCell = memo(({ transactionId, transactionType }: { transactionId: string; transactionType: string }) => {
+  const { data: invoice } = useInvoice(transactionType === 'sale' ? transactionId : null);
+  if (transactionType !== 'sale') return <span className="text-muted-foreground">—</span>;
+  return <span>{invoice?.invoice_number ?? '—'}</span>;
+});
+InvoiceNumberCell.displayName = 'InvoiceNumberCell';
+
+const Reports = memo(() => {
   const [adminComments, setAdminComments] = useState<{[key: string]: string}>({});
   const [searchTerm, setSearchTerm] = useState("");
 
   // Receivables report
   const { data: receivables, isLoading: receivablesLoading } = useQuery({
     queryKey: ["receivables"],
+    ...getQueryConfig("receivables"),
     queryFn: async () => {
       // Get all transactions grouped by customer
       const { data: transactions } = await supabase
@@ -153,10 +164,11 @@ const Reports = () => {
   // Factory transactions report
   const { data: factoryReport } = useQuery({
     queryKey: ["factory-report"],
+    ...getQueryConfig("factory-report"),
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_payables")
-        .select("*")
+        .select("id, amount, transaction_type, transaction_date, description, sku, quantity")
         .order("transaction_date", { ascending: false });
       
       const totalProduction = data?.filter(t => t.transaction_type === 'production')
@@ -171,11 +183,12 @@ const Reports = () => {
   // Client transactions report
   const { data: clientReport } = useQuery({
     queryKey: ["client-report"],
+    ...getQueryConfig("client-report"),
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
         .select(`
-          *,
+          id, customer_id, amount, transaction_type, transaction_date, sku, description, quantity,
           customers (client_name, branch)
         `)
         .order("transaction_date", { ascending: false });
@@ -192,10 +205,11 @@ const Reports = () => {
   // Transport report
   const { data: transportReport } = useQuery({
     queryKey: ["transport-report"],
+    ...getQueryConfig("transport-report"),
     queryFn: async () => {
       const { data } = await supabase
         .from("transport_expenses")
-        .select("*")
+        .select("id, amount, expense_date, expense_group, description, client_id, branch, sku, no_of_cases")
         .order("expense_date", { ascending: false });
       
       const totalExpenses = data?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
@@ -207,10 +221,11 @@ const Reports = () => {
   // Labels report
   const { data: labelsReport } = useQuery({
     queryKey: ["labels-report"],
+    ...getQueryConfig("labels-report"),
     queryFn: async () => {
       const { data: purchases } = await supabase
         .from("label_purchases")
-        .select("*")
+        .select("id, client_name, sku, vendor, quantity, total_amount, purchase_date")
         .order("purchase_date", { ascending: false });
       
       const totalPurchases = purchases?.reduce((sum, p) => sum + (p.total_amount || 0), 0) || 0;
@@ -234,7 +249,7 @@ const Reports = () => {
   profitData.profit = profitData.totalSales - (profitData.factoryPayables + profitData.transportExpenses + profitData.labelExpenses);
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6">
       <Tabs defaultValue="factory" className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="factory">Factory Report</TabsTrigger>
@@ -321,7 +336,8 @@ const Reports = () => {
                     <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-green-200/50">Customer</TableHead>
                     <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-center border-r border-green-200/50">Type</TableHead>
                     <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-left border-r border-green-200/50">Description</TableHead>
-                    <TableHead className="text-right font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6">Amount</TableHead>
+                    <TableHead className="text-right font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 border-r border-green-200/50">Amount</TableHead>
+                    <TableHead className="font-semibold text-green-800 text-xs uppercase tracking-widest py-6 px-6 text-left">Invoice #</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -331,7 +347,10 @@ const Reports = () => {
                       <TableCell>{transaction.customers?.client_name}</TableCell>
                       <TableCell>{transaction.transaction_type}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-right">₹{transaction.amount?.toLocaleString()}</TableCell>
+                      <TableCell className="text-right border-r border-green-200/50">₹{transaction.amount?.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <InvoiceNumberCell transactionId={transaction.id} transactionType={transaction.transaction_type} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -531,6 +550,8 @@ const Reports = () => {
       </Tabs>
     </div>
   );
-};
+});
+
+Reports.displayName = 'Reports';
 
 export default Reports;

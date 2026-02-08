@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, memo } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import type { 
   Customer, 
@@ -30,6 +31,7 @@ const ConfigurationManagement = () => {
     sku: "",
     price_per_case: "",
     price_per_bottle: "",
+    whatsapp_number: "",
     pricing_date: new Date().toISOString().split('T')[0]
   });
 
@@ -52,7 +54,8 @@ const ConfigurationManagement = () => {
     branch: "",
     sku: "",
     price_per_case: "",
-    price_per_bottle: ""
+    price_per_bottle: "",
+    whatsapp_number: ""
   });
 
   // Filtering and sorting state for customers
@@ -99,6 +102,7 @@ const ConfigurationManagement = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { invalidateRelated } = useCacheInvalidation();
 
   // Customer Management queries and mutations
   const { data: customers, error: customersError } = useQuery({
@@ -233,6 +237,7 @@ const ConfigurationManagement = () => {
           ...data,
           price_per_case: data.price_per_case ? parseFloat(data.price_per_case) : null,
           price_per_bottle: data.price_per_bottle ? parseFloat(data.price_per_bottle) : null,
+          whatsapp_number: data.whatsapp_number || null,
           pricing_date: data.pricing_date
         });
 
@@ -252,6 +257,7 @@ const ConfigurationManagement = () => {
         sku: "",
         price_per_case: "",
         price_per_bottle: "",
+        whatsapp_number: "",
         pricing_date: new Date().toISOString().split('T')[0]
       });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
@@ -292,6 +298,7 @@ const ConfigurationManagement = () => {
         sku: string | null;
         price_per_case: number | null;
         price_per_bottle: number | null;
+        whatsapp_number: string | null;
         pricing_date: string | null;
       }> = {};
       
@@ -304,6 +311,9 @@ const ConfigurationManagement = () => {
       }
       if (data.price_per_bottle !== undefined) {
         updateData.price_per_bottle = data.price_per_bottle ? parseFloat(data.price_per_bottle) : null;
+      }
+      if (data.whatsapp_number !== undefined) {
+        updateData.whatsapp_number = data.whatsapp_number || null;
       }
       if (data.pricing_date) updateData.pricing_date = data.pricing_date;
 
@@ -471,8 +481,7 @@ const ConfigurationManagement = () => {
         price_per_bottle: "",
         tax: ""
       });
-      queryClient.invalidateQueries({ queryKey: ["factory-pricing"] });
-      queryClient.invalidateQueries({ queryKey: ["available-skus"] });
+      invalidateRelated('factory_pricing');
     },
     onError: (error) => {
       toast({ 
@@ -494,8 +503,7 @@ const ConfigurationManagement = () => {
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Factory pricing deleted successfully!" });
-      queryClient.invalidateQueries({ queryKey: ["factory-pricing"] });
-      queryClient.invalidateQueries({ queryKey: ["available-skus"] });
+      invalidateRelated('factory_pricing');
       queryClient.invalidateQueries({ queryKey: ["factory-pricing-data"] });
     },
     onError: (error) => {
@@ -570,8 +578,7 @@ const ConfigurationManagement = () => {
       toast({ title: "Success", description: "Factory pricing updated successfully!" });
       setIsEditPricingOpen(false);
       setEditingPricing(null);
-      queryClient.invalidateQueries({ queryKey: ["factory-pricing"] });
-      queryClient.invalidateQueries({ queryKey: ["available-skus"] });
+      invalidateRelated('factory_pricing');
       queryClient.invalidateQueries({ queryKey: ["factory-pricing-data"] });
     },
     onError: (error) => {
@@ -1010,7 +1017,8 @@ const ConfigurationManagement = () => {
       branch: customer.branch || "",
       sku: customer.sku || "",
       price_per_case: customer.price_per_case?.toString() || "",
-      price_per_bottle: customer.price_per_bottle?.toString() || ""
+      price_per_bottle: customer.price_per_bottle?.toString() || "",
+      whatsapp_number: customer.whatsapp_number || ""
     });
     setIsEditCustomerOpen(true);
   };
@@ -1026,6 +1034,7 @@ const ConfigurationManagement = () => {
       sku: editForm.sku,
       price_per_case: editForm.price_per_case,
       price_per_bottle: editForm.price_per_bottle,
+      whatsapp_number: editForm.whatsapp_number,
       pricing_date: editingCustomer.pricing_date || customerForm.pricing_date || new Date().toISOString().split('T')[0]
     });
   };
@@ -1052,7 +1061,7 @@ const ConfigurationManagement = () => {
           <Card>
             <CardContent className="pt-6">
               <form onSubmit={handleCustomerSubmit} className="flex items-end gap-2">
-                <div className="flex-1 grid grid-cols-5 gap-2">
+                <div className="flex-1 grid grid-cols-6 gap-2">
                   <div>
                     <Label htmlFor="pricing-date" className="text-xs mb-1 block">Date *</Label>
                     <Input
@@ -1086,7 +1095,7 @@ const ConfigurationManagement = () => {
                   <div>
                     <Label htmlFor="customer-sku" className="text-xs mb-1 block">SKU</Label>
                     <Select 
-                      value={customerForm.sku} 
+                      value={customerForm.sku || ""} 
                       onValueChange={(value) => setCustomerForm({...customerForm, sku: value})}
                       disabled={availableSKUsLoading || !!availableSKUsError}
                     >
@@ -1117,6 +1126,17 @@ const ConfigurationManagement = () => {
                       value={customerForm.price_per_bottle}
                       onChange={(e) => setCustomerForm({...customerForm, price_per_bottle: e.target.value})}
                       placeholder="12.50"
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="whatsapp-number" className="text-xs mb-1 block">WhatsApp Number</Label>
+                    <Input
+                      id="whatsapp-number"
+                      type="tel"
+                      value={customerForm.whatsapp_number}
+                      onChange={(e) => setCustomerForm({...customerForm, whatsapp_number: e.target.value})}
+                      placeholder="+919876543210"
                       className="h-9"
                     />
                   </div>
@@ -1174,12 +1194,13 @@ const ConfigurationManagement = () => {
                 </div>
               </div>
 
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[20%]">
-                      <div className="flex items-center gap-2">
-                        Client Name
+              <div className="w-full overflow-x-auto">
+                <Table className="min-w-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Client Name
                         <ColumnFilter
                           columnKey="client_name"
                           columnName="Client Name"
@@ -1189,10 +1210,10 @@ const ConfigurationManagement = () => {
                           dataType="text"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[15%]">
-                      <div className="flex items-center gap-2">
-                        Branch
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Branch
                         <ColumnFilter
                           columnKey="branch"
                           columnName="Branch"
@@ -1202,10 +1223,10 @@ const ConfigurationManagement = () => {
                           dataType="text"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[12%]">
-                      <div className="flex items-center gap-2">
-                        SKU
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          SKU
                         <ColumnFilter
                           columnKey="sku"
                           columnName="SKU"
@@ -1215,10 +1236,10 @@ const ConfigurationManagement = () => {
                           dataType="text"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[12%]">
-                      <div className="flex items-center gap-2">
-                        Pricing Date
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Pricing Date
                         <ColumnFilter
                           columnKey="pricing_date"
                           columnName="Pricing Date"
@@ -1228,10 +1249,10 @@ const ConfigurationManagement = () => {
                           dataType="date"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="text-right w-[12%]">
-                      <div className="flex items-center justify-end gap-2">
-                        Price per Case
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          Price per Case
                         <ColumnFilter
                           columnKey="price_per_case"
                           columnName="Price per Case"
@@ -1241,10 +1262,10 @@ const ConfigurationManagement = () => {
                           dataType="number"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="text-right w-[12%]">
-                      <div className="flex items-center justify-end gap-2">
-                        Price per Bottle
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          Price per Bottle
                         <ColumnFilter
                           columnKey="price_per_bottle"
                           columnName="Price per Bottle"
@@ -1254,15 +1275,15 @@ const ConfigurationManagement = () => {
                           dataType="number"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="w-[10%]">
-                      <div className="flex items-center gap-2">
-                        Status
-                      </div>
-                    </TableHead>
-                    <TableHead className="w-[10%]">
-                      <div className="flex items-center gap-2">
-                        Created
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Status
+                        </div>
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          Created
                         <ColumnFilter
                           columnKey="created_at"
                           columnName="Created"
@@ -1272,31 +1293,31 @@ const ConfigurationManagement = () => {
                           dataType="date"
                         />
                       </div>
-                    </TableHead>
-                    <TableHead className="text-right w-[8%]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAndSortedCustomers?.length > 0 ? (
-                    filteredAndSortedCustomers.map((customer) => (
-                    <TableRow key={customer.id}>
-                      <TableCell className="font-medium w-[20%]">{customer.client_name}</TableCell>
-                      <TableCell className="w-[15%]">{customer.branch}</TableCell>
-                      <TableCell className="w-[12%]">{customer.sku || '-'}</TableCell>
-                      <TableCell className="w-[12%]">{customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '-'}</TableCell>
-                      <TableCell className="text-right w-[12%]">
-                        {customer.price_per_case ? `₹${customer.price_per_case}` : '-'}
-                      </TableCell>
-                      <TableCell className="text-right w-[12%]">
-                        {customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}
-                      </TableCell>
-                      <TableCell className="w-[10%]">
-                        <Badge variant={customer.is_active ? "default" : "secondary"}>
-                          {customer.is_active ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="w-[10%]">{new Date(customer.created_at).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-right w-[8%]">
+                      </TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAndSortedCustomers?.length > 0 ? (
+                      filteredAndSortedCustomers.map((customer) => (
+                      <TableRow key={customer.id}>
+                        <TableCell className="font-medium">{customer.client_name}</TableCell>
+                        <TableCell>{customer.branch}</TableCell>
+                        <TableCell>{customer.sku || '-'}</TableCell>
+                        <TableCell>{customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '-'}</TableCell>
+                        <TableCell className="text-right">
+                          {customer.price_per_case ? `₹${customer.price_per_case}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={customer.is_active ? "default" : "secondary"}>
+                            {customer.is_active ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(customer.created_at).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
@@ -1341,6 +1362,7 @@ const ConfigurationManagement = () => {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1862,6 +1884,17 @@ const ConfigurationManagement = () => {
                   value={editForm.price_per_bottle}
                   onChange={(e) => setEditForm({...editForm, price_per_bottle: e.target.value})}
                   placeholder="0.00"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="edit-whatsapp-number">WhatsApp Number</Label>
+                <Input
+                  id="edit-whatsapp-number"
+                  type="tel"
+                  value={editForm.whatsapp_number}
+                  onChange={(e) => setEditForm({...editForm, whatsapp_number: e.target.value})}
+                  placeholder="+919876543210"
                 />
               </div>
             </div>

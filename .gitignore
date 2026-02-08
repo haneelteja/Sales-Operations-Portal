@@ -50,7 +50,31 @@ lerna-debug.log*
 # Backup files
 *.bak
 *.backup
+*.old
 *~
+
+# Temporary documentation files
+*_STATUS.md
+*_VERIFICATION.md
+*_TROUBLESHOOTING.md
+DEPLOY_*.md
+SETUP_*.md
+QUICK_*.md
+FIX_*.md
+NEXT_STEPS.md
+TASK_*.md
+*_ENV_VARS.txt
+*_VARS.txt
+
+# Scripts with hardcoded credentials
+*_auth_user.sh
+create_*.sh
+
+# Files containing credentials (should use placeholders)
+*_ENV_VARS.txt
+*_VARS.txt
+*_CREDENTIALS.md
+*_SECRETS.md
 
 # Lock files (optional - uncomment if you want to ignore)
 # package-lock.json

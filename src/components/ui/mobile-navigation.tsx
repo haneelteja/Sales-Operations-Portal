@@ -16,7 +16,8 @@ import {
   Settings, 
   Shield,
   User,
-  LogOut
+  LogOut,
+  MessageSquare
 } from 'lucide-react';
 import { useMobileDetection, MOBILE_NAV_CONFIG, MOBILE_CLASSES } from '@/lib/mobile-utils';
 import { cn } from '@/lib/utils';
@@ -51,8 +52,9 @@ const navigationItems: NavigationItem[] = [
   { id: 'labels', title: 'Labels', icon: Tag },
   { id: 'configurations', title: 'Settings', icon: Cog },
   { id: 'reports', title: 'Reports', icon: FileText },
-  { id: 'adjustments', title: 'Adjustments', icon: Settings, roles: ['manager'] }, // Only visible to managers
   { id: 'user-management', title: 'Users', icon: Shield, roles: ['manager'] }, // Only visible to managers
+  { id: 'application-configuration', title: 'App Config', icon: Settings, roles: ['manager', 'admin'] }, // Only visible to managers and admins
+  { id: 'whatsapp-configuration', title: 'WhatsApp Config', icon: MessageSquare, roles: ['manager', 'admin'] }, // Only visible to managers and admins
 ];
 
 export const MobileNavigation: React.FC<MobileNavigationProps> = ({
