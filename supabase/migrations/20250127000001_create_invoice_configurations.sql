@@ -34,6 +34,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_invoice_configs_updated_at ON invoice_configurations;
 CREATE TRIGGER trigger_update_invoice_configs_updated_at
   BEFORE UPDATE ON invoice_configurations
   FOR EACH ROW

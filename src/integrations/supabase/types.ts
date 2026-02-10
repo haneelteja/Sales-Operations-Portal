@@ -49,6 +49,7 @@ export type Database = {
           area: string | null
           dealer_name: string
           created_at: string
+          gst_number: string | null
           id: string
           is_active: boolean
           price_per_bottle: number | null
@@ -56,11 +57,13 @@ export type Database = {
           pricing_date: string | null
           sku: string | null
           updated_at: string
+          whatsapp_number: string | null
         }
         Insert: {
           area?: string | null
           dealer_name: string
           created_at?: string
+          gst_number?: string | null
           id?: string
           is_active?: boolean
           price_per_bottle?: number | null
@@ -68,11 +71,13 @@ export type Database = {
           pricing_date?: string | null
           sku?: string | null
           updated_at?: string
+          whatsapp_number?: string | null
         }
         Update: {
           area?: string | null
           dealer_name?: string
           created_at?: string
+          gst_number?: string | null
           id?: string
           is_active?: boolean
           price_per_bottle?: number | null
@@ -80,6 +85,7 @@ export type Database = {
           pricing_date?: string | null
           sku?: string | null
           updated_at?: string
+          whatsapp_number?: string | null
         }
         Relationships: []
       }

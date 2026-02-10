@@ -42,15 +42,27 @@ ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_client_name_branch_key
 ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_client_name_branch_uniq;
 
 -- ---------------------------------------------------------------------------
--- 2. RENAME COLUMNS
+-- 2. RENAME COLUMNS (idempotent: only if old column exists)
 -- ---------------------------------------------------------------------------
 
 -- customers
-ALTER TABLE customers RENAME COLUMN client_name TO dealer_name;
-ALTER TABLE customers RENAME COLUMN branch TO area;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'client_name') THEN
+    ALTER TABLE customers RENAME COLUMN client_name TO dealer_name;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'branch') THEN
+    ALTER TABLE customers RENAME COLUMN branch TO area;
+  END IF;
+END $$;
 
 -- orders
-ALTER TABLE orders RENAME COLUMN branch TO area;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'branch') THEN
+    ALTER TABLE orders RENAME COLUMN branch TO area;
+  END IF;
+END $$;
 
 -- orders_dispatch (if table exists)
 DO $$
@@ -85,7 +97,12 @@ END $$;
 -- 3. RECREATE CONSTRAINTS AND INDEXES
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE customers ADD CONSTRAINT customers_dealer_name_area_key UNIQUE (dealer_name, area);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.customers'::regclass AND conname = 'customers_dealer_name_area_key') THEN
+    ALTER TABLE customers ADD CONSTRAINT customers_dealer_name_area_key UNIQUE (dealer_name, area);
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_customers_dealer_name ON customers(dealer_name);
 CREATE INDEX IF NOT EXISTS idx_customers_area ON customers(area);
