@@ -23,9 +23,8 @@ import {
 } from '@/components/ui/table';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, handleSupabaseError } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { handleSupabaseError } from '@/lib/utils';
 
 export interface SkuRow {
   id: string | null;
