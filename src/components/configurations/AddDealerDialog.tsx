@@ -295,7 +295,15 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {skuRows.map((row, index) => (
+                  {skuRows.map((row, index) => {
+                    // SKUs already selected in other rows cannot be selected again (one SKU per dealer)
+                    const selectedSkusInOtherRows = new Set(
+                      skuRows.map((r, i) => (i !== index && r.sku ? r.sku : null)).filter(Boolean) as string[]
+                    );
+                    const availableOptions = skuOptions.filter(
+                      (opt) => opt.sku === row.sku || !selectedSkusInOtherRows.has(opt.sku)
+                    );
+                    return (
                     <TableRow key={index}>
                       <TableCell>
                         <Select
@@ -308,7 +316,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__">Select SKU</SelectItem>
-                            {skuOptions.map((opt) => (
+                            {availableOptions.map((opt) => (
                               <SelectItem key={opt.sku} value={opt.sku}>
                                 {opt.sku} ({opt.bottles_per_case} bottles/case)
                               </SelectItem>
@@ -350,7 +358,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );
+                  })}
                 </TableBody>
               </Table>
             </div>

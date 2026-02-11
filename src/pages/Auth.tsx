@@ -254,7 +254,7 @@ const Auth = () => {
                 <span className="text-white font-bold text-2xl">AE</span>
               </div>
             </div>
-            <CardTitle className="text-2xl font-bold mb-1">Aamodha Enterprises</CardTitle>
+            <CardTitle className="text-2xl font-bold mb-1">Absolute Portal</CardTitle>
             <CardDescription className="text-base">Sign in to your account</CardDescription>
           </CardHeader>
           <CardContent className="pt-2">

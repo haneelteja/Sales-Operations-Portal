@@ -494,14 +494,14 @@ const ConfigurationManagement = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Customers List</CardTitle>
+                  <CardTitle>Dealer list</CardTitle>
                   <CardDescription>
-                    All registered customers with their pricing
+                    All registered dealers with their pricing
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">
-                    {filteredAndSortedCustomers?.length || 0} of {customers?.length || 0} customers
+                    {filteredAndSortedCustomers?.length || 0} of {customers?.length || 0} dealers
                   </span>
                   <Button
                     onClick={exportCustomersToExcel}
