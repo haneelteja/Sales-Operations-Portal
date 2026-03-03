@@ -1,7 +1,7 @@
 /**
  * Production Inventory Summary
  * Shows inventory per SKU: total production - recorded sales
- * Compact display (SKU: X cases) matching Production, Order Management, Dashboard
+ * Uses factory_payables (transaction_type='production') - Sales Operations Portal.
  */
 
 import React, { useMemo } from "react";
@@ -15,15 +15,17 @@ interface InventoryBySku {
 }
 
 const ProductionInventory = () => {
+  // Use factory_payables production transactions (Sales Operations - no production table)
   const { data: productionRecords = [] } = useQuery({
     queryKey: ["production-records"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("production")
-        .select("sku, no_of_cases")
-        .order("production_date", { ascending: false });
-      if (error) throw error;
-      return (data || []) as { sku: string; no_of_cases: number }[];
+        .from("factory_payables")
+        .select("sku, quantity")
+        .eq("transaction_type", "production")
+        .not("sku", "is", null);
+      if (error) return [];
+      return (data || []).map((r) => ({ sku: r.sku!, no_of_cases: r.quantity ?? 0 }));
     },
   });
 
