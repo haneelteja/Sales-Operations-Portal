@@ -61,10 +61,10 @@ const SupabaseVerify: React.FC = () => {
               description: "Redirecting to password reset...",
             });
             
-            // Redirect to reset password page
+            // Redirect to reset password page (session is already set, so ResetPassword will find it)
             setTimeout(() => {
               navigate('/reset-password');
-            }, 1000);
+            }, 500);
           }
         } catch (err: unknown) {
           console.error('Verification error:', err);

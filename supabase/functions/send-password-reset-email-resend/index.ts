@@ -51,7 +51,7 @@ serve(async (req) => {
     // Get the actual reset URL - prefer provided one, otherwise use production URL
     // Default to production Vercel URL if not provided
     const productionAppUrl = Deno.env.get('PRODUCTION_APP_URL') || 'https://sales-operations-portal.vercel.app'
-    const appResetUrl = resetUrl || `${productionAppUrl}/reset-password`
+    const appResetUrl = resetUrl || `${productionAppUrl}/verify`
     
     // Generate password reset token using Supabase Admin API
     // This creates a proper reset link that Supabase will recognize
@@ -59,7 +59,7 @@ serve(async (req) => {
       type: 'recovery',
       email: email,
       options: {
-        redirectTo: appResetUrl // This should be /reset-password
+        redirectTo: appResetUrl // /verify receives tokens, sets session, then navigates to /reset-password
       }
     })
 
@@ -77,8 +77,7 @@ serve(async (req) => {
       )
     }
 
-    // ALWAYS rebuild the link to ensure it uses /reset-password, not /verify
-    // Supabase's generateLink might use Site URL from config which could be /verify
+    // Rebuild the link to ensure redirect_to matches the appResetUrl (e.g. /verify)
     let finalResetUrl = resetData.properties?.action_link || appResetUrl
     
     // Extract token from the generated link
@@ -88,7 +87,7 @@ serve(async (req) => {
     if (token) {
       // Rebuild the reset link with production URL ALWAYS pointing to /reset-password
       const baseSupabaseUrl = supabaseUrl.replace('/rest/v1', '')
-      // Force redirect_to to be /reset-password (not /verify)
+      // Force redirect_to to match appResetUrl (/verify receives tokens, sets session, then navigates to /reset-password)
       finalResetUrl = `${baseSupabaseUrl}/auth/v1/verify?token=${token}&type=recovery&redirect_to=${encodeURIComponent(appResetUrl)}`
       console.log('Rebuilt reset URL - redirect_to:', appResetUrl)
       console.log('Final reset URL:', finalResetUrl)

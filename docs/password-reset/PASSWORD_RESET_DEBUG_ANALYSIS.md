@@ -334,8 +334,8 @@ After implementing fixes, verify:
 ## Additional Notes
 
 - Supabase password reset links typically use hash fragments (`#`) not query params (`?`)
-- The `redirect_to` parameter in the email link determines where Supabase redirects after verification
-- Ensure `redirect_to` is set to `/reset-password` in the reset email configuration
+- **Current flow:** Redirect goes to `/verify` which receives tokens, sets session, then navigates to `/reset-password`
+- **Supabase config required:** Add `https://your-domain.com/verify` to Supabase Dashboard > Auth > URL Configuration > Redirect URLs
 - Check Supabase dashboard settings for Site URL and redirect URLs
 
 ---

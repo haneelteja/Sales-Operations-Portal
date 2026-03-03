@@ -332,7 +332,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             ? 'https://sales-operations-portal.vercel.app'
                             : window.location.origin);
       
-      const resetUrl = `${productionUrl}/reset-password`;
+      // Use /verify as redirect - it reliably receives tokens and sets session before navigating to /reset-password.
+      // Add https://your-domain.com/verify to Supabase Dashboard > Auth > URL Configuration > Redirect URLs
+      const resetUrl = `${productionUrl}/verify`;
 
       // Skip Edge Function if Resend domain is not verified (to avoid unnecessary 500 errors)
       // Set VITE_USE_RESEND_EMAIL=true in environment to enable Resend Edge Function
