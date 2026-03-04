@@ -1,24 +1,21 @@
-import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React, { lazy, Suspense } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import OrderManagement from '@/components/order-management/OrderManagement';
 
-const queryClient = new QueryClient();
+const OrderManagement = lazy(() => import('@/components/order-management/OrderManagement'));
 
 /**
- * Use this component as the entry point for embedding OrderManagement
- * in any external app or micro-frontend scenario. It ensures all required
- * providers are present in the render tree.
+ * Entry point for embedding OrderManagement. Uses parent QueryClientProvider
+ * from App when rendered at /embedded-order-management (shared cache).
  */
 export default function EmbeddedOrderManagement() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SidebarProvider>
+    <AuthProvider>
+      <SidebarProvider>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full" /></div>}>
           <OrderManagement />
-        </SidebarProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+        </Suspense>
+      </SidebarProvider>
+    </AuthProvider>
   );
 }

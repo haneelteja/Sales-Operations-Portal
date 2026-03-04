@@ -45,7 +45,7 @@ export const useCustomers = () => {
       return data as Customer[];
     },
     staleTime: 60000,
-    cacheTime: 600000,
+    gcTime: 600000,
   });
 };
 

@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 
@@ -16,7 +17,19 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import EmbeddedOrderManagement from "@/components/order-management/EmbeddedOrderManagement";
 import MinimalTest from "@/pages/MinimalTest"; // ✅ MOVED HERE
 
-const queryClient = new QueryClient({ /* unchanged */ });
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 2 * 60 * 1000, // 2 minutes
+      gcTime: 5 * 60 * 1000, // 5 minutes
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <ErrorBoundary>
@@ -48,6 +61,7 @@ const App = () => (
         </TooltipProvider>
       </AuthProvider>
     </QueryClientProvider>
+    {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
   </ErrorBoundary>
 );
 

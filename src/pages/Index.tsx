@@ -1,5 +1,4 @@
 import { useState, lazy, Suspense } from "react";
-import OrderManagement from "@/components/order-management/OrderManagement";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,6 +7,7 @@ import { Shield, Loader2 } from "lucide-react";
 
 // Lazy load route components for code splitting
 const Dashboard = lazy(() => import("@/components/dashboard/Dashboard"));
+const OrderManagement = lazy(() => import("@/components/order-management/OrderManagement"));
 const SalesEntry = lazy(() => import("@/components/sales/SalesEntry"));
 const FactoryPayables = lazy(() => import("@/components/factory/FactoryPayables"));
 const TransportExpenses = lazy(() => import("@/components/transport/TransportExpenses"));

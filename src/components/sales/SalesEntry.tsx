@@ -30,92 +30,10 @@ import { saleFormSchema, paymentFormSchema, salesItemSchema } from "@/lib/valida
 import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
 import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
-import { useInvoiceGeneration, useInvoice, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
+import { InvoiceActions, InvoiceNumberCell } from "@/components/sales/InvoiceActions";
+import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
 import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 import ProductionInventory from "@/components/sales/ProductionInventory";
-
-// Invoice Actions Component
-const InvoiceActions = ({ 
-  transaction, 
-  customer, 
-  onGenerate, 
-  onDownload,
-  isGenerating 
-}: { 
-  transaction: SalesTransaction;
-  customer?: Customer;
-  onGenerate: (transaction: SalesTransaction) => void;
-  onDownload: (invoice: any, format: 'word' | 'pdf') => void;
-  isGenerating: boolean;
-}) => {
-  const { data: invoice, isLoading: invoiceLoading } = useInvoice(transaction.id);
-  
-  if (transaction.transaction_type !== 'sale') return null;
-  
-  if (invoiceLoading) {
-    return (
-      <Button variant="outline" size="sm" disabled>
-        <Loader2 className="h-4 w-4 animate-spin" />
-      </Button>
-    );
-  }
-  
-  if (invoice) {
-    return (
-      <>
-        {invoice.word_file_url && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onDownload(invoice, 'word')}
-            title="Download Word Invoice"
-          >
-            <FileText className="h-4 w-4" />
-          </Button>
-        )}
-        {invoice.pdf_file_url && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onDownload(invoice, 'pdf')}
-            title="Download PDF Invoice"
-          >
-            <Download className="h-4 w-4" />
-          </Button>
-        )}
-      </>
-    );
-  }
-  
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => onGenerate(transaction)}
-      disabled={isGenerating}
-      title="Generate Invoice"
-    >
-      {isGenerating ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <FileText className="h-4 w-4" />
-      )}
-    </Button>
-  );
-};
-
-/** Cell that shows invoice number for a transaction (sales only). */
-const InvoiceNumberCell = ({
-  transactionId,
-  transactionType,
-}: {
-  transactionId: string;
-  transactionType: string;
-}) => {
-  const { data: invoice } = useInvoice(transactionType === 'sale' ? transactionId : null);
-  if (transactionType !== 'sale') return <span className="text-muted-foreground">—</span>;
-  return <span>{invoice?.invoice_number ?? '—'}</span>;
-};
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
 const safeNumValue = (v: string | number | undefined | null): string => {
@@ -342,7 +260,7 @@ const SalesEntry = () => {
       }
     },
     staleTime: 60000, // 1 minute
-    cacheTime: 600000, // 10 minutes
+    gcTime: 600000, // 10 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
@@ -936,7 +854,7 @@ const SalesEntry = () => {
       }
     },
     staleTime: 300000, // 5 minutes
-    cacheTime: 600000, // 10 minutes
+    gcTime: 600000, // 10 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
