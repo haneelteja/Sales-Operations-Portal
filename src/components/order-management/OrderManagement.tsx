@@ -969,14 +969,14 @@ const OrderManagement: React.FC = () => {
                 </p>
               )}
               {skuRows.map((row, index) => (
-                <div key={index} className="flex items-center gap-2 flex-wrap">
+                <div key={index} className="flex items-center gap-2 md:gap-3 flex-wrap md:flex-nowrap">
                   <span className="text-xs font-medium text-muted-foreground w-6">{index + 1}.</span>
                   {singleSkuMode ? (
-                    <span className="flex-1 min-w-[120px] text-xs font-medium py-1.5 px-2 rounded border bg-muted/50">
+                    <span className="min-w-[140px] max-w-[260px] text-xs font-medium py-1.5 px-2 rounded border bg-muted/50 truncate">
                       {row.sku || getAllAvailableSKUs()[0]}
                     </span>
                   ) : (
-                    <div className="flex-1 min-w-[120px]">
+                    <div className="min-w-[140px] max-w-[260px] flex-none">
                       <Select
                         value={row.sku || ""}
                         onValueChange={(value) => updateSkuRow(index, "sku", value)}
@@ -995,7 +995,7 @@ const OrderManagement: React.FC = () => {
                       </Select>
                     </div>
                   )}
-                  <div className="w-16">
+                  <div className="w-20">
                     <Input
                       type="number"
                       min="1"
