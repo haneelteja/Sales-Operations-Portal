@@ -1,0 +1,31 @@
+# Hit the Supabase activity ping endpoint twice a week so the free-tier project
+# does not go inactive. Set Repository variable PRODUCTION_URL (e.g. https://your-app.vercel.app).
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # 09:00 UTC on Monday and Thursday (twice a week, well under free limits)
+    - cron: '0 9 * * 1,4'
+  workflow_dispatch: # Allow manual run from Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase activity endpoint
+        run: |
+          URL="${{ vars.PRODUCTION_URL }}/api/supabase-activity-ping"
+          if [ -z "${{ vars.PRODUCTION_URL }}" ]; then
+            echo "PRODUCTION_URL not set. Add it in Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+          echo "Calling $URL ..."
+          res=$(curl -s -w "\n%{http_code}" "$URL")
+          body=$(echo "$res" | head -n -1)
+          code=$(echo "$res" | tail -n 1)
+          echo "Response ($code): $body"
+          if [ "$code" != "200" ]; then
+            echo "Unexpected status $code"
+            exit 1
+          fi
+          echo "Supabase keep-alive ping succeeded."

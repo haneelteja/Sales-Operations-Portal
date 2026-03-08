@@ -507,6 +507,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ping: {
+        Args: Record<string, never>
+        Returns: number
+      }
       get_user_role: {
         Args: { user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
