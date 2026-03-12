@@ -312,6 +312,9 @@ const SalesEntry = () => {
 
   const getCustomerName = useCallback((customer: any) => customer?.client_name || customer?.dealer_name || "", []);
   const getCustomerBranch = useCallback((customer: any) => customer?.branch || customer?.area || "", []);
+  const getTransactionBranch = useCallback((transaction: any) => (
+    transaction?.branch || transaction?.area || transaction?.customers?.branch || transaction?.customers?.area || ""
+  ), []);
 
   const findCustomerRecord = useCallback((params: {
     customerId?: string;
@@ -996,8 +999,9 @@ const SalesEntry = () => {
             quantity,
             sku,
             description,
+            branch,
             created_at,
-            customers (dealer_name, area)
+            customers (dealer_name, client_name, area, branch)
           `, { count: 'exact' })
           .gte("created_at", ninetyDaysAgo.toISOString())
           .order("transaction_date", { ascending: false })
@@ -1153,7 +1157,7 @@ const SalesEntry = () => {
       return transactionsWithOutstanding.filter((transaction) => {
         try {
           const customerName = transaction.customers?.dealer_name || '';
-          const area = transaction.customers?.area || '';
+          const area = getTransactionBranch(transaction);
           const sku = transaction.sku || '';
           const description = transaction.description || '';
           const amount = transaction.amount?.toString() || '';
@@ -1262,8 +1266,8 @@ const SalesEntry = () => {
               valueB = b.customers?.dealer_name || '';
               break;
             case 'area':
-              valueA = a.customers?.area || '';
-              valueB = b.customers?.area || '';
+              valueA = getTransactionBranch(a);
+              valueB = getTransactionBranch(b);
               break;
             case 'type':
               valueA = a.transaction_type || '';
@@ -1331,11 +1335,11 @@ const SalesEntry = () => {
   const getUniqueBranches = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
-      const area = t.customers?.area;
+      const area = getTransactionBranch(t);
       if (area) unique.add(area);
     });
     return Array.from(unique).sort();
-  }, [recentTransactions]);
+  }, [getTransactionBranch, recentTransactions]);
 
   const getUniqueSKUs = useMemo(() => {
     const unique = new Set<string>();
@@ -1365,7 +1369,7 @@ const SalesEntry = () => {
       return {
         'Date': new Date(transaction.transaction_date).toLocaleDateString(),
         'Client': transaction.customers?.dealer_name || 'N/A',
-        'Branch': transaction.customers?.area || 'N/A',
+        'Branch': getTransactionBranch(transaction) || 'N/A',
         'Type': transaction.transaction_type || '',
         'SKU': transaction.sku || '',
         'Quantity (cases)': transaction.quantity || 0,
@@ -1437,6 +1441,7 @@ const SalesEntry = () => {
         sku: string;
         description?: string;
         transaction_date?: string;
+        branch?: string | null;
       } = {
         customer_id: data.customer_id,
         transaction_type: "sale",
@@ -1446,7 +1451,7 @@ const SalesEntry = () => {
         sku: data.sku || null,
         description: data.description || null,
         transaction_date: data.transaction_date,
-        area: data.area || null
+        branch: data.area || null
       };
       
       console.log('Inserting sales transaction:', saleData);
@@ -1705,7 +1710,7 @@ const SalesEntry = () => {
           description: data.description || null,
           sku: "Payment",
           quantity: 0,
-          area: data.area || null,
+          branch: data.area || null,
         };
 
         const { data: paymentData, error } = await supabase
@@ -1774,7 +1779,8 @@ const SalesEntry = () => {
           quantity: data.quantity ? parseInt(data.quantity) : null,
           sku: data.sku,
           description: data.description,
-          transaction_date: data.transaction_date
+          transaction_date: data.transaction_date,
+          branch: data.area || null
         })
         .eq("id", data.id);
 
@@ -2006,10 +2012,10 @@ const SalesEntry = () => {
       sku: transaction.sku || "",
       description: transaction.description || "",
       transaction_date: transaction.transaction_date || "",
-      area: transaction.area || transaction.customers?.area || "",
+      area: getTransactionBranch(transaction),
       price_per_case: ""
     });
-  }, []); // Stable function - no dependencies
+  }, [getTransactionBranch]); // Stable function - no dependencies
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2711,7 +2717,7 @@ const SalesEntry = () => {
                       {transaction.customers?.dealer_name}
                     </TableCell>
                     <TableCell className="truncate max-w-[80px]">
-                      {transaction.customers?.area || '-'}
+                      {getTransactionBranch(transaction) || '-'}
                     </TableCell>
                     <TableCell>
                       <span className={`px-2 py-1 rounded-full text-xs ${
