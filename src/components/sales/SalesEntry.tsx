@@ -315,6 +315,21 @@ const SalesEntry = () => {
   const getTransactionBranch = useCallback((transaction: any) => (
     transaction?.branch || transaction?.area || transaction?.customers?.branch || transaction?.customers?.area || ""
   ), []);
+  const getInvoiceFailureDescription = useCallback((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    const normalized = message.toLowerCase();
+
+    if (
+      normalized.includes("google drive authentication failed") ||
+      normalized.includes("failed to get access token") ||
+      normalized.includes("token refresh failed") ||
+      normalized.includes("unauthorized")
+    ) {
+      return "Sale recorded successfully, but Google Drive authentication failed during invoice upload. Please reconnect or refresh the Google Drive token, then generate the invoice manually.";
+    }
+
+    return "Sale recorded successfully, but invoice generation failed. You can generate it manually.";
+  }, []);
 
   const findCustomerRecord = useCallback((params: {
     customerId?: string;
@@ -1647,7 +1662,7 @@ const SalesEntry = () => {
             logger.error('Auto-invoice generation failed:', error);
             toast({
               title: "Invoice Generation Warning",
-              description: "Sale recorded successfully, but invoice generation failed. You can generate it manually.",
+              description: getInvoiceFailureDescription(error),
               variant: "destructive"
             });
           }

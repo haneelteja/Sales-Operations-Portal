@@ -40,6 +40,22 @@ const DEFAULT_COMPANY_CONFIG: CompanyConfig = {
   terms: import.meta.env.VITE_INVOICE_TERMS || 'Payment due within 30 days.',
 };
 
+function formatInvoiceGenerationError(error: Error): string {
+  const message = error.message || 'Unknown error';
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('google drive authentication failed') ||
+    normalized.includes('failed to get access token') ||
+    normalized.includes('token refresh failed') ||
+    normalized.includes('unauthorized')
+  ) {
+    return 'Google Drive authentication failed. The sale was saved, but invoice upload could not complete. Reconnect Google Drive or update the token configuration.';
+  }
+
+  return `Failed to generate invoice: ${message}`;
+}
+
 /**
  * Hook to generate invoice for a transaction
  */
@@ -48,6 +64,7 @@ export function useInvoiceGeneration() {
   const { toast } = useToast();
 
   const generateMutation = useMutation({
+    retry: false,
     mutationFn: async ({
       transactionId,
       transaction,
@@ -135,7 +152,7 @@ export function useInvoiceGeneration() {
     onError: (error: Error) => {
       toast({
         title: 'Error',
-        description: `Failed to generate invoice: ${error.message}`,
+        description: formatInvoiceGenerationError(error),
         variant: 'destructive',
       });
     },
