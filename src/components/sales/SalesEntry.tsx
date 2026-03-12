@@ -578,13 +578,15 @@ const SalesEntry = () => {
         // Create corresponding transport transaction
         const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
         
+        const transportBranch = selectedCustomer ? getCustomerBranch(selectedCustomer) : saleForm.area;
+        const transportCustomerName = selectedCustomer ? getCustomerName(selectedCustomer) : "";
         const transportData = {
           amount: 0,
-          description: selectedCustomer ? `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport` : 'Client-Branch Transport',
+          description: transportCustomerName ? `${transportCustomerName}-${transportBranch} Transport` : 'Client-Branch Transport',
           expense_date: saleForm.transaction_date,
           expense_group: "Client Sale Transport",
           client_id: saleForm.customer_id || null,
-          area: selectedCustomer?.area || null,
+          branch: transportBranch || null,
         };
 
         const { error: transportError } = await supabase
@@ -1569,13 +1571,15 @@ const SalesEntry = () => {
       // Create corresponding transport transaction
       const selectedCustomer = customers?.find(c => c.id === data.customer_id);
       
+      const transportBranch = selectedCustomer ? getCustomerBranch(selectedCustomer) : data.area;
+      const transportCustomerName = selectedCustomer ? getCustomerName(selectedCustomer) : "";
       const transportData = {
         amount: 0,
-        description: selectedCustomer ? `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport` : 'Client-Branch Transport',
+        description: transportCustomerName ? `${transportCustomerName}-${transportBranch} Transport` : 'Client-Branch Transport',
         expense_date: data.transaction_date,
         expense_group: "Client Sale Transport",
         client_id: data.customer_id || null,
-        area: selectedCustomer?.area || null,
+        branch: transportBranch || null,
       };
 
       const { error: transportError } = await supabase
