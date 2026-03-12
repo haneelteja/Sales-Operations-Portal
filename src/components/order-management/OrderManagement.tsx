@@ -24,6 +24,7 @@ interface OrderRow {
   id: string;
   client: string;
   area: string;
+  branch?: string;
   sku: string;
   number_of_cases: number;
   tentative_delivery_date: string;
@@ -36,6 +37,7 @@ interface DispatchRow {
   id: string;
   client: string;
   area: string;
+  branch?: string;
   sku: string;
   cases: number;
   delivery_date: string;
@@ -160,6 +162,7 @@ const OrderManagement: React.FC = () => {
       const ordersJson = newOrders.map((o) => ({
         client: o.client,
         area: o.area,
+        branch: o.area,
         sku: o.sku,
         number_of_cases: o.number_of_cases,
         date: o.date,
@@ -172,11 +175,10 @@ const OrderManagement: React.FC = () => {
       if (!rpcError && rpcData?.ids) {
         return (rpcData.ids as string[]).map((id) => ({ id }));
       }
-      throw new Error(
-        rpcError?.message
-          ? `Order creation failed: ${rpcError.message}. Run docs/migration/ADD_INSERT_ORDERS_RPC_ONLY.sql in Supabase SQL Editor.`
-          : "Order creation failed. Run docs/migration/ADD_INSERT_ORDERS_RPC_ONLY.sql in Supabase SQL Editor."
-      );
+      const errMsg = rpcError?.message ?? "Unknown error";
+      const errDetails = rpcError ? JSON.stringify({ code: (rpcError as any).code, details: (rpcError as any).details, hint: (rpcError as any).hint }) : "";
+      logger.error("[insert_orders] RPC failed", { message: errMsg, details: errDetails, payload: ordersJson });
+      throw new Error(`Order creation failed: ${errMsg}${errDetails ? ` (${errDetails})` : ""}`);
     },
     onSuccess: (_, variables) => {
       const count = variables.length;
@@ -225,6 +227,7 @@ const OrderManagement: React.FC = () => {
         .insert([{
           client: orderData.client || orderData.dealer_name,
           area: orderData.area ?? orderData.branch,
+          branch: orderData.branch ?? orderData.area,
           sku: orderData.sku,
           cases: orderData.number_of_cases ?? orderData.quantity ?? 0,
           delivery_date: orderData.tentative_delivery_date ?? orderData.tentative_delivery_time,
@@ -340,12 +343,19 @@ const OrderManagement: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from("orders_dispatch")
-          .select("id, client, area, sku, cases, delivery_date")
+          .select("*")
           .order("delivery_date", { ascending: false });
 
-        if (error) throw error;
-        return data || [];
-      } catch {
+        if (error) {
+          logger.error("[orders_dispatch] Query failed", { message: error.message, code: (error as any).code, details: (error as any).details });
+          throw error;
+        }
+        return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
+          ...row,
+          area: String(row.area ?? row.branch ?? ""),
+        }));
+      } catch (e) {
+        logger.error("[orders_dispatch] Caught", e);
         return [];
       }
     },
@@ -358,6 +368,7 @@ const OrderManagement: React.FC = () => {
       .map((order) => ({
         ...order,
         client: order.client || "",
+        area: order.area || order.branch || "",
       }))
       .sort((a, b) => {
         const statusA = a.status === "pending" ? 1 : 2;
@@ -450,7 +461,7 @@ const OrderManagement: React.FC = () => {
     if (!orderForm.client_id || !orderForm.area || !orderForm.tentative_delivery_date) {
       toast({
         title: "Validation Error",
-        description: "Please fill in dealer, area, and tentative delivery date",
+        description: "Please fill in client, branch, and tentative delivery date",
         variant: "destructive",
       });
       return;
@@ -496,7 +507,7 @@ const OrderManagement: React.FC = () => {
     if (!selectedCustomer) {
       toast({
         title: "Error",
-        description: "Selected dealer not found",
+        description: "Selected client not found",
         variant: "destructive",
       });
       return;
@@ -780,8 +791,8 @@ const OrderManagement: React.FC = () => {
     if (!filteredAndSortedOrders.length) return;
 
     const exportData = filteredAndSortedOrders.map((order) => ({
-      Dealer: order.client,
-      Area: order.area,
+      Client: order.client,
+      Branch: order.area,
       SKU: order.sku,
       "Number of Cases": order.number_of_cases,
       "Tentative Delivery Date": order.tentative_delivery_date,
@@ -800,8 +811,8 @@ const OrderManagement: React.FC = () => {
     if (!filteredAndSortedDispatch.length) return;
 
     const exportData = filteredAndSortedDispatch.map((row) => ({
-      Dealer: row.client,
-      Area: row.area,
+      Client: row.client,
+      Branch: row.area,
       SKU: row.sku,
       Cases: row.cases,
       "Delivery Date": row.delivery_date,
@@ -888,7 +899,7 @@ const OrderManagement: React.FC = () => {
         </CardHeader>
         <CardContent className="pt-0 px-4 pb-4">
           <form onSubmit={handleOrderSubmit} className="space-y-3">
-            {/* Row 1: Date, Dealer, Area, Tentative Delivery Date */}
+            {/* Row 1: Date, Client, Branch, Tentative Delivery Date */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
               <div className="space-y-1">
                 <Label htmlFor="order-date" className="text-xs">Date *</Label>
@@ -902,10 +913,10 @@ const OrderManagement: React.FC = () => {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="order-client" className="text-xs">Dealer *</Label>
+                <Label htmlFor="order-client" className="text-xs">Client *</Label>
                 <Select value={orderForm.client_id || ""} onValueChange={handleClientChange}>
                   <SelectTrigger id="order-client">
-                    <SelectValue placeholder="Select dealer" />
+                    <SelectValue placeholder="Select client" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
                     {getUniqueCustomers().map((customer) => (
@@ -917,14 +928,14 @@ const OrderManagement: React.FC = () => {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="order-area" className="text-xs">Area *</Label>
+                <Label htmlFor="order-area" className="text-xs">Branch *</Label>
                 <Select
                   value={orderForm.area || ""}
                   onValueChange={handleAreaChange}
                   disabled={!orderForm.client_id}
                 >
                   <SelectTrigger id="order-area">
-                    <SelectValue placeholder="Select area" />
+                    <SelectValue placeholder="Select branch" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
                     {getAvailableAreas(orderForm.client_id).map((area, index) => (
@@ -965,7 +976,7 @@ const OrderManagement: React.FC = () => {
               <Label className="text-xs">SKUs *</Label>
               {singleSkuMode && (
                 <p className="text-xs text-muted-foreground">
-                  This dealer has only one SKU. Enter the number of cases below.
+                  This client branch has only one SKU. Enter the number of cases below.
                 </p>
               )}
               {skuRows.map((row, index) => (
@@ -1023,7 +1034,7 @@ const OrderManagement: React.FC = () => {
                       onClick={addSkuRow}
                       className="shrink-0"
                       disabled={allSkusSelected}
-                      title={allSkusSelected ? "All available SKUs for this dealer are already added" : "Add another SKU"}
+                      title={allSkusSelected ? "All available SKUs for this client branch are already added" : "Add another SKU"}
                     >
                       <Plus className="h-4 w-4 mr-1" />
                       Add SKU
@@ -1033,7 +1044,7 @@ const OrderManagement: React.FC = () => {
               ))}
               {allSkusSelected && !singleSkuMode && (
                 <p className="text-xs text-muted-foreground">
-                  All available SKUs for this dealer have been added.
+                  All available SKUs for this client branch have been added.
                 </p>
               )}
             </div>
@@ -1096,10 +1107,10 @@ const OrderManagement: React.FC = () => {
                   <TableRow className="bg-gradient-to-r from-blue-100 via-blue-50 to-blue-100 hover:from-blue-200 hover:via-blue-100 hover:to-blue-200 transition-all duration-200">
                     <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
                       <div className="flex items-center gap-2 text-gray-800">
-                        <span>Dealer</span>
+                        <span>Client</span>
                         <ColumnFilter
                           columnKey="client"
-                          columnName="Dealer"
+                          columnName="Client"
                           filterValue={ordersColumnFilters.client}
                           onFilterChange={(value) => handleOrdersColumnFilterChange('client', value as string)}
                           onClearFilter={() => handleOrdersColumnFilterChange('client', '')}
@@ -1113,10 +1124,10 @@ const OrderManagement: React.FC = () => {
                     </TableHead>
                     <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
                       <div className="flex items-center gap-2 text-gray-800">
-                        <span>Area</span>
+                        <span>Branch</span>
                         <ColumnFilter
                           columnKey="area"
-                          columnName="Area"
+                          columnName="Branch"
                           filterValue={ordersColumnFilters.area}
                           onFilterChange={(value) => handleOrdersColumnFilterChange('area', value as string)}
                           onClearFilter={() => handleOrdersColumnFilterChange('area', '')}
@@ -1300,10 +1311,10 @@ const OrderManagement: React.FC = () => {
                   <TableRow className="bg-gradient-to-r from-green-100 via-green-50 to-green-100 hover:from-green-200 hover:via-green-100 hover:to-green-200 transition-all duration-200">
                     <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
                       <div className="flex items-center gap-2 text-gray-800">
-                        <span>Dealer</span>
+                        <span>Client</span>
                         <ColumnFilter
                           columnKey="client"
-                          columnName="Dealer"
+                          columnName="Client"
                           filterValue={dispatchColumnFilters.client}
                           onFilterChange={(value) => handleDispatchColumnFilterChange('client', value as string)}
                           onClearFilter={() => handleDispatchColumnFilterChange('client', '')}
@@ -1317,10 +1328,10 @@ const OrderManagement: React.FC = () => {
                     </TableHead>
                     <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
                       <div className="flex items-center gap-2 text-gray-800">
-                        <span>Area</span>
+                        <span>Branch</span>
                         <ColumnFilter
                           columnKey="area"
-                          columnName="Area"
+                          columnName="Branch"
                           filterValue={dispatchColumnFilters.area}
                           onFilterChange={(value) => handleDispatchColumnFilterChange('area', value as string)}
                           onClearFilter={() => handleDispatchColumnFilterChange('area', '')}
