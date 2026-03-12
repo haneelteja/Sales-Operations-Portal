@@ -69,7 +69,7 @@ export const EditTransactionDialog = memo(({
           <DialogDescription id="edit-transaction-desc">Update sale transaction details.</DialogDescription>
         </DialogHeader>
         <form onSubmit={onEditSubmit} className="space-y-6">
-          {/* First Row: Date, Dealer, Area */}
+          {/* First Row: Date, Client, Branch */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="edit-date">Date *</Label>
@@ -82,13 +82,13 @@ export const EditTransactionDialog = memo(({
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="edit-customer">Dealer</Label>
+              <Label htmlFor="edit-customer">Client</Label>
               <Select 
                 value={customers?.find(c => c.id === editForm.customer_id)?.dealer_name ?? ""} 
                 onValueChange={onCustomerChange}
               >
                 <SelectTrigger id="edit-customer">
-                  <SelectValue placeholder="Select dealer" />
+                  <SelectValue placeholder="Select client" />
                 </SelectTrigger>
                 <SelectContent>
                   {getUniqueCustomers.map((customerName) => (
@@ -101,14 +101,14 @@ export const EditTransactionDialog = memo(({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-area">Area</Label>
+              <Label htmlFor="edit-area">Branch</Label>
               <Select 
                 value={editForm.area ?? ""} 
                 onValueChange={(value) => onFormChange({ area: value })}
                 disabled={!editForm.customer_id}
               >
                 <SelectTrigger id="edit-area">
-                  <SelectValue placeholder={editForm.customer_id ? "Select area" : "Select dealer first"} />
+                  <SelectValue placeholder={editForm.customer_id ? "Select branch" : "Select client first"} />
                 </SelectTrigger>
                 <SelectContent>
                   {getAvailableAreasForEdit().map((area) => (
@@ -151,7 +151,7 @@ export const EditTransactionDialog = memo(({
                 value={getPricePerCaseForEdit()}
                 readOnly
                 className="bg-gray-50"
-                placeholder="Select customer and area first"
+                placeholder="Select client and branch first"
               />
             </div>
           </div>

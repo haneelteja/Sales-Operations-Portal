@@ -426,7 +426,7 @@ const SalesEntry = () => {
     if (!saleForm.customer_id || !saleForm.area || salesItems.length === 0) {
       toast({
         title: "Error",
-        description: "Please select customer, area, and add at least one item",
+        description: "Please select client, branch, and add at least one item",
         variant: "destructive"
       });
       return;
@@ -506,7 +506,7 @@ const SalesEntry = () => {
           sku: item.sku || null,
           amount: Math.max(0, finalFactoryAmount), // Ensure amount is never negative
           quantity: quantity || null,
-          description: customerData?.dealer_name || "Unknown Dealer", // Use client name as description
+          description: customerData?.dealer_name || "Unknown Client", // Use client name as description
           transaction_date: saleForm.transaction_date,
           customer_id: saleForm.customer_id
         };
@@ -535,7 +535,7 @@ const SalesEntry = () => {
         
         const transportData = {
           amount: 0,
-          description: selectedCustomer ? `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport` : 'Dealer-Area Transport',
+          description: selectedCustomer ? `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport` : 'Client-Branch Transport',
           expense_date: saleForm.transaction_date,
           expense_group: "Client Sale Transport",
           client_id: saleForm.customer_id || null,
@@ -1323,7 +1323,7 @@ const SalesEntry = () => {
       const customer = customers?.find(c => c.id === transaction.customer_id);
       return {
         'Date': new Date(transaction.transaction_date).toLocaleDateString(),
-        'Dealer': transaction.customers?.dealer_name || 'N/A',
+        'Client': transaction.customers?.dealer_name || 'N/A',
         'Branch': transaction.customers?.area || 'N/A',
         'Type': transaction.transaction_type || '',
         'SKU': transaction.sku || '',
@@ -1491,7 +1491,7 @@ const SalesEntry = () => {
         transaction_type: "production",
         sku: data.sku || null,
         amount: Math.max(0, finalFactoryAmount), // Ensure amount is never negative
-        description: customerData?.dealer_name || "Unknown Dealer", // Use client name as description
+        description: customerData?.dealer_name || "Unknown Client", // Use client name as description
         transaction_date: data.transaction_date,
         customer_id: data.customer_id
       };
@@ -1525,7 +1525,7 @@ const SalesEntry = () => {
       
       const transportData = {
         amount: 0,
-        description: selectedCustomer ? `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport` : 'Dealer-Area Transport',
+        description: selectedCustomer ? `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport` : 'Client-Branch Transport',
         expense_date: data.transaction_date,
         expense_group: "Client Sale Transport",
         client_id: data.customer_id || null,
@@ -1640,7 +1640,7 @@ const SalesEntry = () => {
       try {
         // Validate input data
         if (!data.customer_id || !data.area || !data.amount) {
-          throw new Error('Missing required fields: customer, area, or amount');
+          throw new Error('Missing required fields: client, branch, or amount');
         }
 
         const amount = parseFloat(data.amount);
@@ -1758,7 +1758,7 @@ const SalesEntry = () => {
 
         // Get customer name for description update
         const selectedCustomer = customers?.find(c => c.id === data.customer_id);
-        const newDescription = selectedCustomer?.dealer_name || "Unknown Dealer";
+        const newDescription = selectedCustomer?.dealer_name || "Unknown Client";
 
         // Find and update factory payables transaction using reliable identifiers:
         // customer_id, transaction_date, sku, and transaction_type
@@ -1796,7 +1796,7 @@ const SalesEntry = () => {
       // Update corresponding transport transaction (match by description + date since client_id may not exist)
       if (selectedCustomer) {
         const originalCustomer = customers?.find(c => c.id === originalCustomerId);
-        const originalDescription = originalCustomer ? `${originalCustomer.dealer_name}-${originalCustomer.area} Transport` : 'Dealer-Area Transport';
+        const originalDescription = originalCustomer ? `${originalCustomer.dealer_name}-${originalCustomer.area} Transport` : 'Client-Branch Transport';
         const newDescription = `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport`;
 
         const { error: transportError } = await supabase
@@ -1998,7 +1998,7 @@ const SalesEntry = () => {
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="sale">Record Sale</TabsTrigger>
-          <TabsTrigger value="payment">Record Dealer Payment</TabsTrigger>
+          <TabsTrigger value="payment">Record Client Payment</TabsTrigger>
         </TabsList>
 
         <TabsContent value="sale" className="space-y-6">
@@ -2006,7 +2006,7 @@ const SalesEntry = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="mb-0">Record Sale</CardTitle>
-                <CardDescription className="mb-0">Record sales for a single customer and area</CardDescription>
+                <CardDescription className="mb-0">Record sales for a single client and branch</CardDescription>
               </div>
             </CardHeader>
             <CardContent>
@@ -2037,14 +2037,14 @@ const SalesEntry = () => {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="sale-customer">Dealer *</Label>
+                    <Label htmlFor="sale-customer">Client *</Label>
                     <Select 
                       value={saleForm.customer_id ? (customers?.find(c => c.id === saleForm.customer_id)?.dealer_name ?? "") : ""}
                       onValueChange={handleCustomerChange}
                       disabled={customersLoading}
                     >
                       <SelectTrigger id="sale-customer">
-                        <SelectValue placeholder={customersLoading ? "Loading dealers..." : "Select dealer"} />
+                        <SelectValue placeholder={customersLoading ? "Loading clients..." : "Select client"} />
                       </SelectTrigger>
                       <SelectContent>
                         {customersLoading ? (
@@ -2061,14 +2061,14 @@ const SalesEntry = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="sale-area">Area *</Label>
+                    <Label htmlFor="sale-area">Branch *</Label>
                     <Select 
                       value={saleForm.area ?? ""}
                       onValueChange={handleAreaChange}
                       disabled={!saleForm.customer_id}
                     >
                       <SelectTrigger id="sale-area">
-                        <SelectValue placeholder={saleForm.customer_id ? "Select area" : "Select dealer first"} />
+                        <SelectValue placeholder={saleForm.customer_id ? "Select branch" : "Select client first"} />
                       </SelectTrigger>
                       <SelectContent>
                         {getAvailableAreas().map((area) => (
@@ -2090,14 +2090,14 @@ const SalesEntry = () => {
                         <CardHeader>
                           <CardTitle className="text-base text-amber-600">No SKUs Available</CardTitle>
                           <CardDescription className="text-sm">
-                            No SKUs are configured for this customer-area combination. Please configure SKUs in the Configuration Management section first.
+                            No SKUs are configured for this client-branch combination. Please configure SKUs in the Configuration Management section first.
                           </CardDescription>
                         </CardHeader>
                         <CardContent>
                           <div className="text-center py-8">
                             <div className="text-4xl mb-4">📦</div>
                             <p className="text-muted-foreground">
-                              Add SKU configurations for <strong>{customers?.find(c => c.id === saleForm.customer_id)?.dealer_name}</strong> - <strong>{saleForm.area}</strong> in Configuration Management.
+                              Add SKU configurations for <strong>{customers?.find(c => c.id === saleForm.customer_id)?.dealer_name}</strong> - <strong>{saleForm.area}</strong> in Configuration Management for this client branch.
                             </p>
                           </div>
                         </CardContent>
@@ -2363,8 +2363,8 @@ const SalesEntry = () => {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="mb-0">Record Dealer Payment</CardTitle>
-                <CardDescription className="mb-0">Record a payment received from dealer</CardDescription>
+                <CardTitle className="mb-0">Record Client Payment</CardTitle>
+                <CardDescription className="mb-0">Record a payment received from client</CardDescription>
               </div>
             </CardHeader>
             <CardContent>
@@ -2372,7 +2372,7 @@ const SalesEntry = () => {
                 {/* First Row: Dealer, Area, Amount */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="payment-customer">Dealer *</Label>
+                    <Label htmlFor="payment-customer">Client *</Label>
                     <Select 
                       value={paymentForm.customer_id ? (customers?.find(c => c.id === paymentForm.customer_id)?.dealer_name ?? "") : ""}
                       onValueChange={(customerName) => {
@@ -2381,7 +2381,7 @@ const SalesEntry = () => {
                       }}
                     >
                       <SelectTrigger id="payment-customer">
-                        <SelectValue placeholder="Select dealer" />
+                        <SelectValue placeholder="Select client" />
                       </SelectTrigger>
                       <SelectContent>
                         {getUniqueCustomers.map((customerName) => (
@@ -2394,14 +2394,14 @@ const SalesEntry = () => {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="payment-area">Area *</Label>
+                    <Label htmlFor="payment-area">Branch *</Label>
                     <Select 
                       value={paymentForm.area ?? ""}
                       onValueChange={(area) => setPaymentForm({...paymentForm, area})}
                       disabled={!paymentForm.customer_id}
                     >
                       <SelectTrigger id="payment-area">
-                        <SelectValue placeholder={paymentForm.customer_id ? "Select area" : "Select dealer first"} />
+                        <SelectValue placeholder={paymentForm.customer_id ? "Select branch" : "Select client first"} />
                       </SelectTrigger>
                       <SelectContent>
                         {paymentForm.customer_id && getBranchesForCustomer(paymentForm.customer_id).map((area) => (
@@ -2466,7 +2466,7 @@ const SalesEntry = () => {
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2 md:gap-4">
-            <CardTitle className="mb-0">Dealer Transactions</CardTitle>
+            <CardTitle className="mb-0">Client Transactions</CardTitle>
             <span className="text-sm text-muted-foreground whitespace-nowrap">
               Showing {paginatedTransactions.length} of {totalFilteredTransactions} filtered transactions
               {totalTransactions !== totalFilteredTransactions && ` (${totalTransactions} total)`}
@@ -2485,7 +2485,7 @@ const SalesEntry = () => {
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Input
-              placeholder="Search transactions by customer, area, SKU, description, amount, date, or type..."
+              placeholder="Search transactions by client, branch, SKU, description, amount, date, or type..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -2532,10 +2532,10 @@ const SalesEntry = () => {
                 </TableHead>
                 <TableHead className="font-semibold text-emerald-800 text-xs uppercase tracking-widest py-3 px-2 text-left border-r border-emerald-200/50">
                   <div className="flex items-center justify-between">
-                    <span>Dealer</span>
+                    <span>Client</span>
                     <ColumnFilter
                       columnKey="customer"
-                      columnName="Dealer"
+                      columnName="Client"
                       filterValue={columnFilters.customer}
                       onFilterChange={(value) => handleColumnFilterChange('customer', value)}
                       onClearFilter={() => handleClearColumnFilter('customer')}
@@ -2548,10 +2548,10 @@ const SalesEntry = () => {
                 </TableHead>
                 <TableHead className="font-semibold text-emerald-800 text-xs uppercase tracking-widest py-3 px-2 text-left border-r border-emerald-200/50 w-[100px]">
                   <div className="flex items-center justify-between">
-                <span>Area</span>
+                <span>Branch</span>
                 <ColumnFilter
                   columnKey="area"
-                  columnName="Area"
+                  columnName="Branch"
                       filterValue={columnFilters.area}
                       onFilterChange={(value) => handleColumnFilterChange('area', value)}
                       onClearFilter={() => handleClearColumnFilter('area')}

@@ -226,7 +226,6 @@ const OrderManagement: React.FC = () => {
         .from("orders_dispatch")
         .insert([{
           client: orderData.client || orderData.dealer_name,
-          area: orderData.area ?? orderData.branch,
           branch: orderData.branch ?? orderData.area,
           sku: orderData.sku,
           cases: orderData.number_of_cases ?? orderData.quantity ?? 0,
