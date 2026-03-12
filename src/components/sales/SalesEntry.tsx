@@ -42,6 +42,9 @@ const safeNumValue = (v: string | number | undefined | null): string => {
   return isNaN(n) ? "" : String(v);
 };
 
+const normalizeLookupValue = (value: string | null | undefined): string =>
+  (value ?? "").trim().toLowerCase();
+
 const SalesEntry = () => {
   const { isMobileDevice } = useMobileDetection();
   const [activeTab, setActiveTab] = useState<string>("sale");
@@ -243,7 +246,7 @@ const SalesEntry = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, dealer_name, area, sku, price_per_case, created_at, whatsapp_number")
+          .select("id, dealer_name, client_name, area, branch, sku, price_per_case, created_at, whatsapp_number")
           .eq("is_active", true)
           .order("dealer_name", { ascending: true });
         
@@ -307,16 +310,54 @@ const SalesEntry = () => {
     }
   }, [downloadInvoice]);
 
+  const getCustomerName = useCallback((customer: any) => customer?.client_name || customer?.dealer_name || "", []);
+  const getCustomerBranch = useCallback((customer: any) => customer?.branch || customer?.area || "", []);
+
+  const findCustomerRecord = useCallback((params: {
+    customerId?: string;
+    customerName?: string;
+    branch?: string;
+    sku?: string;
+  }) => {
+    if (!customers || customers.length === 0) return undefined;
+
+    const selectedCustomer = params.customerId
+      ? customers.find(c => c.id === params.customerId)
+      : undefined;
+
+    const normalizedName = normalizeLookupValue(
+      params.customerName || (selectedCustomer ? getCustomerName(selectedCustomer) : "")
+    );
+    const normalizedBranch = normalizeLookupValue(params.branch);
+    const normalizedSku = normalizeLookupValue(params.sku);
+
+    return customers.find((customer: any) => {
+      const nameMatches = normalizedName
+        ? normalizeLookupValue(getCustomerName(customer)) === normalizedName
+        : true;
+      const branchMatches = normalizedBranch
+        ? normalizeLookupValue(getCustomerBranch(customer)) === normalizedBranch
+        : true;
+      const skuMatches = normalizedSku
+        ? normalizeLookupValue(customer.sku) === normalizedSku
+        : true;
+
+      return nameMatches && branchMatches && skuMatches;
+    });
+  }, [customers, getCustomerBranch, getCustomerName]);
+
   // Function to handle customer selection and auto-populate SKU options
   const handleCustomerChange = (customerName: string) => {
-    const dealerCustomers = customers?.filter(c => c.dealer_name === customerName) || [];
+    const dealerCustomers = customers?.filter(c =>
+      normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(customerName)
+    ) || [];
     const selectedCustomer = dealerCustomers[0];
-    const areas = [...new Set(dealerCustomers.map(c => c.area).filter(Boolean))];
+    const areas = [...new Set(dealerCustomers.map(c => getCustomerBranch(c as any)).filter(Boolean))];
     
     // If dealer has only one area, auto-select it (ensures correct customer_id for price fetch)
     const autoArea = areas.length === 1 ? areas[0] : "";
     const customerForArea = autoArea
-      ? dealerCustomers.find(c => c.area === autoArea)
+      ? dealerCustomers.find(c => normalizeLookupValue(getCustomerBranch(c as any)) === normalizeLookupValue(autoArea))
       : selectedCustomer;
     
     setSaleForm({
@@ -340,9 +381,10 @@ const SalesEntry = () => {
   const handleAreaChange = (area: string) => {
     const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
     if (selectedCustomer) {
-      const matchingCustomer = customers?.find(c =>
-        c.dealer_name === selectedCustomer.dealer_name && c.area === area
-      );
+      const matchingCustomer = findCustomerRecord({
+        customerName: getCustomerName(selectedCustomer as any),
+        branch: area,
+      });
       setSaleForm({
         ...saleForm,
         area,
@@ -627,23 +669,22 @@ const SalesEntry = () => {
   // Get price per case for current item
   const getPricePerCaseForCurrentItem = () => {
     if (!saleForm.customer_id || !saleForm.area || !currentItem.sku) return "";
-    
-    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
-    if (!selectedCustomer) return "";
-    
-    const customerPricing = customers?.find(c => 
-      c.dealer_name === selectedCustomer.dealer_name && 
-      c.area === saleForm.area &&
-      c.sku === currentItem.sku
-    );
-    
+
+    const customerPricing = findCustomerRecord({
+      customerId: saleForm.customer_id,
+      branch: saleForm.area,
+      sku: currentItem.sku,
+    });
+
     return customerPricing?.price_per_case?.toString() || "";
   };
 
   // Function to handle customer selection in edit form
   const handleEditCustomerChange = (customerName: string) => {
     // Find the first customer with this name to get the customer_id
-    const selectedCustomer = customers?.find(c => c.dealer_name === customerName);
+    const selectedCustomer = customers?.find(c =>
+      normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(customerName)
+    );
     
     setEditForm({
       ...editForm, 
@@ -664,8 +705,8 @@ const SalesEntry = () => {
     
     // Filter customers by the selected customer name and area to get available SKUs
     const customerSKUs = customers?.filter(c => 
-      c.dealer_name === selectedCustomer.dealer_name && 
-      c.area === saleForm.area &&
+      normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(getCustomerName(selectedCustomer as any)) &&
+      normalizeLookupValue(getCustomerBranch(c as any)) === normalizeLookupValue(saleForm.area) &&
       c.sku && 
       c.sku.trim() !== ''
     ) || [];
@@ -696,8 +737,13 @@ const SalesEntry = () => {
     const seenBranches = new Set<string>();
     
     customers?.forEach(customer => {
-      if (customer.dealer_name === selectedCustomer.dealer_name && customer.area && customer.area.trim() !== '') {
-        const trimmedArea = customer.area.trim();
+      const customerBranch = getCustomerBranch(customer as any);
+      if (
+        normalizeLookupValue(getCustomerName(customer as any)) === normalizeLookupValue(getCustomerName(selectedCustomer as any)) &&
+        customerBranch &&
+        customerBranch.trim() !== ''
+      ) {
+        const trimmedArea = customerBranch.trim();
         const lowerCaseArea = trimmedArea.toLowerCase();
         
         // Only add if we haven't seen this area (case-insensitive) before
@@ -725,8 +771,13 @@ const SalesEntry = () => {
     const seenBranches = new Set<string>();
     
     customers?.forEach(customer => {
-      if (customer.dealer_name === selectedCustomer.dealer_name && customer.area && customer.area.trim() !== '') {
-        const trimmedArea = customer.area.trim();
+      const customerBranch = getCustomerBranch(customer as any);
+      if (
+        normalizeLookupValue(getCustomerName(customer as any)) === normalizeLookupValue(getCustomerName(selectedCustomer as any)) &&
+        customerBranch &&
+        customerBranch.trim() !== ''
+      ) {
+        const trimmedArea = customerBranch.trim();
         const lowerCaseArea = trimmedArea.toLowerCase();
         
         // Only add if we haven't seen this area (case-insensitive) before
@@ -746,14 +797,11 @@ const SalesEntry = () => {
   const getPricePerCase = () => {
     if (!saleForm.customer_id || !saleForm.area) return "";
     
-    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
-    if (!selectedCustomer) return "";
-    
-    const customer = customers?.find(c =>
-      c.dealer_name === selectedCustomer.dealer_name &&
-      c.area === saleForm.area
-    );
-    
+    const customer = findCustomerRecord({
+      customerId: saleForm.customer_id,
+      branch: saleForm.area,
+    });
+
     return customer?.price_per_case?.toString() || "";
   };
 
@@ -761,29 +809,25 @@ const SalesEntry = () => {
   const getPricePerCaseForEdit = () => {
     if (!editForm.customer_id || !editForm.area) return "";
     
-    const selectedCustomer = customers?.find(c => c.id === editForm.customer_id);
-    if (!selectedCustomer) return "";
-    
-    const customer = customers?.find(c =>
-      c.dealer_name === selectedCustomer.dealer_name &&
-      c.area === editForm.area
-    );
-    
+    const customer = findCustomerRecord({
+      customerId: editForm.customer_id,
+      branch: editForm.area,
+    });
+
     return customer?.price_per_case?.toString() || "";
   };
 
   // Function to handle SKU selection
   const handleSKUChange = (sku: string) => {
     // Auto-populate price per case when SKU is selected
-    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
     let pricePerCase = "";
-    
-    if (selectedCustomer && saleForm.area) {
-      const customerSKURecord = customers?.find(c => 
-        c.dealer_name === selectedCustomer.dealer_name && 
-        c.area === saleForm.area &&
-        c.sku === sku
-      );
+
+    if (saleForm.customer_id && saleForm.area) {
+      const customerSKURecord = findCustomerRecord({
+        customerId: saleForm.customer_id,
+        branch: saleForm.area,
+        sku,
+      });
       pricePerCase = customerSKURecord?.price_per_case?.toString() || "";
     }
     
@@ -806,15 +850,12 @@ const SalesEntry = () => {
       return;
     }
 
-    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
-    if (!selectedCustomer) return;
-
     // Find the specific customer-SKU combination for pricing
-    const customerSKURecord = customers?.find(c => 
-      c.dealer_name === selectedCustomer.dealer_name && 
-      c.area === selectedCustomer.area &&
-      c.sku === saleForm.sku
-    );
+    const customerSKURecord = findCustomerRecord({
+      customerId: saleForm.customer_id,
+      branch: saleForm.area,
+      sku: saleForm.sku,
+    });
 
     let calculatedAmount = "";
     if (customerSKURecord && quantity) {
