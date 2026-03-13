@@ -37,6 +37,7 @@ import { exportJsonToExcel } from "@/services/export/excelExport";
 import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirectory";
 import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
 import { useSalesItemsManager } from "@/components/sales/hooks/useSalesItemsManager";
+import { useMultiSaleSubmission } from "@/components/sales/hooks/useMultiSaleSubmission";
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
 const safeNumValue = (v: string | number | undefined | null): string => {
@@ -389,164 +390,19 @@ const SalesEntry = () => {
     setSalesItems([]);
   };
 
-  // Function to handle multiple sales submission
-  const handleMultipleSalesSubmit = async () => {
-    if (!saleForm.customer_id || !saleForm.area || salesItems.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please select client, branch, and add at least one item",
-        variant: "destructive"
-      });
-      return;
-    }
+  const multiSaleMutation = useMultiSaleSubmission({
+    saleForm,
+    salesItems,
+    findCustomerById,
+    getCustomerBranch,
+    buildTransportDescription,
+    calculateTotalAmount,
+    onSuccessReset: resetItemsState,
+  });
 
-    try {
-      // Get customer details once for all items
-      const { data: customerData } = await supabase
-        .from("customers")
-        .select("dealer_name, area")
-        .eq("id", saleForm.customer_id)
-        .single();
-
-      // Create multiple sales transactions and corresponding factory transactions
-      for (const item of salesItems) {
-        // Create sale transaction for Aamodha
-        const saleData = {
-          customer_id: saleForm.customer_id,
-          transaction_type: "sale",
-          amount: parseFloat(item.amount),
-          total_amount: parseFloat(item.amount), // Add total_amount field
-          quantity: parseInt(item.quantity),
-          sku: item.sku,
-          description: item.description,
-          transaction_date: saleForm.transaction_date
-        };
-        
-        const { error: saleError } = await supabase.from("sales_transactions").insert(saleData);
-
-        if (saleError) {
-          console.error("Multiple sales - Sales transaction error:", saleError);
-          throw saleError;
-        }
-
-        // Get factory pricing for amount calculation
-        const { data: factoryPricing, error: pricingError } = await supabase
-          .from("factory_pricing")
-          .select("cost_per_case")
-          .eq("sku", item.sku)
-          .order("pricing_date", { ascending: false })
-          .limit(1);
-
-        if (pricingError) {
-          console.warn(`Error fetching factory pricing for SKU ${item.sku}:`, pricingError);
-        }
-
-        const factoryCostPerCase = factoryPricing?.[0]?.cost_per_case || 0;
-        const quantity = parseInt(item.quantity);
-        const factoryAmount = quantity * factoryCostPerCase;
-
-        // If no factory pricing found, use a default cost per case (e.g., 50% of customer amount)
-        const customerAmount = parseFloat(item.amount) || 0;
-        const defaultCostPerCase = customerAmount / quantity * 0.5; // 50% of customer price
-        const finalFactoryAmount = factoryCostPerCase > 0 ? factoryAmount : quantity * defaultCostPerCase;
-
-        // Calculate factory pricing for multiple sales
-
-        // Warn if no factory pricing found
-        if (!factoryPricing || factoryPricing.length === 0) {
-          console.warn(`No factory pricing found for SKU: ${item.sku}. Factory amount will be 0.`);
-        }
-
-        // Validate required fields before creating factory entry
-        if (!saleForm.transaction_date) {
-          console.error("Missing transaction_date for factory entry (multiple sales)");
-          throw new Error("Transaction date is required for factory production entry");
-        }
-
-        if (isNaN(finalFactoryAmount)) {
-          console.error("Invalid factory amount calculated (multiple sales):", finalFactoryAmount);
-          throw new Error("Invalid factory amount calculated");
-        }
-
-        // Create corresponding factory production entry for Elma
-        const factoryPayableData = {
-          transaction_type: "production",
-          sku: item.sku || null,
-          amount: Math.max(0, finalFactoryAmount), // Ensure amount is never negative
-          quantity: quantity || null,
-          description: customerData?.dealer_name || "Unknown Client", // Use client name as description
-          transaction_date: saleForm.transaction_date,
-          customer_id: saleForm.customer_id
-        };
-
-        // Insert factory payable data for multiple sales
-
-        const { error: factoryError } = await supabase
-          .from("factory_payables")
-          .insert(factoryPayableData);
-
-        if (factoryError) {
-          console.error("Factory production entry error for multiple sales:", factoryError);
-          console.error("Error details for multiple sales:", {
-            message: factoryError.message,
-            details: factoryError.details,
-            hint: factoryError.hint,
-            code: factoryError.code
-          });
-          throw new Error(`Factory production entry failed for multiple sales: ${factoryError.message}`);
-        }
-
-        // Factory production entry created successfully for multiple sales
-
-        // Create corresponding transport transaction
-        const selectedCustomer = findCustomerById(saleForm.customer_id);
-        const transportBranch = selectedCustomer ? getCustomerBranch(selectedCustomer) : saleForm.area;
-        const transportData = {
-          amount: 0,
-          description: buildTransportDescription(selectedCustomer, saleForm.area),
-          expense_date: saleForm.transaction_date,
-          expense_group: "Client Sale Transport",
-          client_id: saleForm.customer_id || null,
-          branch: transportBranch || null,
-        };
-
-        const { error: transportError } = await supabase
-          .from("transport_expenses")
-          .insert(transportData);
-
-        if (transportError) {
-          console.error("Transport transaction creation error (multiple sales):", transportError);
-          console.error("Transport data attempted:", transportData);
-          console.error("Error details:", {
-            message: transportError.message,
-            details: transportError.details,
-            hint: transportError.hint,
-            code: transportError.code
-          });
-          throw new Error(`Transport transaction creation failed: ${transportError.message}`);
-        }
-      }
-
-      toast({
-        title: "Success",
-        description: `Successfully recorded ${salesItems.length} sale${salesItems.length > 1 ? 's' : ''} with total amount ₹${calculateTotalAmount().toFixed(2)} and corresponding factory transactions!`
-      });
-
-      // Reset form
-      resetItemsState();
-
-      // Invalidate queries to refresh data using centralized hook
-      invalidateRelated('sales_transactions');
-      invalidateRelated('factory_payables');
-      invalidateRelated('transport_expenses');
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to record sales: " + (error as Error).message,
-        variant: "destructive"
-      });
-    }
-  };
+  const handleMultipleSalesSubmit = useCallback(() => {
+    multiSaleMutation.mutate();
+  }, [multiSaleMutation]);
 
   // Get price per case for current item
   const getPricePerCaseForCurrentItem = () => {
@@ -1938,11 +1794,11 @@ const SalesEntry = () => {
                                 <Button 
                                   type="button"
                                   onClick={handleMultipleSalesSubmit}
-                                  disabled={saleMutation.isPending}
+                                  disabled={multiSaleMutation.isPending}
                                   className="w-full h-12 text-lg"
                                   size="lg"
                                 >
-                                  {saleMutation.isPending ? "Recording Sales..." : `Record ${salesItems.length} Sale${salesItems.length > 1 ? 's' : ''}`}
+                                  {multiSaleMutation.isPending ? "Recording Sales..." : `Record ${salesItems.length} Sale${salesItems.length > 1 ? 's' : ''}`}
                                 </Button>
                               )}
                             </div>
