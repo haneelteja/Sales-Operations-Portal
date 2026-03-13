@@ -36,6 +36,7 @@ import ProductionInventory from "@/components/sales/ProductionInventory";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirectory";
 import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
+import { useSalesItemsManager } from "@/components/sales/hooks/useSalesItemsManager";
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
 const safeNumValue = (v: string | number | undefined | null): string => {
@@ -56,31 +57,6 @@ const SalesEntry = () => {
     transaction_date: new Date().toISOString().split('T')[0],
     area: ""
   });
-
-  // State for multiple sales items
-  const [salesItems, setSalesItems] = useState<Array<{
-    id: string;
-    sku: string;
-    quantity: string;
-    price_per_case: string;
-    amount: string;
-    description: string;
-  }>>([]);
-
-  const [currentItem, setCurrentItem] = useState({
-    sku: "",
-    quantity: "",
-    price_per_case: "",
-    amount: "",
-    description: ""
-  });
-
-  // State for single SKU mode
-  const [isSingleSKUMode, setIsSingleSKUMode] = useState(false);
-  const [singleSKUData, setSingleSKUData] = useState<{
-    sku: string;
-    price_per_case: number;
-  } | null>(null);
 
   const [paymentForm, setPaymentForm] = useState({
     customer_id: "",
@@ -122,6 +98,43 @@ const SalesEntry = () => {
   // Invoice generation hooks
   const generateInvoice = useInvoiceGeneration();
   const downloadInvoice = useInvoiceDownload();
+  const {
+    currentItem,
+    setCurrentItem,
+    salesItems,
+    setSalesItems,
+    isSingleSKUMode,
+    singleSKUData,
+    resetItemsState,
+    addItemToSales,
+    removeItemFromSales,
+    editItemFromSales,
+    calculateTotalAmount,
+    handleCurrentItemSKUChange,
+    handleCurrentItemQuantityChange,
+    syncSingleSkuMode,
+  } = useSalesItemsManager({
+    onValidationError: (message) => {
+      logger.error('Sales item validation failed:', message);
+      toast({
+        title: "Validation Error",
+        description: message,
+        variant: "destructive"
+      });
+    },
+    onItemAdded: (sku) => {
+      toast({
+        title: "Item Added",
+        description: `${sku} added to sale items`,
+      });
+    },
+    onItemLoadedForEdit: (sku) => {
+      toast({
+        title: "Item Loaded for Editing",
+        description: `${sku} loaded for editing`,
+      });
+    },
+  });
 
   // Auto-save form data to prevent data loss from session timeouts
   
@@ -198,19 +211,10 @@ const SalesEntry = () => {
       transaction_date: new Date().toISOString().split('T')[0],
       area: ""
     });
-    setCurrentItem({
-      sku: "",
-      quantity: "",
-      price_per_case: "",
-      amount: "",
-      description: ""
-    });
-    setSalesItems([]);
-    setIsSingleSKUMode(false);
-    setSingleSKUData(null);
+    resetItemsState();
     clearSaleFormData();
     clearSalesItemsData();
-  }, [clearSaleFormData, clearSalesItemsData]);
+  }, [clearSaleFormData, clearSalesItemsData, resetItemsState]);
 
   // Function to reset payment form to default state
   const resetPaymentForm = useCallback(() => {
@@ -385,72 +389,6 @@ const SalesEntry = () => {
     setSalesItems([]);
   };
 
-  // Function to add item to sales list
-  const addItemToSales = () => {
-    // Validate current item using Zod schema
-    const validationResult = safeValidate(salesItemSchema, currentItem);
-    if (!validationResult.success) {
-      logger.error('Sales item validation failed:', validationResult.error);
-      toast({
-        title: "Validation Error",
-        description: validationResult.error,
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const newItem = {
-      id: Date.now().toString(),
-      ...currentItem
-    };
-
-    setSalesItems([...salesItems, newItem]);
-    
-    // Keep current values for easy re-entry of same SKU
-    // Only reset quantity and amount, keep SKU and description
-    setCurrentItem({
-      ...currentItem,
-      quantity: "",
-      amount: "",
-      price_per_case: ""
-    });
-
-    toast({
-      title: "Item Added",
-      description: `${currentItem.sku} added to sale items`,
-    });
-  };
-
-  // Function to remove item from sales list
-  const removeItemFromSales = (itemId: string) => {
-    setSalesItems(salesItems.filter(item => item.id !== itemId));
-  };
-
-  // Function to edit existing item
-  const editItemFromSales = (itemId: string) => {
-    const itemToEdit = salesItems.find(item => item.id === itemId);
-    if (itemToEdit) {
-      setCurrentItem({
-        sku: itemToEdit.sku,
-        quantity: itemToEdit.quantity,
-        price_per_case: itemToEdit.price_per_case,
-        amount: itemToEdit.amount,
-        description: itemToEdit.description
-      });
-      // Remove the item from the list (it will be re-added when user clicks "Add Item")
-      setSalesItems(salesItems.filter(item => item.id !== itemId));
-      toast({
-        title: "Item Loaded for Editing",
-        description: `${itemToEdit.sku} loaded for editing`,
-      });
-    }
-  };
-
-  // Function to calculate total amount
-  const calculateTotalAmount = () => {
-    return salesItems.reduce((total, item) => total + (parseFloat(item.amount) || 0), 0);
-  };
-
   // Function to handle multiple sales submission
   const handleMultipleSalesSubmit = async () => {
     if (!saleForm.customer_id || !saleForm.area || salesItems.length === 0) {
@@ -595,14 +533,7 @@ const SalesEntry = () => {
       });
 
       // Reset form
-      setSalesItems([]);
-      setCurrentItem({
-        sku: "",
-        quantity: "",
-        price_per_case: "",
-        amount: "",
-        description: ""
-      });
+      resetItemsState();
 
       // Invalidate queries to refresh data using centralized hook
       invalidateRelated('sales_transactions');
@@ -614,43 +545,6 @@ const SalesEntry = () => {
         description: "Failed to record sales: " + (error as Error).message,
         variant: "destructive"
       });
-    }
-  };
-
-  // Helper to safely compute amount (avoids NaN in inputs)
-  const safeCalculateAmount = (qty: string, price: string): string => {
-    const q = parseFloat(qty);
-    const p = parseFloat(price);
-    if (isNaN(q) || isNaN(p)) return "";
-    const result = q * p;
-    return isNaN(result) ? "" : result.toFixed(2);
-  };
-
-  // Function to handle SKU selection for current item
-  const handleCurrentItemSKUChange = (sku: string) => {
-    setCurrentItem({...currentItem, sku, amount: "", price_per_case: ""});
-    
-    // Auto-calculate amount if quantity is already set
-    if (currentItem.quantity) {
-      const pricePerCase = getPricePerCaseForCurrentItem();
-      if (pricePerCase) {
-        const calculatedAmount = safeCalculateAmount(currentItem.quantity, pricePerCase);
-        setCurrentItem({...currentItem, sku, amount: calculatedAmount, price_per_case: pricePerCase});
-      }
-    }
-  };
-
-  // Function to handle quantity change for current item
-  const handleCurrentItemQuantityChange = (quantity: string) => {
-    setCurrentItem({...currentItem, quantity});
-    
-    // Auto-calculate amount if SKU is already set
-    if (currentItem.sku) {
-      const pricePerCase = getPricePerCaseForCurrentItem();
-      if (pricePerCase) {
-        const calculatedAmount = safeCalculateAmount(quantity, pricePerCase);
-        setCurrentItem({...currentItem, quantity, amount: calculatedAmount, price_per_case: pricePerCase});
-      }
     }
   };
 
@@ -864,33 +758,8 @@ const SalesEntry = () => {
 
     const availableSKUs = availableSkus;
     
-    if (availableSKUs.length === 1) {
-      setIsSingleSKUMode(true);
-      setSingleSKUData({
-        sku: availableSKUs[0].sku,
-        price_per_case: availableSKUs[0].price_per_case
-      });
-      // Auto-populate the current item
-      setCurrentItem({
-        sku: availableSKUs[0].sku,
-        quantity: "",
-        price_per_case: availableSKUs[0].price_per_case.toString(),
-        amount: "",
-        description: ""
-      });
-    } else {
-      setIsSingleSKUMode(false);
-      setSingleSKUData(null);
-      // Reset current item
-      setCurrentItem({
-        sku: "",
-        quantity: "",
-        price_per_case: "",
-        amount: "",
-        description: ""
-      });
-    }
-  }, [availableSkus, saleForm.area, saleForm.customer_id]);
+    syncSingleSkuMode(availableSKUs);
+  }, [availableSkus, saleForm.area, saleForm.customer_id, syncSingleSkuMode]);
 
   // Check for single SKU mode when customer or area changes
   useEffect(() => {
@@ -1830,7 +1699,15 @@ const SalesEntry = () => {
                                   id="single-quantity"
                                   type="number"
                                   value={safeNumValue(currentItem.quantity)}
-                                  onChange={(e) => handleCurrentItemQuantityChange(e.target.value)}
+                                  onChange={(e) => handleCurrentItemQuantityChange(e.target.value, (sku) => {
+                                    const customerPricing = findCustomerRecord({
+                                      customerId: saleForm.customer_id,
+                                      branch: saleForm.area,
+                                      sku,
+                                    });
+
+                                    return customerPricing?.price_per_case?.toString() || "";
+                                  })}
                                   placeholder="Number of cases"
                                 />
                               </div>
@@ -1893,7 +1770,15 @@ const SalesEntry = () => {
                                   <Label htmlFor="item-sku">SKU *</Label>
                                   <Select 
                                     value={currentItem.sku ?? ""} 
-                                    onValueChange={handleCurrentItemSKUChange}
+                                    onValueChange={(sku) => handleCurrentItemSKUChange(sku, (nextSku) => {
+                                      const customerPricing = findCustomerRecord({
+                                        customerId: saleForm.customer_id,
+                                        branch: saleForm.area,
+                                        sku: nextSku,
+                                      });
+
+                                      return customerPricing?.price_per_case?.toString() || "";
+                                    })}
                                   >
                                     <SelectTrigger id="item-sku">
                                       <SelectValue placeholder="Select SKU" />
@@ -1914,7 +1799,15 @@ const SalesEntry = () => {
                                     id="item-quantity"
                                     type="number"
                                     value={safeNumValue(currentItem.quantity)}
-                                    onChange={(e) => handleCurrentItemQuantityChange(e.target.value)}
+                                    onChange={(e) => handleCurrentItemQuantityChange(e.target.value, (sku) => {
+                                      const customerPricing = findCustomerRecord({
+                                        customerId: saleForm.customer_id,
+                                        branch: saleForm.area,
+                                        sku,
+                                      });
+
+                                      return customerPricing?.price_per_case?.toString() || "";
+                                    })}
                                     placeholder="Number of cases"
                                   />
                                 </div>
