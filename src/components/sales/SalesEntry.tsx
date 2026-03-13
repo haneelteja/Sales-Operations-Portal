@@ -35,6 +35,7 @@ import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 import ProductionInventory from "@/components/sales/ProductionInventory";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirectory";
+import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
 const safeNumValue = (v: string | number | undefined | null): string => {
@@ -118,8 +119,6 @@ const SalesEntry = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { invalidateRelated } = useCacheInvalidation();
-  
   // Invoice generation hooks
   const generateInvoice = useInvoiceGeneration();
   const downloadInvoice = useInvoiceDownload();
@@ -816,6 +815,31 @@ const SalesEntry = () => {
   }, [getUniqueCustomerNames]);
   const getUniqueCustomersForForm = useCallback(() => uniqueCustomersForForm, [uniqueCustomersForForm]);
 
+  const handleSaleSuccess = useCallback(() => {
+    resetSaleForm();
+    clearSaleFormData();
+    clearSalesItemsData();
+    setSalesItems([]);
+    setCurrentItem({
+      sku: "",
+      quantity: "",
+      price_per_case: "",
+      amount: "",
+      description: ""
+    });
+  }, [clearSaleFormData, clearSalesItemsData, resetSaleForm]);
+
+  const saleMutation = useSaleSubmission({
+    customers,
+    findCustomerById,
+    getCustomerBranch,
+    getCustomerName,
+    buildTransportDescription,
+    generateInvoice,
+    getInvoiceFailureDescription,
+    onSaleSuccess: handleSaleSuccess,
+  });
+
   // Get areaes for a specific customer
   const getBranchesForCustomer = (customerId: string) => {
     if (!customers || !customerId) return [];
@@ -1316,255 +1340,6 @@ const SalesEntry = () => {
       transportTotal
     };
   };
-
-  // Sale entry mutation
-  const saleMutation = useMutation({
-    mutationFn: async (data: SaleForm) => {
-      // Create sale transaction for Aamodha
-      const amountValue = parseFloat(data.amount);
-      
-      const saleData: {
-        customer_id: string;
-        transaction_type: string;
-        amount: number;
-        total_amount: number;
-        quantity: number | null;
-        sku: string;
-        description?: string;
-        transaction_date?: string;
-        branch?: string | null;
-      } = {
-        customer_id: data.customer_id,
-        transaction_type: "sale",
-        amount: amountValue,
-        total_amount: amountValue, // Set total_amount equal to amount
-        quantity: data.quantity ? parseInt(data.quantity) : null,
-        sku: data.sku || null,
-        description: data.description || null,
-        transaction_date: data.transaction_date,
-        branch: data.area || null
-      };
-      
-      console.log('Inserting sales transaction:', saleData);
-      
-      const { data: insertedTransactions, error: saleError } = await supabase
-        .from("sales_transactions")
-        .insert(saleData)
-        .select();
-
-      if (saleError) {
-        console.error("Sales transaction error:", saleError);
-        console.error("Error details:", JSON.stringify(saleError, null, 2));
-        
-        // Handle schema cache error - column exists but cache is stale
-        if (saleError.code === 'PGRST204' || saleError.message?.includes('schema cache') || saleError.message?.includes('Could not find')) {
-          throw new Error("Database schema cache issue detected. The column exists but Supabase cache needs refresh. Please try again in a few moments or contact support.");
-        }
-        
-        throw saleError;
-      }
-
-      // Return the inserted transaction for auto-invoice generation
-      if (!insertedTransactions || insertedTransactions.length === 0) {
-        throw new Error("Failed to retrieve inserted transaction");
-      }
-
-      // Get factory pricing for amount calculation
-      const { data: factoryPricing, error: pricingError } = await supabase
-        .from("factory_pricing")
-        .select("cost_per_case")
-        .eq("sku", data.sku)
-        .order("pricing_date", { ascending: false })
-        .limit(1);
-
-      if (pricingError) {
-        console.warn(`Error fetching factory pricing for SKU ${data.sku}:`, pricingError);
-      }
-
-      const factoryCostPerCase = factoryPricing?.[0]?.cost_per_case || 0;
-      const quantity = data.quantity ? parseInt(data.quantity) : 0;
-      const factoryAmount = quantity * factoryCostPerCase;
-
-      // If no factory pricing found, use a default cost per case (e.g., 50% of customer amount)
-      const customerAmount = parseFloat(data.amount) || 0;
-      const defaultCostPerCase = customerAmount / quantity * 0.5; // 50% of customer price
-      const finalFactoryAmount = factoryCostPerCase > 0 ? factoryAmount : quantity * defaultCostPerCase;
-
-      // Calculate factory pricing
-
-      // Warn if no factory pricing found
-      if (!factoryPricing || factoryPricing.length === 0) {
-        console.warn(`No factory pricing found for SKU: ${data.sku}. Factory amount will be 0.`);
-      }
-
-      // Validate required fields before creating factory entry
-      if (!data.transaction_date) {
-        console.error("Missing transaction_date for factory entry");
-        throw new Error("Transaction date is required for factory production entry");
-      }
-
-      if (isNaN(finalFactoryAmount)) {
-        console.error("Invalid factory amount calculated:", finalFactoryAmount);
-        throw new Error("Invalid factory amount calculated");
-      }
-
-      // Get customer details for factory payables
-      const { data: customerData } = await supabase
-        .from("customers")
-        .select("dealer_name, area")
-        .eq("id", data.customer_id)
-        .single();
-
-      // Create corresponding factory production entry for Elma
-      const factoryPayableData: {
-        transaction_type: "production";
-        sku: string | null;
-        amount: number;
-        quantity?: number | null;
-        description: string | null;
-        transaction_date: string;
-        customer_id: string | null;
-      } = {
-        transaction_type: "production",
-        sku: data.sku || null,
-        amount: Math.max(0, finalFactoryAmount), // Ensure amount is never negative
-        description: customerData?.dealer_name || "Unknown Client", // Use client name as description
-        transaction_date: data.transaction_date,
-        customer_id: data.customer_id
-      };
-
-      // Only include quantity if it's a valid number
-      if (quantity && quantity > 0) {
-        factoryPayableData.quantity = quantity;
-      }
-
-      // Insert factory payable data
-
-      const { error: factoryError } = await supabase
-        .from("factory_payables")
-        .insert(factoryPayableData);
-
-      if (factoryError) {
-        console.error("Factory production entry error:", factoryError);
-        console.error("Error details:", {
-          message: factoryError.message,
-          details: factoryError.details,
-          hint: factoryError.hint,
-          code: factoryError.code
-        });
-        throw new Error(`Factory production entry failed: ${factoryError.message}`);
-      }
-
-      // Factory production entry created successfully
-
-      // Create corresponding transport transaction
-      const selectedCustomer = findCustomerById(data.customer_id);
-      const transportBranch = selectedCustomer ? getCustomerBranch(selectedCustomer) : data.area;
-      const transportData = {
-        amount: 0,
-        description: buildTransportDescription(selectedCustomer, data.area),
-        expense_date: data.transaction_date,
-        expense_group: "Client Sale Transport",
-        client_id: data.customer_id || null,
-        branch: transportBranch || null,
-      };
-
-      const { error: transportError } = await supabase
-        .from("transport_expenses")
-        .insert(transportData);
-
-      if (transportError) {
-        console.error("Transport transaction creation error:", transportError);
-        console.error("Transport data attempted:", transportData);
-        console.error("Error details:", {
-          message: transportError.message,
-          details: transportError.details,
-          hint: transportError.hint,
-          code: transportError.code
-        });
-        throw new Error(`Transport transaction creation failed: ${transportError.message}`);
-      }
-
-      // Return the inserted transaction for auto-invoice generation
-      return insertedTransactions;
-    },
-    onSuccess: async (insertedTransactions, variables) => {
-      toast({ title: "Success", description: "Sale recorded successfully!" });
-      
-      // Check if auto invoice generation is enabled
-      const autoEnabled = await isAutoInvoiceEnabled();
-      
-      // Auto-generate invoice for the sale transaction (only if enabled)
-      if (autoEnabled && insertedTransactions && insertedTransactions.length > 0) {
-        const transaction = insertedTransactions[0] as SalesTransaction;
-        
-        // Only generate invoice for sale transactions
-        if (transaction.transaction_type === 'sale' && transaction.customer_id) {
-          try {
-            // Get customer details (try from cache first, then fetch if needed)
-            let customer = customers?.find(c => c.id === transaction.customer_id);
-            
-            // If customer not in cache, fetch it
-            if (!customer) {
-              const { data: customerData, error: customerError } = await supabase
-                .from("customers")
-                .select("*")
-                .eq("id", transaction.customer_id)
-                .single();
-              
-              if (customerError || !customerData) {
-                throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
-              }
-              customer = customerData as Customer;
-            }
-            
-            // Generate invoice automatically (both DOCX and PDF)
-            generateInvoice.mutate({
-              transactionId: transaction.id,
-              transaction,
-              customer,
-            });
-          } catch (error) {
-            // Log error but don't block the success flow
-            logger.error('Auto-invoice generation failed:', error);
-            toast({
-              title: "Invoice Generation Warning",
-              description: getInvoiceFailureDescription(error),
-              variant: "destructive"
-            });
-          }
-        }
-      }
-      
-      // Reset form completely, including customer_id
-      resetSaleForm();
-      // Clear auto-saved data after successful submission
-      clearSaleFormData();
-      clearSalesItemsData();
-      setSalesItems([]);
-      setCurrentItem({
-        sku: "",
-        quantity: "",
-        price_per_case: "",
-        amount: "",
-        description: ""
-      });
-      // Invalidate related queries using centralized hook
-      invalidateRelated('sales_transactions');
-      invalidateRelated('factory_payables');
-      invalidateRelated('transport_expenses');
-      invalidateRelated('invoices');
-    },
-    onError: (error) => {
-      console.error('Sale mutation error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      toast({ 
-        title: "Error", 
-        description: `Failed to record sale: ${errorMessage}`,
-        variant: "destructive"
-      });
-    },
-  });
 
   // Payment entry mutation
   const paymentMutation = useMutation({
