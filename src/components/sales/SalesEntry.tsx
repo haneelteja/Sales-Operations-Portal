@@ -23,12 +23,12 @@ import { MobileTable } from "@/components/ui/mobile-table";
 import { useMobileDetection, MOBILE_CLASSES } from "@/lib/mobile-utils";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Edit, Download, ChevronLeft, ChevronRight, FileText, Loader2 } from "lucide-react";
-import * as XLSX from 'xlsx';
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { saleFormSchema, paymentFormSchema, salesItemSchema } from "@/lib/validation/schemas";
 import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
+import { importXLSX } from "@/lib/heavyImports";
 import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
 import { InvoiceActions, InvoiceNumberCell } from "@/components/sales/InvoiceActions";
 import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
@@ -1380,7 +1380,7 @@ const SalesEntry = () => {
 
 
   // Export filtered recent transactions to Excel
-  const exportRecentTransactionsToExcel = () => {
+  const exportRecentTransactionsToExcel = async () => {
     const exportData = filteredAndSortedRecentTransactions.map((transaction) => {
       const customer = customers?.find(c => c.id === transaction.customer_id);
       return {
@@ -1396,6 +1396,7 @@ const SalesEntry = () => {
       };
     });
 
+    const XLSX = await importXLSX();
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Recent Transactions');
@@ -1647,15 +1648,10 @@ const SalesEntry = () => {
             }
             
             // Generate invoice automatically (both DOCX and PDF)
-            await generateInvoice.mutateAsync({
+            generateInvoice.mutate({
               transactionId: transaction.id,
               transaction,
               customer,
-            });
-            
-            toast({ 
-              title: "Invoice Generated", 
-              description: "Invoice (DOCX & PDF) generated and saved to Google Drive!" 
             });
           } catch (error) {
             // Log error but don't block the success flow

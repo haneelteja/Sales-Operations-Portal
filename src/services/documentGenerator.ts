@@ -3,12 +3,14 @@
  * Handles Word document generation and PDF conversion
  */
 
-import Docxtemplater from 'docxtemplater';
-import PizZip from 'pizzip';
-import { saveAs } from 'file-saver';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import type { InvoiceData } from './invoiceService';
+import {
+  importDocxtemplater,
+  importFileSaver,
+  importHtml2Canvas,
+  importJsPDF,
+  importPizZip,
+} from '@/lib/heavyImports';
 import { logger } from '@/lib/logger';
 
 export interface GeneratedDocument {
@@ -42,6 +44,11 @@ export async function generateWordDocument(
   data: InvoiceData
 ): Promise<ArrayBuffer> {
   try {
+    const [{ default: Docxtemplater }, { default: PizZip }] = await Promise.all([
+      importDocxtemplater(),
+      importPizZip(),
+    ]);
+
     // Load template
     const templateBuffer = await loadInvoiceTemplate();
     const zip = new PizZip(templateBuffer);
@@ -187,6 +194,11 @@ export async function generatePDFDocument(
   data: InvoiceData
 ): Promise<ArrayBuffer> {
   try {
+    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+      importHtml2Canvas(),
+      importJsPDF(),
+    ]);
+
     // Load HTML template
     const htmlTemplate = await loadHTMLTemplate();
     
@@ -301,12 +313,14 @@ export async function generateInvoiceDocuments(
 export function downloadWordDocument(
   buffer: ArrayBuffer,
   fileName: string
-): void {
+): Promise<void> {
   try {
+    return importFileSaver().then(({ saveAs }) => {
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     saveAs(blob, fileName);
+    });
   } catch (error) {
     logger.error('Error downloading Word document:', error);
     throw new Error(`Download failed: ${error.message}`);
@@ -319,12 +333,14 @@ export function downloadWordDocument(
 export function downloadPDFDocument(
   buffer: ArrayBuffer,
   fileName: string
-): void {
+): Promise<void> {
   try {
+    return importFileSaver().then(({ saveAs }) => {
     const blob = new Blob([buffer], {
       type: 'application/pdf',
     });
     saveAs(blob, fileName);
+    });
   } catch (error) {
     logger.error('Error downloading PDF document:', error);
     throw new Error(`Download failed: ${error.message}`);

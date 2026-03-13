@@ -8,8 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
-import * as XLSX from 'xlsx';
 import { useInvoice } from "@/hooks/useInvoiceGeneration";
+import { importXLSX } from "@/lib/heavyImports";
 
 /** Cell that shows invoice number for a transaction (sales only). */
 const InvoiceNumberCell = memo(({ transactionId, transactionType }: { transactionId: string; transactionType: string }) => {
@@ -130,7 +130,7 @@ const Reports = memo(() => {
   }) || [];
 
   // Export filtered receivables to Excel
-  const exportReceivablesToExcel = () => {
+  const exportReceivablesToExcel = async () => {
     const exportData = filteredReceivables.map((receivable) => {
       return {
         'Customer': receivable.customer.dealer_name || 'N/A',
@@ -143,6 +143,7 @@ const Reports = memo(() => {
       };
     });
 
+    const XLSX = await importXLSX();
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Outstanding Receivables');

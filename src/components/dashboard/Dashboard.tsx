@@ -20,9 +20,9 @@ import {
   Phone,
   Download
 } from "lucide-react";
-import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
 import ProductionInventory from "@/components/sales/ProductionInventory";
+import { importXLSX } from "@/lib/heavyImports";
 
 const Dashboard = memo(() => {
   const { toast } = useToast();
@@ -378,7 +378,7 @@ const Dashboard = memo(() => {
   const receivablesTotalPages = Math.ceil(filteredAndSortedReceivables.length / receivablesPageSize);
 
   // Export Client Receivables Outstanding to Excel
-  const exportReceivablesToExcel = useCallback(() => {
+  const exportReceivablesToExcel = useCallback(async () => {
     if (!filteredAndSortedReceivables || filteredAndSortedReceivables.length === 0) {
       toast({
         title: "No Data",
@@ -397,6 +397,7 @@ const Dashboard = memo(() => {
       'Priority': receivable.outstanding > 100000 ? 'Critical' : receivable.outstanding > 50000 ? 'High' : 'Medium',
     }));
 
+    const XLSX = await importXLSX();
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Client Receivables');

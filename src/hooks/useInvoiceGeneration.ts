@@ -14,7 +14,6 @@ import {
   prepareInvoiceData,
   calculateDueDate,
 } from '@/services/invoiceService';
-import { generateInvoiceDocuments } from '@/services/documentGenerator';
 import { StorageService } from '@/services/cloudStorage/storageService';
 import { getStorageProvider } from '@/services/invoiceConfigService';
 import { sendWhatsAppMessage, getWhatsAppConfig } from '@/services/whatsappService';
@@ -54,6 +53,10 @@ function formatInvoiceGenerationError(error: Error): string {
   }
 
   return `Failed to generate invoice: ${message}`;
+}
+
+async function loadDocumentGenerator() {
+  return await import('@/services/documentGenerator');
 }
 
 /**
@@ -97,6 +100,7 @@ export function useInvoiceGeneration() {
         invoiceData.invoiceNumber = invoiceNumber;
 
         // Generate documents
+        const { generateInvoiceDocuments } = await loadDocumentGenerator();
         const documents = await generateInvoiceDocuments(invoiceData);
 
         // Upload to cloud storage
@@ -227,6 +231,7 @@ async function regenerateInvoice(
   invoiceData.invoiceNumber = existingInvoice.invoice_number;
 
   // Generate new documents
+  const { generateInvoiceDocuments } = await loadDocumentGenerator();
   const documents = await generateInvoiceDocuments(invoiceData);
 
   // Delete old files
