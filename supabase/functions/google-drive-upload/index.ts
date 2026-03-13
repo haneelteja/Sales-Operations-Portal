@@ -40,7 +40,9 @@ serve(async (req) => {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(`Failed to get access token: ${error.error || tokenResponse.statusText}`);
+      throw new Error(
+        `Failed to get access token: ${error.error || error.oauthErrorDescription || tokenResponse.statusText}`
+      );
     }
 
     const { accessToken } = await tokenResponse.json();
@@ -119,7 +121,7 @@ serve(async (req) => {
     console.error('Error in google-drive-upload function:', error);
     return new Response(
       JSON.stringify({ 
-        error: error.message || 'Internal server error',
+        error: error instanceof Error ? error.message : 'Internal server error',
       }),
       {
         status: 500,
@@ -180,9 +182,16 @@ async function findFolder(
   accessToken: string
 ): Promise<{ id: string } | null> {
   try {
+    const escapedFolderName = folderName.replace(/'/g, "\\'");
+    const url = new URL('https://www.googleapis.com/drive/v3/files');
+    url.searchParams.set(
+      'q',
+      `name='${escapedFolderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+    );
+    url.searchParams.set('fields', 'files(id,name)');
+
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?` +
-      `q=name='${encodeURIComponent(folderName)}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      url.toString(),
       {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
