@@ -34,6 +34,7 @@ import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGene
 import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 import ProductionInventory from "@/components/sales/ProductionInventory";
 import { exportJsonToExcel } from "@/services/export/excelExport";
+import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirectory";
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
 const safeNumValue = (v: string | number | undefined | null): string => {
@@ -41,9 +42,6 @@ const safeNumValue = (v: string | number | undefined | null): string => {
   const n = Number(v);
   return isNaN(n) ? "" : String(v);
 };
-
-const normalizeLookupValue = (value: string | null | undefined): string =>
-  (value ?? "").trim().toLowerCase();
 
 const SalesEntry = () => {
   const { isMobileDevice } = useMobileDetection();
@@ -309,12 +307,19 @@ const SalesEntry = () => {
       logger.error('Invoice download failed:', error);
     }
   }, [downloadInvoice]);
-
-  const getCustomerName = useCallback((customer: any) => customer?.client_name || customer?.dealer_name || "", []);
-  const getCustomerBranch = useCallback((customer: any) => customer?.branch || customer?.area || "", []);
-  const getTransactionBranch = useCallback((transaction: any) => (
-    transaction?.branch || transaction?.area || transaction?.customers?.branch || transaction?.customers?.area || ""
-  ), []);
+  const {
+    buildTransportDescription,
+    findCustomerById,
+    findCustomerRecord,
+    getAvailableBranches,
+    getAvailableSkus,
+    getCustomerBranch,
+    getCustomerName,
+    getTransactionBranch,
+    getUniqueCustomerNames,
+    normalizeLookupValue,
+    resolveCustomerIdForBranch,
+  } = useCustomerDirectory(customers);
   const getInvoiceFailureDescription = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error ?? "");
     const normalized = message.toLowerCase();
@@ -330,40 +335,6 @@ const SalesEntry = () => {
 
     return "Sale recorded successfully, but invoice generation failed. You can generate it manually.";
   }, []);
-
-  const findCustomerRecord = useCallback((params: {
-    customerId?: string;
-    customerName?: string;
-    branch?: string;
-    sku?: string;
-  }) => {
-    if (!customers || customers.length === 0) return undefined;
-
-    const selectedCustomer = params.customerId
-      ? customers.find(c => c.id === params.customerId)
-      : undefined;
-
-    const normalizedName = normalizeLookupValue(
-      params.customerName || (selectedCustomer ? getCustomerName(selectedCustomer) : "")
-    );
-    const normalizedBranch = normalizeLookupValue(params.branch);
-    const normalizedSku = normalizeLookupValue(params.sku);
-
-    return customers.find((customer: any) => {
-      const nameMatches = normalizedName
-        ? normalizeLookupValue(getCustomerName(customer)) === normalizedName
-        : true;
-      const branchMatches = normalizedBranch
-        ? normalizeLookupValue(getCustomerBranch(customer)) === normalizedBranch
-        : true;
-      const skuMatches = normalizedSku
-        ? normalizeLookupValue(customer.sku) === normalizedSku
-        : true;
-
-      return nameMatches && branchMatches && skuMatches;
-    });
-  }, [customers, getCustomerBranch, getCustomerName]);
-
   // Function to handle customer selection and auto-populate SKU options
   const handleCustomerChange = (customerName: string) => {
     const dealerCustomers = customers?.filter(c =>
@@ -397,7 +368,7 @@ const SalesEntry = () => {
 
   // When area changes, update customer_id to match dealer+area (required for correct price fetch)
   const handleAreaChange = (area: string) => {
-    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
+    const selectedCustomer = findCustomerById(saleForm.customer_id);
     if (selectedCustomer) {
       const matchingCustomer = findCustomerRecord({
         customerName: getCustomerName(selectedCustomer as any),
@@ -591,13 +562,11 @@ const SalesEntry = () => {
         // Factory production entry created successfully for multiple sales
 
         // Create corresponding transport transaction
-        const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
-        
+        const selectedCustomer = findCustomerById(saleForm.customer_id);
         const transportBranch = selectedCustomer ? getCustomerBranch(selectedCustomer) : saleForm.area;
-        const transportCustomerName = selectedCustomer ? getCustomerName(selectedCustomer) : "";
         const transportData = {
           amount: 0,
-          description: transportCustomerName ? `${transportCustomerName}-${transportBranch} Transport` : 'Client-Branch Transport',
+          description: buildTransportDescription(selectedCustomer, saleForm.area),
           expense_date: saleForm.transaction_date,
           expense_group: "Client Sale Transport",
           client_id: saleForm.customer_id || null,
@@ -717,101 +686,22 @@ const SalesEntry = () => {
   };
 
   // Get available SKUs for the selected customer and area
-  const getAvailableSKUs = useCallback(() => {
-    if (!saleForm.customer_id || !saleForm.area) return [];
-    
-    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
-    if (!selectedCustomer) return [];
-    
-    // Filter customers by the selected customer name and area to get available SKUs
-    const customerSKUs = customers?.filter(c => 
-      normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(getCustomerName(selectedCustomer as any)) &&
-      normalizeLookupValue(getCustomerBranch(c as any)) === normalizeLookupValue(saleForm.area) &&
-      c.sku && 
-      c.sku.trim() !== ''
-    ) || [];
-    
-    // Return unique SKUs for this customer-area combination
-    const uniqueSKUs = customerSKUs.map(customer => ({
-      id: `sku-${customer.sku}`,
-      sku: customer.sku,
-      dealer_name: customer.dealer_name,
-      area: customer.area,
-      price_per_case: customer.price_per_case || 0
-    }));
-    
-    // Return filtered SKUs for the selected customer-area combination
-    
-    return uniqueSKUs;
-  }, [saleForm.customer_id, saleForm.area, customers]);
+  const availableSkus = useMemo(() => {
+    return getAvailableSkus(saleForm.customer_id, saleForm.area);
+  }, [getAvailableSkus, saleForm.area, saleForm.customer_id]);
+  const getAvailableSKUs = useCallback(() => availableSkus, [availableSkus]);
 
   // Get available areaes for selected customer
-  const getAvailableAreas = () => {
-    if (!saleForm.customer_id) return [];
-    
-    const selectedCustomer = customers?.find(c => c.id === saleForm.customer_id);
-    if (!selectedCustomer) return [];
-    
-    // Get all unique areaes for the selected customer's dealer_name (case-insensitive)
-    const areaSet = new Set<string>();
-    const seenBranches = new Set<string>();
-    
-    customers?.forEach(customer => {
-      const customerBranch = getCustomerBranch(customer as any);
-      if (
-        normalizeLookupValue(getCustomerName(customer as any)) === normalizeLookupValue(getCustomerName(selectedCustomer as any)) &&
-        customerBranch &&
-        customerBranch.trim() !== ''
-      ) {
-        const trimmedArea = customerBranch.trim();
-        const lowerCaseArea = trimmedArea.toLowerCase();
-        
-        // Only add if we haven't seen this area (case-insensitive) before
-        if (!seenBranches.has(lowerCaseArea)) {
-          areaSet.add(trimmedArea);
-          seenBranches.add(lowerCaseArea);
-        }
-      }
-    });
-    
-    const uniqueBranches = Array.from(areaSet).sort();
-    // Return available areaes for selected customer
-    return uniqueBranches;
-  };
+  const availableAreas = useMemo(() => {
+    return getAvailableBranches(saleForm.customer_id);
+  }, [getAvailableBranches, saleForm.customer_id]);
+  const getAvailableAreas = useCallback(() => availableAreas, [availableAreas]);
 
   // Get available areaes for edit form
-  const getAvailableAreasForEdit = () => {
-    if (!editForm.customer_id) return [];
-    
-    const selectedCustomer = customers?.find(c => c.id === editForm.customer_id);
-    if (!selectedCustomer) return [];
-    
-    // Get all unique areaes for the selected customer's dealer_name (case-insensitive)
-    const areaSet = new Set<string>();
-    const seenBranches = new Set<string>();
-    
-    customers?.forEach(customer => {
-      const customerBranch = getCustomerBranch(customer as any);
-      if (
-        normalizeLookupValue(getCustomerName(customer as any)) === normalizeLookupValue(getCustomerName(selectedCustomer as any)) &&
-        customerBranch &&
-        customerBranch.trim() !== ''
-      ) {
-        const trimmedArea = customerBranch.trim();
-        const lowerCaseArea = trimmedArea.toLowerCase();
-        
-        // Only add if we haven't seen this area (case-insensitive) before
-        if (!seenBranches.has(lowerCaseArea)) {
-          areaSet.add(trimmedArea);
-          seenBranches.add(lowerCaseArea);
-        }
-      }
-    });
-    
-    const uniqueBranches = Array.from(areaSet).sort();
-    // Return available areaes for edit form
-    return uniqueBranches;
-  };
+  const availableAreasForEdit = useMemo(() => {
+    return getAvailableBranches(editForm.customer_id);
+  }, [editForm.customer_id, getAvailableBranches]);
+  const getAvailableAreasForEdit = useCallback(() => availableAreasForEdit, [availableAreasForEdit]);
 
   // Get price per case for selected customer and area (match by dealer_name + area for correct pricing)
   const getPricePerCase = () => {
@@ -921,35 +811,23 @@ const SalesEntry = () => {
   });
 
   // Get unique customer names (no duplicates, case-insensitive) - for form dropdowns
-  const getUniqueCustomersForForm = () => {
-    if (!customers) return [];
-    
-    const seenNames = new Set<string>();
-    const uniqueCustomerNames: string[] = [];
-    
-    customers.forEach(customer => {
-      const lowerCaseName = customer.dealer_name.toLowerCase();
-      if (!seenNames.has(lowerCaseName)) {
-        seenNames.add(lowerCaseName);
-        uniqueCustomerNames.push(customer.dealer_name);
-      }
-    });
-    
-    return uniqueCustomerNames.sort();
-  };
+  const uniqueCustomersForForm = useMemo(() => {
+    return getUniqueCustomerNames();
+  }, [getUniqueCustomerNames]);
+  const getUniqueCustomersForForm = useCallback(() => uniqueCustomersForForm, [uniqueCustomersForForm]);
 
   // Get areaes for a specific customer
   const getBranchesForCustomer = (customerId: string) => {
     if (!customers || !customerId) return [];
     
-    const customer = customers.find(c => c.id === customerId);
+    const customer = findCustomerById(customerId);
     if (!customer) return [];
     
     return customers
-      .filter(c => c.dealer_name === customer.dealer_name)
-      .map(c => c.area)
-      .filter((area, index, self) => self.indexOf(area) === index)
-      .sort();
+      ?.filter(c => normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(getCustomerName(customer as any)))
+      .map(c => getCustomerBranch(c as any))
+      .filter((area, index, self) => !!area && self.indexOf(area) === index)
+      .sort() || [];
   };
 
   // Check if only one SKU is available for the selected customer-area combination
@@ -960,7 +838,7 @@ const SalesEntry = () => {
       return;
     }
 
-    const availableSKUs = getAvailableSKUs();
+    const availableSKUs = availableSkus;
     
     if (availableSKUs.length === 1) {
       setIsSingleSKUMode(true);
@@ -988,7 +866,7 @@ const SalesEntry = () => {
         description: ""
       });
     }
-  }, [saleForm.customer_id, saleForm.area, getAvailableSKUs]);
+  }, [availableSkus, saleForm.area, saleForm.customer_id]);
 
   // Check for single SKU mode when customer or area changes
   useEffect(() => {
@@ -1580,13 +1458,11 @@ const SalesEntry = () => {
       // Factory production entry created successfully
 
       // Create corresponding transport transaction
-      const selectedCustomer = customers?.find(c => c.id === data.customer_id);
-      
+      const selectedCustomer = findCustomerById(data.customer_id);
       const transportBranch = selectedCustomer ? getCustomerBranch(selectedCustomer) : data.area;
-      const transportCustomerName = selectedCustomer ? getCustomerName(selectedCustomer) : "";
       const transportData = {
         amount: 0,
-        description: transportCustomerName ? `${transportCustomerName}-${transportBranch} Transport` : 'Client-Branch Transport',
+        description: buildTransportDescription(selectedCustomer, data.area),
         expense_date: data.transaction_date,
         expense_group: "Client Sale Transport",
         client_id: data.customer_id || null,
@@ -1705,10 +1581,7 @@ const SalesEntry = () => {
         }
 
         // Resolve customer_id for dealer+area (customers can have multiple rows per dealer+area+sku)
-        const dealerCustomer = customers?.find(c => c.id === data.customer_id);
-        const paymentCustomerId = (dealerCustomer && data.area)
-          ? customers?.find(c => c.dealer_name === dealerCustomer.dealer_name && c.area === data.area)?.id ?? data.customer_id
-          : data.customer_id;
+        const paymentCustomerId = resolveCustomerIdForBranch(data.customer_id, data.area);
 
         // Build payload - sku/quantity are NOT NULL in schema, use placeholders for payment
         const insertPayload = {
@@ -1797,7 +1670,7 @@ const SalesEntry = () => {
       if (salesError) throw salesError;
 
       // Get customer info for transport update
-      const selectedCustomer = customers?.find(c => c.id === data.customer_id);
+      const selectedCustomer = findCustomerById(data.customer_id);
 
       // Update corresponding factory transaction if it's a sale transaction
       if (data.sku && data.quantity && originalCustomerId) {
@@ -1814,8 +1687,8 @@ const SalesEntry = () => {
         const factoryAmount = quantity * factoryCostPerCase;
 
         // Get customer name for description update
-        const selectedCustomer = customers?.find(c => c.id === data.customer_id);
-        const newDescription = selectedCustomer?.dealer_name || "Unknown Client";
+        const selectedCustomer = findCustomerById(data.customer_id);
+        const newDescription = getCustomerName(selectedCustomer as any) || "Unknown Client";
 
         // Find and update factory payables transaction using reliable identifiers:
         // customer_id, transaction_date, sku, and transaction_type
@@ -1852,9 +1725,9 @@ const SalesEntry = () => {
 
       // Update corresponding transport transaction (match by description + date since client_id may not exist)
       if (selectedCustomer) {
-        const originalCustomer = customers?.find(c => c.id === originalCustomerId);
-        const originalDescription = originalCustomer ? `${originalCustomer.dealer_name}-${originalCustomer.area} Transport` : 'Client-Branch Transport';
-        const newDescription = `${selectedCustomer.dealer_name}-${selectedCustomer.area} Transport`;
+        const originalCustomer = findCustomerById(originalCustomerId);
+        const originalDescription = buildTransportDescription(originalCustomer, editingTransaction?.area || undefined);
+        const newDescription = buildTransportDescription(selectedCustomer, data.area);
 
         const { error: transportError } = await supabase
           .from("transport_expenses")
@@ -2096,7 +1969,7 @@ const SalesEntry = () => {
                   <div className="space-y-2">
                     <Label htmlFor="sale-customer">Client *</Label>
                     <Select 
-                      value={saleForm.customer_id ? (customers?.find(c => c.id === saleForm.customer_id)?.dealer_name ?? "") : ""}
+                      value={saleForm.customer_id ? getCustomerName(findCustomerById(saleForm.customer_id) as any) : ""}
                       onValueChange={handleCustomerChange}
                       disabled={customersLoading}
                     >
@@ -2107,7 +1980,7 @@ const SalesEntry = () => {
                         {customersLoading ? (
                           <SelectItem value="loading" disabled>Loading...</SelectItem>
                         ) : (
-                          getUniqueCustomersForForm().map((customerName) => (
+                          uniqueCustomersForForm.map((customerName) => (
                             <SelectItem key={customerName} value={customerName}>
                               {customerName}
                             </SelectItem>
@@ -2128,7 +2001,7 @@ const SalesEntry = () => {
                         <SelectValue placeholder={saleForm.customer_id ? "Select branch" : "Select client first"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {getAvailableAreas().map((area) => (
+                        {availableAreas.map((area) => (
                           <SelectItem key={area} value={area}>
                             {area}
                           </SelectItem>
@@ -2142,7 +2015,7 @@ const SalesEntry = () => {
                 {saleForm.customer_id && saleForm.area && (
                   <>
                     {/* No SKUs Available */}
-                    {getAvailableSKUs().length === 0 ? (
+                    {availableSkus.length === 0 ? (
                       <Card>
                         <CardHeader>
                           <CardTitle className="text-base text-amber-600">No SKUs Available</CardTitle>
@@ -2154,7 +2027,7 @@ const SalesEntry = () => {
                           <div className="text-center py-8">
                             <div className="text-4xl mb-4">📦</div>
                             <p className="text-muted-foreground">
-                              Add SKU configurations for <strong>{customers?.find(c => c.id === saleForm.customer_id)?.dealer_name}</strong> - <strong>{saleForm.area}</strong> in Configuration Management for this client branch.
+                              Add SKU configurations for <strong>{getCustomerName(findCustomerById(saleForm.customer_id) as any)}</strong> - <strong>{saleForm.area}</strong> in Configuration Management for this client branch.
                             </p>
                           </div>
                         </CardContent>
@@ -2251,7 +2124,7 @@ const SalesEntry = () => {
                                       <SelectValue placeholder="Select SKU" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {getAvailableSKUs().map((customer) => (
+                                      {availableSkus.map((customer) => (
                                         <SelectItem key={`${customer.id}-${customer.sku}`} value={customer.sku || ""}>
                                           {customer.sku}
                                         </SelectItem>
@@ -2431,9 +2304,9 @@ const SalesEntry = () => {
                   <div className="space-y-2">
                     <Label htmlFor="payment-customer">Client *</Label>
                     <Select 
-                      value={paymentForm.customer_id ? (customers?.find(c => c.id === paymentForm.customer_id)?.dealer_name ?? "") : ""}
+                      value={paymentForm.customer_id ? getCustomerName(findCustomerById(paymentForm.customer_id) as any) : ""}
                       onValueChange={(customerName) => {
-                        const selectedCustomer = customers?.find(c => c.dealer_name === customerName);
+                        const selectedCustomer = findCustomerRecord({ customerName });
                         setPaymentForm({...paymentForm, customer_id: selectedCustomer?.id || "", area: ""});
                       }}
                     >
@@ -2441,7 +2314,7 @@ const SalesEntry = () => {
                         <SelectValue placeholder="Select client" />
                       </SelectTrigger>
                       <SelectContent>
-                        {getUniqueCustomers.map((customerName) => (
+                        {uniqueCustomersForForm.map((customerName) => (
                           <SelectItem key={customerName} value={customerName}>
                             {customerName}
                           </SelectItem>
