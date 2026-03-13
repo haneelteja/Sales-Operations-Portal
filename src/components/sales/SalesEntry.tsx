@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import { getQueryConfig } from "@/lib/query-configs";
 import { useTransactionFilters } from "@/components/sales/hooks/useTransactionFilters";
 import type { 
@@ -25,7 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Edit, Download, ChevronLeft, ChevronRight, FileText, Loader2 } from "lucide-react";
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { useAutoSave } from "@/hooks/useAutoSave";
-import { saleFormSchema, paymentFormSchema, salesItemSchema } from "@/lib/validation/schemas";
+import { saleFormSchema, paymentFormSchema } from "@/lib/validation/schemas";
 import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
 import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
@@ -38,6 +37,7 @@ import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirect
 import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
 import { useSalesItemsManager } from "@/components/sales/hooks/useSalesItemsManager";
 import { useMultiSaleSubmission } from "@/components/sales/hooks/useMultiSaleSubmission";
+import { useTransactionMutations } from "@/components/sales/hooks/useTransactionMutations";
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
 const safeNumValue = (v: string | number | undefined | null): string => {
@@ -95,7 +95,6 @@ const SalesEntry = () => {
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
 
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   // Invoice generation hooks
   const generateInvoice = useInvoiceGeneration();
   const downloadInvoice = useInvoiceDownload();
@@ -105,7 +104,9 @@ const SalesEntry = () => {
     salesItems,
     setSalesItems,
     isSingleSKUMode,
+    setIsSingleSKUMode,
     singleSKUData,
+    setSingleSKUData,
     resetItemsState,
     addItemToSales,
     removeItemFromSales,
@@ -579,6 +580,21 @@ const SalesEntry = () => {
     });
   }, [clearSaleFormData, clearSalesItemsData, resetSaleForm]);
 
+  const handlePaymentSuccess = useCallback(() => {
+    setPaymentForm({
+      customer_id: "",
+      area: "",
+      amount: "",
+      description: "",
+      transaction_date: new Date().toISOString().split('T')[0]
+    });
+    clearPaymentFormData();
+  }, [clearPaymentFormData]);
+
+  const handleUpdateSuccess = useCallback(() => {
+    setEditingTransaction(null);
+  }, []);
+
   const saleMutation = useSaleSubmission({
     customers,
     findCustomerById,
@@ -588,6 +604,21 @@ const SalesEntry = () => {
     generateInvoice,
     getInvoiceFailureDescription,
     onSaleSuccess: handleSaleSuccess,
+  });
+
+  const {
+    paymentMutation,
+    updateMutation,
+    deleteMutation,
+  } = useTransactionMutations({
+    editingTransaction,
+    findCustomerById,
+    getCustomerName,
+    getTransactionBranch,
+    buildTransportDescription,
+    resolveCustomerIdForBranch,
+    onPaymentSuccess: handlePaymentSuccess,
+    onUpdateSuccess: handleUpdateSuccess,
   });
 
   // Get areaes for a specific customer
@@ -1066,266 +1097,6 @@ const SalesEntry = () => {
     };
   };
 
-  // Payment entry mutation
-  const paymentMutation = useMutation({
-    mutationFn: async (data: PaymentForm) => {
-      try {
-        // Validate input data
-        if (!data.customer_id || !data.area || !data.amount) {
-          throw new Error('Missing required fields: client, branch, or amount');
-        }
-
-        const amount = parseFloat(data.amount);
-        if (isNaN(amount) || amount <= 0) {
-          throw new Error('Invalid amount: must be a positive number');
-        }
-
-        // Resolve customer_id for dealer+area (customers can have multiple rows per dealer+area+sku)
-        const paymentCustomerId = resolveCustomerIdForBranch(data.customer_id, data.area);
-
-        // Build payload - sku/quantity are NOT NULL in schema, use placeholders for payment
-        const insertPayload = {
-          customer_id: paymentCustomerId,
-          transaction_type: "payment",
-          amount,
-          total_amount: amount,
-          transaction_date: data.transaction_date || new Date().toISOString().split('T')[0],
-          description: data.description || null,
-          sku: "Payment",
-          quantity: 0,
-          branch: data.area || null,
-        };
-
-        const { data: paymentData, error } = await supabase
-          .from("sales_transactions")
-          .insert(insertPayload)
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Payment transaction error:', error);
-          throw new Error(`Failed to create payment transaction: ${error.message}`);
-        }
-
-        return paymentData;
-      } catch (error) {
-        console.error('Critical error in payment mutation:', error);
-        throw error;
-      }
-    },
-    onSuccess: (data) => {
-      console.log('Payment recorded successfully:', data);
-      toast({ title: "Success", description: "Payment recorded successfully!" });
-      setPaymentForm({
-        customer_id: "",
-        area: "",
-        amount: "",
-        description: "",
-        transaction_date: new Date().toISOString().split('T')[0]
-      });
-      // Clear auto-saved data after successful submission
-      clearPaymentFormData();
-      queryClient.invalidateQueries({ queryKey: ["sales-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["recent-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["transport-expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sales-transactions-for-availability"] });
-      queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
-    },
-    onError: (error) => {
-      console.error('Payment mutation error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      toast({ 
-        title: "Error", 
-        description: `Failed to record payment: ${errorMessage}`,
-        variant: "destructive"
-      });
-    },
-  });
-
-  // Update mutation
-  const updateMutation = useMutation({
-    mutationFn: async (data: { id: string } & Partial<SaleForm>) => {
-      // Store original transaction values before update for finding related records
-      const originalDescription = editingTransaction?.description || '';
-      const originalTransactionDate = editingTransaction?.transaction_date || '';
-      const originalCustomerId = editingTransaction?.customer_id || '';
-
-      // Update sales transaction
-      const { error: salesError } = await supabase
-        .from("sales_transactions")
-        .update({
-          customer_id: data.customer_id,
-          amount: parseFloat(data.amount),
-          total_amount: parseFloat(data.amount), // Add total_amount field
-          quantity: data.quantity ? parseInt(data.quantity) : null,
-          sku: data.sku,
-          description: data.description,
-          transaction_date: data.transaction_date,
-          branch: data.area || null
-        })
-        .eq("id", data.id);
-
-      if (salesError) throw salesError;
-
-      // Get customer info for transport update
-      const selectedCustomer = findCustomerById(data.customer_id);
-
-      // Update corresponding factory transaction if it's a sale transaction
-      if (data.sku && data.quantity && originalCustomerId) {
-        // Get factory pricing for amount calculation
-        const { data: factoryPricing } = await supabase
-          .from("factory_pricing")
-          .select("cost_per_case")
-          .eq("sku", data.sku)
-          .order("pricing_date", { ascending: false })
-          .limit(1);
-
-        const factoryCostPerCase = factoryPricing?.[0]?.cost_per_case || 0;
-        const quantity = parseInt(data.quantity);
-        const factoryAmount = quantity * factoryCostPerCase;
-
-        // Get customer name for description update
-        const selectedCustomer = findCustomerById(data.customer_id);
-        const newDescription = getCustomerName(selectedCustomer as any) || "Unknown Client";
-
-        // Find and update factory payables transaction using reliable identifiers:
-        // customer_id, transaction_date, sku, and transaction_type
-        // This is more reliable than matching by description which can vary
-        const { error: factoryError } = await supabase
-          .from("factory_payables")
-          .update({
-            sku: data.sku,
-            amount: factoryAmount,
-            quantity: quantity,
-            description: newDescription,
-            transaction_date: data.transaction_date,
-            customer_id: data.customer_id
-          })
-          .eq("customer_id", originalCustomerId)
-          .eq("transaction_date", originalTransactionDate)
-          .eq("sku", editingTransaction?.sku || '')
-          .eq("transaction_type", "production");
-
-        if (factoryError) {
-          console.error("Failed to update factory transaction:", factoryError);
-          console.error("Update attempt details:", {
-            originalCustomerId,
-            originalTransactionDate,
-            originalSku: editingTransaction?.sku,
-            newCustomerId: data.customer_id,
-            newTransactionDate: data.transaction_date,
-            newSku: data.sku
-          });
-        } else {
-          console.log("Factory transaction updated successfully");
-        }
-      }
-
-      // Update corresponding transport transaction (match by description + date since client_id may not exist)
-      if (selectedCustomer) {
-        const originalCustomer = findCustomerById(originalCustomerId);
-        const originalDescription = buildTransportDescription(originalCustomer, editingTransaction?.area || undefined);
-        const newDescription = buildTransportDescription(selectedCustomer, data.area);
-
-        const { error: transportError } = await supabase
-          .from("transport_expenses")
-          .update({
-            expense_date: data.transaction_date,
-            description: newDescription,
-          })
-          .eq("expense_group", "Client Sale Transport")
-          .eq("description", originalDescription)
-          .eq("expense_date", originalTransactionDate);
-
-        if (transportError) {
-          console.warn("Failed to update transport transaction:", transportError);
-        }
-      }
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Transaction updated successfully!" });
-      setEditingTransaction(null);
-      // Use centralized cache invalidation
-      invalidateRelated('sales_transactions');
-      invalidateRelated('factory_payables');
-      invalidateRelated('transport_expenses');
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to update transaction: " + error.message,
-        variant: "destructive"
-      });
-    },
-  });
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      // First get the transaction details to find related factory transactions
-      const { data: transaction } = await supabase
-        .from("sales_transactions")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      if (transaction) {
-        // Delete corresponding factory transaction if it's a sale transaction
-        // Match by customer_id, transaction_date, sku, and transaction_type since description may vary
-        if (transaction.transaction_type === "sale" && transaction.sku && transaction.customer_id) {
-          const { error: factoryError } = await supabase
-            .from("factory_payables")
-            .delete()
-            .eq("customer_id", transaction.customer_id)
-            .eq("transaction_date", transaction.transaction_date)
-            .eq("sku", transaction.sku)
-            .eq("transaction_type", "production");
-
-          if (factoryError) {
-            console.warn("Failed to delete factory transaction:", factoryError);
-          }
-        }
-
-        // Delete corresponding transport transaction
-        // Match by client_id, expense_date, and expense_group since description format may vary
-        const { error: transportError } = await supabase
-          .from("transport_expenses")
-          .delete()
-          .eq("client_id", transaction.customer_id)
-          .eq("expense_date", transaction.transaction_date)
-          .eq("expense_group", "Client Sale Transport");
-
-        if (transportError) {
-          console.warn("Failed to delete transport transaction:", transportError);
-        }
-      }
-
-      // Delete the sales transaction
-      const { error } = await supabase
-        .from("sales_transactions")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Transaction deleted successfully!" });
-      // Invalidate related queries using centralized hook
-      invalidateRelated('sales_transactions');
-      invalidateRelated('factory_payables');
-      invalidateRelated('transport_expenses');
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to delete transaction: " + error.message,
-        variant: "destructive"
-      });
-    },
-  });
-
   const handleSaleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -1411,7 +1182,8 @@ const SalesEntry = () => {
       quantity: editForm.quantity,
       sku: editForm.sku,
       description: editForm.description,
-      transaction_date: editForm.transaction_date
+      transaction_date: editForm.transaction_date,
+      area: editForm.area,
     });
   };
 

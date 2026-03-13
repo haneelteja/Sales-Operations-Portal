@@ -172,6 +172,7 @@ export function useSalesItemsManager({
     salesItems,
     setSalesItems,
     isSingleSKUMode,
+    setIsSingleSKUMode,
     singleSKUData,
     setSingleSKUData,
     resetItemsState,
