@@ -9,9 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, Search, X, Shield } from "lucide-react";
+import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, X, Shield } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import * as XLSX from 'xlsx';
 import { useAutoSave } from "@/hooks/useAutoSave";
@@ -38,7 +37,7 @@ interface UserForm {
   username: string;
   email: string;
   associated_dealer_areas: string[]; // Changed to client-area combinations
-  role: 'admin' | 'manager' | 'client';
+  role: 'admin' | 'manager';
 }
 
 const UserManagement = () => {
@@ -47,12 +46,11 @@ const UserManagement = () => {
     username: '',
     email: '',
     associated_dealer_areas: [],
-    role: 'client'
+    role: 'manager'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [dealerAreaSearch, setClientBranchSearch] = useState('');
 
   // Auto-save form data to prevent data loss
   const { loadData, clearSavedData } = useAutoSave({
@@ -147,16 +145,6 @@ const UserManagement = () => {
     return [...new Set(combinations)].sort();
   };
 
-  // Get filtered client-area combinations based on search
-  const getFilteredDealerAreas = () => {
-    const allCombinations = getUniqueDealerAreas();
-    if (!dealerAreaSearch.trim()) return allCombinations;
-    
-    return allCombinations.filter(combination => 
-      combination.toLowerCase().includes(dealerAreaSearch.toLowerCase())
-    );
-  };
-
   // Generate temporary password
   const generateTemporaryPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -244,67 +232,34 @@ const UserManagement = () => {
       console.log('Using direct database approach for user creation');
       const tempPassword = generateTemporaryPassword();
 
-      // For admin/manager roles, automatically assign all clients
       let associatedClients: string[];
       let associatedBranches: string[];
 
-      if (formData.role === 'admin' || formData.role === 'manager') {
-        // Get all clients and areas for admin/manager roles
-        try {
-          const { data: allClients, error: clientsError } = await supabase
-            .from('customers')
-            .select('dealer_name, area')
-            .not('dealer_name', 'is', null)
-            .not('dealer_name', 'eq', '')
-            .not('area', 'is', null)
-            .not('area', 'eq', '');
+      try {
+        const { data: allClients, error: clientsError } = await supabase
+          .from('customers')
+          .select('dealer_name, area')
+          .not('dealer_name', 'is', null)
+          .not('dealer_name', 'eq', '')
+          .not('area', 'is', null)
+          .not('area', 'eq', '');
 
-          if (clientsError) {
-            console.warn('Error fetching all clients for admin/manager:', clientsError);
-            // For admin/manager, empty arrays are acceptable - they'll get access to all clients automatically
-            associatedClients = [];
-            associatedBranches = [];
-          } else if (allClients && allClients.length > 0) {
-            associatedClients = [...new Set(allClients.map(c => c.dealer_name).filter(Boolean))];
-            associatedBranches = [...new Set(allClients.map(c => c.area).filter(Boolean))];
-            console.log('Found clients for admin/manager:', associatedClients.length, 'clients');
-          } else {
-            console.log('No clients found in database - admin/manager will have empty access initially');
-            // Empty arrays are fine - admin/manager roles will get access to all clients as they're added
-            associatedClients = [];
-            associatedBranches = [];
-          }
-        } catch (error) {
-          console.error('Exception fetching clients for admin/manager:', error);
-          // Empty arrays are acceptable for admin/manager
+        if (clientsError) {
+          console.warn('Error fetching all clients for user access:', clientsError);
+          associatedClients = [];
+          associatedBranches = [];
+        } else if (allClients && allClients.length > 0) {
+          associatedClients = [...new Set(allClients.map(c => c.dealer_name).filter(Boolean))];
+          associatedBranches = [...new Set(allClients.map(c => c.area).filter(Boolean))];
+          console.log('Found clients for user access:', associatedClients.length, 'clients');
+        } else {
           associatedClients = [];
           associatedBranches = [];
         }
-      } else {
-        // For client roles, use the selected client-area combinations
-        // Parse "Dealer - Area" format safely
-        associatedClients = formData.associated_dealer_areas
-          .map(combo => {
-            const parts = combo.split(' - ');
-            return parts[0]?.trim() || '';
-          })
-          .filter(Boolean);
-        
-        associatedBranches = formData.associated_dealer_areas
-          .map(combo => {
-            const parts = combo.split(' - ');
-            return parts[1]?.trim() || 'All Areas';
-          })
-          .filter(Boolean);
-        
-        // Ensure arrays are the same length
-        const maxLength = Math.max(associatedClients.length, associatedBranches.length);
-        while (associatedClients.length < maxLength) {
-          associatedClients.push('');
-        }
-        while (associatedBranches.length < maxLength) {
-          associatedBranches.push('All Areas');
-        }
+      } catch (error) {
+        console.error('Exception fetching clients for user access:', error);
+        associatedClients = [];
+        associatedBranches = [];
       }
 
       // Check if user is authenticated using AuthContext (works with mock auth)
@@ -343,8 +298,8 @@ const UserManagement = () => {
       console.log('Associated areas:', associatedBranches);
 
       // Validate role before sending
-      if (!formData.role || !['admin', 'manager', 'client'].includes(formData.role)) {
-        throw new Error(`Invalid role: ${formData.role}. Role must be one of: admin, manager, client`);
+      if (!formData.role || !['admin', 'manager'].includes(formData.role)) {
+        throw new Error(`Invalid role: ${formData.role}. Role must be one of: admin, manager`);
       }
 
       // Create user using server-side function to skip email confirmation
@@ -418,7 +373,7 @@ const UserManagement = () => {
         username: '',
         email: '',
         associated_dealer_areas: [],
-        role: 'client'
+        role: 'manager'
       });
       clearSavedData(); // Clear auto-saved data after successful submission
       toast({
@@ -628,52 +583,23 @@ const UserManagement = () => {
       role: string; 
       associated_dealer_areas: string[] 
     }) => {
-      // For admin/manager roles, automatically assign all clients
       let associatedClients: string[];
       let associatedBranches: string[];
 
-      if (role === 'admin' || role === 'manager') {
-        // Get all clients and areas for admin/manager roles
-        const { data: allClients } = await supabase
-          .from('customers')
-          .select('dealer_name, area')
-          .not('dealer_name', 'is', null)
-          .not('dealer_name', 'eq', '')
-          .not('area', 'is', null)
-          .not('area', 'eq', '');
+      const { data: allClients } = await supabase
+        .from('customers')
+        .select('dealer_name, area')
+        .not('dealer_name', 'is', null)
+        .not('dealer_name', 'eq', '')
+        .not('area', 'is', null)
+        .not('area', 'eq', '');
 
-        if (allClients) {
-          associatedClients = [...new Set(allClients.map(c => c.dealer_name).filter(Boolean))];
-          associatedBranches = [...new Set(allClients.map(c => c.area).filter(Boolean))];
-        } else {
-          associatedClients = [];
-          associatedBranches = [];
-        }
+      if (allClients) {
+        associatedClients = [...new Set(allClients.map(c => c.dealer_name).filter(Boolean))];
+        associatedBranches = [...new Set(allClients.map(c => c.area).filter(Boolean))];
       } else {
-        // For client roles, use the selected client-area combinations
-        // Parse "Dealer - Area" format safely
-        associatedClients = associated_dealer_areas
-          .map(combo => {
-            const parts = combo.split(' - ');
-            return parts[0]?.trim() || '';
-          })
-          .filter(Boolean);
-        
-        associatedBranches = associated_dealer_areas
-          .map(combo => {
-            const parts = combo.split(' - ');
-            return parts[1]?.trim() || 'All Areas';
-          })
-          .filter(Boolean);
-        
-        // Ensure arrays are the same length
-        const maxLength = Math.max(associatedClients.length, associatedBranches.length);
-        while (associatedClients.length < maxLength) {
-          associatedClients.push('');
-        }
-        while (associatedBranches.length < maxLength) {
-          associatedBranches.push('All Areas');
-        }
+        associatedClients = [];
+        associatedBranches = [];
       }
 
       const { error } = await supabase
@@ -761,7 +687,7 @@ const UserManagement = () => {
         username: '',
         email: '',
         associated_dealer_areas: [],
-        role: 'client'
+        role: 'manager'
       });
       clearSavedData(); // Clear auto-saved data after successful submission
     } catch (error) {
@@ -772,33 +698,6 @@ const UserManagement = () => {
       setIsSubmitting(false);
       logger.debug('Form submission completed');
     }
-  };
-
-  const handleClientBranchToggle = (clientBranch: string) => {
-    setUserForm(prev => ({
-      ...prev,
-      associated_dealer_areas: prev.associated_dealer_areas.includes(clientBranch)
-        ? prev.associated_dealer_areas.filter(cb => cb !== clientBranch)
-        : [...prev.associated_dealer_areas, clientBranch]
-    }));
-  };
-
-  const handleSelectAllFiltered = () => {
-    const filteredCombinations = getFilteredDealerAreas();
-    const newSelections = [...new Set([...userForm.associated_dealer_areas, ...filteredCombinations])];
-    setUserForm(prev => ({
-      ...prev,
-      associated_dealer_areas: newSelections
-    }));
-  };
-
-  const handleDeselectAllFiltered = () => {
-    const filteredCombinations = getFilteredDealerAreas();
-    const newSelections = userForm.associated_dealer_areas.filter(cb => !filteredCombinations.includes(cb));
-    setUserForm(prev => ({
-      ...prev,
-      associated_dealer_areas: newSelections
-    }));
   };
 
   const exportToExcel = () => {
@@ -950,7 +849,7 @@ const UserManagement = () => {
             <span>{editingUserId ? 'Edit User' : 'Create New User'}</span>
           </CardTitle>
           <CardDescription>
-            {editingUserId ? 'Update user account and access permissions' : 'Create a new user account with specific client and area access. Login credentials will be sent via email.'}
+            {editingUserId ? 'Update user account and access permissions' : 'Create a new user account. Login credentials will be sent via email.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1013,16 +912,13 @@ const UserManagement = () => {
               <div className="space-y-2">
                 <Label htmlFor="role">Role *</Label>
                 <Select
-                  value={userForm.role || 'client'}
-                  onValueChange={(value: 'admin' | 'manager' | 'client') => {
+                  value={userForm.role || 'manager'}
+                  onValueChange={(value: 'admin' | 'manager') => {
                     console.log('Role changed to:', value);
                     setUserForm(prev => {
                       const updated = { ...prev, role: value };
                       console.log('Updated userForm with role:', updated);
-                      // Clear client-area selections when switching to admin/manager
-                      if (value === 'admin' || value === 'manager') {
-                        updated.associated_dealer_areas = [];
-                      }
+                      updated.associated_dealer_areas = [];
                       return updated;
                     });
                   }}
@@ -1039,7 +935,6 @@ const UserManagement = () => {
                   <SelectContent>
                     <SelectItem value="admin" key="admin">Admin</SelectItem>
                     <SelectItem value="manager" key="manager">Manager</SelectItem>
-                    <SelectItem value="client" key="client">Client</SelectItem>
                   </SelectContent>
                 </Select>
                 {userForm.role && (
@@ -1050,112 +945,19 @@ const UserManagement = () => {
               </div>
             </div>
 
-            {/* Admin/Manager Auto Access Message */}
-            {(userForm.role === 'admin' || userForm.role === 'manager') && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0">
-                    <Building2 className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-medium text-blue-900">
-                      Automatic Access Assignment
-                    </h4>
-                    <p className="text-sm text-blue-700 mt-1">
-                      {userForm.role === 'admin' ? 'Admin' : 'Manager'} users automatically get access to ALL clients and areas. 
-                      This access will be updated automatically when new clients are added to the system.
-                    </p>
-                  </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <Building2 className="h-5 w-5 text-blue-600" />
                 </div>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Label className="text-base font-medium">Dealer-Area Access *</Label>
-                  <span className="text-sm text-gray-500">
-                    {userForm.role === 'admin' || userForm.role === 'manager' 
-                      ? 'Admin/Manager users automatically get access to all clients and areas'
-                      : 'Select specific client-area combinations this user can access'
-                    }
-                  </span>
+                <div>
+                  <h4 className="text-sm font-medium text-blue-900">
+                    Automatic Access Assignment
+                  </h4>
+                  <p className="text-sm text-blue-700 mt-1">
+                    {userForm.role === 'admin' ? 'Admin' : 'Manager'} users automatically get access to all client and branch combinations.
+                  </p>
                 </div>
-                
-                {/* Search Input */}
-                <div className="mb-3 flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                    <Input
-                      type="text"
-                      placeholder="Search client-area combinations..."
-                      value={dealerAreaSearch}
-                      onChange={(e) => setClientBranchSearch(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                  {dealerAreaSearch && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setClientBranchSearch('')}
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Clear
-                    </Button>
-                  )}
-                </div>
-
-                {/* Select All / Deselect All buttons */}
-                {getFilteredDealerAreas().length > 0 && (
-                  <div className="mb-3 flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSelectAllFiltered}
-                    >
-                      Select All Filtered
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleDeselectAllFiltered}
-                    >
-                      Deselect All Filtered
-                    </Button>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto border rounded-md p-3">
-                  {getFilteredDealerAreas().length > 0 ? (
-                    getFilteredDealerAreas().map((clientBranch) => (
-                      <div key={clientBranch} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`client-area-${clientBranch}`}
-                          checked={userForm.associated_dealer_areas.includes(clientBranch)}
-                          onCheckedChange={() => handleClientBranchToggle(clientBranch)}
-                        />
-                        <Label htmlFor={`client-area-${clientBranch}`} className="text-sm">
-                          {clientBranch}
-                        </Label>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="col-span-2 text-center text-gray-500 py-4">
-                      {dealerAreaSearch ? 'No matching client-area combinations found' : 'No client-area combinations available'}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Show selected count */}
-                {userForm.associated_dealer_areas.length > 0 && (
-                  <div className="mt-2 text-sm text-blue-600">
-                    {userForm.associated_dealer_areas.length} client-area combination(s) selected
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1190,7 +992,7 @@ const UserManagement = () => {
                       username: '',
                       email: '',
                       associated_dealer_areas: [],
-                      role: 'client'
+                      role: 'manager'
                     });
                   }}
                   className="px-4"
@@ -1252,7 +1054,6 @@ const UserManagement = () => {
                     <SelectItem value="all">All roles</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="client">Client</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1459,34 +1260,11 @@ const UserManagement = () => {
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              // Set form data for editing
-                              // For admin/manager roles, get all available client-area combinations
-                              // For client roles, use the user's assigned combinations
-                              let clientBranches: string[] = [];
-                              
-                              if (user.role === 'admin' || user.role === 'manager') {
-                                // For admin/manager, get all available combinations
-                                clientBranches = getUniqueDealerAreas();
-                              } else {
-                                // For client role, map the arrays to combinations
-                                // Handle cases where arrays might be different lengths
-                                const maxLength = Math.max(
-                                  user.associated_dealers?.length || 0,
-                                  user.associated_areas?.length || 0
-                                );
-                                
-                                clientBranches = Array.from({ length: maxLength }, (_, idx) => {
-                                  const client = user.associated_dealers?.[idx] || '';
-                                  const area = user.associated_areas?.[idx] || 'All Areas';
-                                  return `${client} - ${area}`;
-                                }).filter(cb => cb.trim() !== ' - ' && cb.trim() !== '');
-                              }
-                              
                               setUserForm({
                                 username: user.username,
                                 email: user.email,
-                                associated_dealer_areas: clientBranches,
-                                role: user.role
+                                associated_dealer_areas: [],
+                                role: user.role === 'admin' ? 'admin' : 'manager'
                               });
                               setEditingUserId(user.user_id);
                               // Scroll to form

@@ -62,7 +62,7 @@ serve(async (req) => {
     console.log('Role received:', role, 'Type:', typeof role)
     console.log('Role validation - is admin?', role === 'admin')
     console.log('Role validation - is manager?', role === 'manager')
-    console.log('Role validation - is client?', role === 'client')
+    console.log('Client role creation via user management is disabled')
 
     if (!email || !username || !password || !role) {
       console.log('Missing required fields')
@@ -76,10 +76,10 @@ serve(async (req) => {
     }
     
     // Validate role is one of the allowed values
-    if (!['admin', 'manager', 'client'].includes(role)) {
+    if (!['admin', 'manager'].includes(role)) {
       console.error('Invalid role provided:', role)
       return new Response(
-        JSON.stringify({ error: `Invalid role: ${role}. Must be one of: admin, manager, client` }),
+        JSON.stringify({ error: `Invalid role: ${role}. Must be one of: admin, manager` }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
