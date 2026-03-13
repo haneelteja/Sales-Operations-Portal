@@ -28,12 +28,12 @@ import { useAutoSave } from "@/hooks/useAutoSave";
 import { saleFormSchema, paymentFormSchema, salesItemSchema } from "@/lib/validation/schemas";
 import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
-import { importXLSX } from "@/lib/heavyImports";
 import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
 import { InvoiceActions, InvoiceNumberCell } from "@/components/sales/InvoiceActions";
 import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
 import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 import ProductionInventory from "@/components/sales/ProductionInventory";
+import { exportJsonToExcel } from "@/services/export/excelExport";
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
 const safeNumValue = (v: string | number | undefined | null): string => {
@@ -1396,13 +1396,8 @@ const SalesEntry = () => {
       };
     });
 
-    const XLSX = await importXLSX();
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Recent Transactions');
-    
     const fileName = `Recent_Transactions_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    await exportJsonToExcel(exportData, 'Recent Transactions', fileName);
     
     toast({
       title: "Export Successful",

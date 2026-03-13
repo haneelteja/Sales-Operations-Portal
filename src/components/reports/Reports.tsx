@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import { useInvoice } from "@/hooks/useInvoiceGeneration";
-import { importXLSX } from "@/lib/heavyImports";
+import { exportJsonToExcel } from "@/services/export/excelExport";
 
 /** Cell that shows invoice number for a transaction (sales only). */
 const InvoiceNumberCell = memo(({ transactionId, transactionType }: { transactionId: string; transactionType: string }) => {
@@ -143,13 +143,8 @@ const Reports = memo(() => {
       };
     });
 
-    const XLSX = await importXLSX();
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Outstanding Receivables');
-    
     const fileName = `Outstanding_Receivables_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    await exportJsonToExcel(exportData, 'Outstanding Receivables', fileName);
     
     // Note: We can't use toast here since it's not imported, but the file will download
     alert(`Exported ${exportData.length} receivables to ${fileName}`);

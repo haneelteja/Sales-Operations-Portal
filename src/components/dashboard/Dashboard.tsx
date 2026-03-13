@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ProductionInventory from "@/components/sales/ProductionInventory";
-import { importXLSX } from "@/lib/heavyImports";
+import { exportJsonToExcel } from "@/services/export/excelExport";
 
 const Dashboard = memo(() => {
   const { toast } = useToast();
@@ -397,13 +397,8 @@ const Dashboard = memo(() => {
       'Priority': receivable.outstanding > 100000 ? 'Critical' : receivable.outstanding > 50000 ? 'High' : 'Medium',
     }));
 
-    const XLSX = await importXLSX();
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Client Receivables');
-    
     const fileName = `Client_Receivables_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    await exportJsonToExcel(exportData, 'Client Receivables', fileName);
     
     toast({
       title: "Success",
