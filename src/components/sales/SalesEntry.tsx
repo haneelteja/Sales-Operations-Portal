@@ -29,6 +29,7 @@ import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
 import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
 import { InvoiceActions, InvoiceNumberCell } from "@/components/sales/InvoiceActions";
+import { PaymentEntryCard } from "@/components/sales/PaymentEntryCard";
 import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
 import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 import ProductionInventory from "@/components/sales/ProductionInventory";
@@ -1027,6 +1028,23 @@ const SalesEntry = () => {
     paymentMutation.mutate(paymentForm);
   };
 
+  const handlePaymentCustomerChange = useCallback((customerName: string) => {
+    const selectedCustomer = findCustomerRecord({ customerName });
+    setPaymentForm((prev) => ({
+      ...prev,
+      customer_id: selectedCustomer?.id || "",
+      area: "",
+    }));
+  }, [findCustomerRecord]);
+
+  const paymentCustomerName = paymentForm.customer_id
+    ? getCustomerName(findCustomerById(paymentForm.customer_id) as any)
+    : "";
+
+  const paymentBranches = paymentForm.customer_id
+    ? getBranchesForCustomer(paymentForm.customer_id)
+    : [];
+
   // Handle direct sale submission for single SKU mode
   const handleDirectSaleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1480,15 +1498,20 @@ const SalesEntry = () => {
         </TabsContent>
 
         <TabsContent value="payment" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="mb-0">Record Client Payment</CardTitle>
-                <CardDescription className="mb-0">Record a payment received from client</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handlePaymentSubmit} className="space-y-4">
+          <PaymentEntryCard
+            paymentForm={paymentForm}
+            customerName={paymentCustomerName}
+            customerNames={uniqueCustomersForForm}
+            branches={paymentBranches}
+            isPending={paymentMutation.isPending}
+            onSubmit={handlePaymentSubmit}
+            onCustomerChange={handlePaymentCustomerChange}
+            onBranchChange={(area) => setPaymentForm((prev) => ({ ...prev, area }))}
+            onFormChange={(updates) => setPaymentForm((prev) => ({ ...prev, ...updates }))}
+            safeNumValue={safeNumValue}
+          />
+          {false && (
+            <form onSubmit={handlePaymentSubmit} className="space-y-4">
                 {/* First Row: Dealer, Area, Amount */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
@@ -1576,9 +1599,8 @@ const SalesEntry = () => {
                 >
                   {paymentMutation.isPending ? "Recording..." : "Record Payment"}
                 </Button>
-              </form>
-            </CardContent>
-          </Card>
+            </form>
+          )}
         </TabsContent>
       </Tabs>
 
