@@ -37,6 +37,7 @@ import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirect
 import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
 import { useSalesItemsManager } from "@/components/sales/hooks/useSalesItemsManager";
 import { useMultiSaleSubmission } from "@/components/sales/hooks/useMultiSaleSubmission";
+import { useSalesFormController } from "@/components/sales/hooks/useSalesFormController";
 import { useTransactionMutations } from "@/components/sales/hooks/useTransactionMutations";
 
 // Safe display for number inputs (prevents "NaN" which causes browser warnings)
@@ -340,56 +341,39 @@ const SalesEntry = () => {
 
     return "Sale recorded successfully, but invoice generation failed. You can generate it manually.";
   }, []);
-  // Function to handle customer selection and auto-populate SKU options
-  const handleCustomerChange = (customerName: string) => {
-    const dealerCustomers = customers?.filter(c =>
-      normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(customerName)
-    ) || [];
-    const selectedCustomer = dealerCustomers[0];
-    const areas = [...new Set(dealerCustomers.map(c => getCustomerBranch(c as any)).filter(Boolean))];
-    
-    // If dealer has only one area, auto-select it (ensures correct customer_id for price fetch)
-    const autoArea = areas.length === 1 ? areas[0] : "";
-    const customerForArea = autoArea
-      ? dealerCustomers.find(c => normalizeLookupValue(getCustomerBranch(c as any)) === normalizeLookupValue(autoArea))
-      : selectedCustomer;
-    
-    setSaleForm({
-      ...saleForm, 
-      customer_id: customerForArea?.id || selectedCustomer?.id || "",
-      area: autoArea,
-    });
-    
-    // Reset current item and sales items when customer changes
-    setCurrentItem({
-      sku: "",
-      quantity: "",
-      price_per_case: "",
-      amount: "",
-      description: ""
-    });
-    setSalesItems([]);
-  };
+  const {
+    availableAreas,
+    availableAreasForEdit,
+    availableSkus,
+    uniqueCustomersForForm,
+    getBranchesForCustomer,
+    getPricePerCaseForCurrentItem,
+    getPricePerCaseForEdit,
+    handleAreaChange,
+    handleCustomerChange,
+    handleEditCustomerChange,
+  } = useSalesFormController({
+    customers,
+    saleForm,
+    editForm,
+    currentItem,
+    setSaleForm,
+    setEditForm,
+    setCurrentItem,
+    setSalesItems,
+    getAvailableBranches,
+    getAvailableSkus,
+    getCustomerName,
+    getCustomerBranch,
+    getUniqueCustomerNames,
+    normalizeLookupValue,
+    findCustomerById,
+    findCustomerRecord,
+  });
 
-  // When area changes, update customer_id to match dealer+area (required for correct price fetch)
-  const handleAreaChange = (area: string) => {
-    const selectedCustomer = findCustomerById(saleForm.customer_id);
-    if (selectedCustomer) {
-      const matchingCustomer = findCustomerRecord({
-        customerName: getCustomerName(selectedCustomer as any),
-        branch: area,
-      });
-      setSaleForm({
-        ...saleForm,
-        area,
-        customer_id: matchingCustomer?.id || saleForm.customer_id,
-      });
-    } else {
-      setSaleForm({ ...saleForm, area });
-    }
-    setCurrentItem(prev => ({ ...prev, sku: "", price_per_case: "", amount: "" }));
-    setSalesItems([]);
-  };
+  const getAvailableSKUs = useCallback(() => availableSkus, [availableSkus]);
+  const getAvailableAreas = useCallback(() => availableAreas, [availableAreas]);
+  const getAvailableAreasForEdit = useCallback(() => availableAreasForEdit, [availableAreasForEdit]);
 
   const multiSaleMutation = useMultiSaleSubmission({
     saleForm,
@@ -404,78 +388,6 @@ const SalesEntry = () => {
   const handleMultipleSalesSubmit = useCallback(() => {
     multiSaleMutation.mutate();
   }, [multiSaleMutation]);
-
-  // Get price per case for current item
-  const getPricePerCaseForCurrentItem = () => {
-    if (!saleForm.customer_id || !saleForm.area || !currentItem.sku) return "";
-
-    const customerPricing = findCustomerRecord({
-      customerId: saleForm.customer_id,
-      branch: saleForm.area,
-      sku: currentItem.sku,
-    });
-
-    return customerPricing?.price_per_case?.toString() || "";
-  };
-
-  // Function to handle customer selection in edit form
-  const handleEditCustomerChange = (customerName: string) => {
-    // Find the first customer with this name to get the customer_id
-    const selectedCustomer = customers?.find(c =>
-      normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(customerName)
-    );
-    
-    setEditForm({
-      ...editForm, 
-      customer_id: selectedCustomer?.id || "",
-      area: "", // Reset area when customer changes
-      sku: "", // Reset SKU when customer changes
-      amount: "", // Reset amount when customer changes
-      price_per_case: "" // Reset price per case when customer changes
-    });
-  };
-
-  // Get available SKUs for the selected customer and area
-  const availableSkus = useMemo(() => {
-    return getAvailableSkus(saleForm.customer_id, saleForm.area);
-  }, [getAvailableSkus, saleForm.area, saleForm.customer_id]);
-  const getAvailableSKUs = useCallback(() => availableSkus, [availableSkus]);
-
-  // Get available areaes for selected customer
-  const availableAreas = useMemo(() => {
-    return getAvailableBranches(saleForm.customer_id);
-  }, [getAvailableBranches, saleForm.customer_id]);
-  const getAvailableAreas = useCallback(() => availableAreas, [availableAreas]);
-
-  // Get available areaes for edit form
-  const availableAreasForEdit = useMemo(() => {
-    return getAvailableBranches(editForm.customer_id);
-  }, [editForm.customer_id, getAvailableBranches]);
-  const getAvailableAreasForEdit = useCallback(() => availableAreasForEdit, [availableAreasForEdit]);
-
-  // Get price per case for selected customer and area (match by dealer_name + area for correct pricing)
-  const getPricePerCase = () => {
-    if (!saleForm.customer_id || !saleForm.area) return "";
-    
-    const customer = findCustomerRecord({
-      customerId: saleForm.customer_id,
-      branch: saleForm.area,
-    });
-
-    return customer?.price_per_case?.toString() || "";
-  };
-
-  // Get price per case for edit form (match by dealer_name + area)
-  const getPricePerCaseForEdit = () => {
-    if (!editForm.customer_id || !editForm.area) return "";
-    
-    const customer = findCustomerRecord({
-      customerId: editForm.customer_id,
-      branch: editForm.area,
-    });
-
-    return customer?.price_per_case?.toString() || "";
-  };
 
   // Function to handle SKU selection
   const handleSKUChange = (sku: string) => {
@@ -560,10 +472,6 @@ const SalesEntry = () => {
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
-  // Get unique customer names (no duplicates, case-insensitive) - for form dropdowns
-  const uniqueCustomersForForm = useMemo(() => {
-    return getUniqueCustomerNames();
-  }, [getUniqueCustomerNames]);
   const getUniqueCustomersForForm = useCallback(() => uniqueCustomersForForm, [uniqueCustomersForForm]);
 
   const handleSaleSuccess = useCallback(() => {
@@ -620,20 +528,6 @@ const SalesEntry = () => {
     onPaymentSuccess: handlePaymentSuccess,
     onUpdateSuccess: handleUpdateSuccess,
   });
-
-  // Get areaes for a specific customer
-  const getBranchesForCustomer = (customerId: string) => {
-    if (!customers || !customerId) return [];
-    
-    const customer = findCustomerById(customerId);
-    if (!customer) return [];
-    
-    return customers
-      ?.filter(c => normalizeLookupValue(getCustomerName(c as any)) === normalizeLookupValue(getCustomerName(customer as any)))
-      .map(c => getCustomerBranch(c as any))
-      .filter((area, index, self) => !!area && self.indexOf(area) === index)
-      .sort() || [];
-  };
 
   // Check if only one SKU is available for the selected customer-area combination
   const checkSingleSKUMode = useCallback(() => {
