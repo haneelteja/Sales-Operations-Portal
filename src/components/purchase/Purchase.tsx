@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Download } from "lucide-react";
-import * as XLSX from "xlsx";
+import { exportJsonToExcel } from "@/services/export/excelExport";
 
 interface MaterialPurchase {
   id: string;
@@ -134,7 +134,7 @@ const Purchase = () => {
     mutation.mutate(form);
   };
 
-  const exportToExcel = useCallback(() => {
+  const exportToExcel = useCallback(async () => {
     const exportData = purchases.map((p) => ({
       Date: new Date(p.purchase_date).toLocaleDateString(),
       Item: p.item,
@@ -145,10 +145,7 @@ const Purchase = () => {
       Vendor: p.vendor || "",
       Description: p.description || "",
     }));
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Purchases");
-    XLSX.writeFile(wb, `Purchases_${new Date().toISOString().split("T")[0]}.xlsx`);
+    await exportJsonToExcel(exportData, 'Purchases', `Purchases_${new Date().toISOString().split("T")[0]}.xlsx`);
     toast({ title: "Export Successful", description: `Exported ${exportData.length} purchases` });
   }, [purchases, toast]);
 

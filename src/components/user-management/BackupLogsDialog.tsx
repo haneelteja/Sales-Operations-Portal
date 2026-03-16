@@ -61,12 +61,13 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
     if (open) {
       fetchLogs();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, page, statusFilter, typeFilter, dateRange, sortBy, sortOrder]);
 
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const filters: any = {};
+      const filters: { status?: string; backup_type?: string; startDate?: string; endDate?: string } = {};
       if (statusFilter !== 'all') {
         filters.status = statusFilter;
       }
@@ -142,7 +143,7 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
         <div className="flex gap-4 items-end pb-4 border-b">
           <div className="flex-1">
             <label className="text-sm font-medium mb-1 block">Status</label>
-            <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+            <Select value={statusFilter} onValueChange={(v: 'all' | 'success' | 'failed' | 'in_progress') => setStatusFilter(v)}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue />
               </SelectTrigger>
@@ -157,7 +158,7 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
 
           <div className="flex-1">
             <label className="text-sm font-medium mb-1 block">Type</label>
-            <Select value={typeFilter} onValueChange={(v: any) => setTypeFilter(v)}>
+            <Select value={typeFilter} onValueChange={(v: 'all' | 'automatic' | 'manual') => setTypeFilter(v)}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue />
               </SelectTrigger>
@@ -171,7 +172,7 @@ export const BackupLogsDialog: React.FC<BackupLogsDialogProps> = ({
 
           <div className="flex-1">
             <label className="text-sm font-medium mb-1 block">Date Range</label>
-            <Select value={dateRange} onValueChange={(v: any) => setDateRange(v)}>
+            <Select value={dateRange} onValueChange={(v: '7days' | '30days' | 'all') => setDateRange(v)}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue />
               </SelectTrigger>

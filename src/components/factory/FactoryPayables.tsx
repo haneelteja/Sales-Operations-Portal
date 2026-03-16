@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download } from "lucide-react";
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 import { ColumnFilter } from '@/components/ui/column-filter';
 
 const FactoryPayables = () => {
@@ -288,6 +288,7 @@ const FactoryPayables = () => {
     if (valueA > valueB) return direction === 'asc' ? 1 : -1;
     return 0;
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing]);
 
   // Column filter handlers (memoized)
@@ -352,7 +353,7 @@ const FactoryPayables = () => {
   }, [transactions]);
 
   // Export filtered transactions to Excel (memoized)
-  const exportToExcel = useCallback(() => {
+  const exportToExcel = useCallback(async () => {
     const exportData = filteredAndSortedTransactions.map((transaction) => {
       const clientName = transaction.transaction_type === 'payment' 
         ? (transaction.description || 'Elma Payment')
@@ -371,17 +372,14 @@ const FactoryPayables = () => {
       };
     });
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Factory Transactions');
-    
     const fileName = `Factory_Transactions_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    await exportJsonToExcel(exportData, 'Factory Transactions', fileName);
     
     toast({
       title: "Export Successful",
       description: `Exported ${exportData.length} factory transactions to ${fileName}`,
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredAndSortedTransactions, toast, factoryPricing]);
 
   // Calculate summary with proper amount calculation

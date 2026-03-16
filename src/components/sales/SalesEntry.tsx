@@ -4,10 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getQueryConfig } from "@/lib/query-configs";
 import { useTransactionFilters } from "@/components/sales/hooks/useTransactionFilters";
-import type { 
-  Customer, 
-  SalesTransaction, 
-  SaleForm, 
+import type {
+  Customer,
+  Invoice,
+  SalesTransaction,
+  SaleForm,
   PaymentForm
 } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -177,6 +178,7 @@ const SalesEntry = () => {
         description: "Your previous sales items have been restored.",
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
   // Auto-save form data to prevent data loss from session timeouts
@@ -307,7 +309,7 @@ const SalesEntry = () => {
   }, [customers, generateInvoice, toast]);
   
   // Handle invoice download
-  const handleDownloadInvoice = useCallback(async (invoice: any, format: 'word' | 'pdf') => {
+  const handleDownloadInvoice = useCallback(async (invoice: Invoice, format: 'word' | 'pdf') => {
     try {
       await downloadInvoice.mutateAsync({ invoice, format });
     } catch (error) {
@@ -487,6 +489,7 @@ const SalesEntry = () => {
       amount: "",
       description: ""
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearSaleFormData, clearSalesItemsData, resetSaleForm]);
 
   const handlePaymentSuccess = useCallback(() => {
@@ -541,6 +544,7 @@ const SalesEntry = () => {
     const availableSKUs = availableSkus;
     
     syncSingleSkuMode(availableSKUs);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableSkus, saleForm.area, saleForm.customer_id, syncSingleSkuMode]);
 
   // Check for single SKU mode when customer or area changes
@@ -596,7 +600,7 @@ const SalesEntry = () => {
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
-  const recentTransactions = allTransactions?.data || [];
+  const recentTransactions = useMemo(() => allTransactions?.data || [], [allTransactions]);
   const totalTransactions = allTransactions?.total || 0;
 
   // Calculate cumulative outstanding for a specific customer up to a given transaction
@@ -871,6 +875,7 @@ const SalesEntry = () => {
       console.error('Critical error filtering and sorting transactions:', error);
       return [];
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts, calculateCumulativeOutstanding]);
 
   // Paginate the filtered results
@@ -1038,7 +1043,7 @@ const SalesEntry = () => {
   }, [findCustomerRecord]);
 
   const paymentCustomerName = paymentForm.customer_id
-    ? getCustomerName(findCustomerById(paymentForm.customer_id) as any)
+    ? getCustomerName(findCustomerById(paymentForm.customer_id))
     : "";
 
   const paymentBranches = paymentForm.customer_id
@@ -1153,7 +1158,7 @@ const SalesEntry = () => {
                   <div className="space-y-2">
                     <Label htmlFor="sale-customer">Client *</Label>
                     <Select 
-                      value={saleForm.customer_id ? getCustomerName(findCustomerById(saleForm.customer_id) as any) : ""}
+                      value={saleForm.customer_id ? getCustomerName(findCustomerById(saleForm.customer_id)) : ""}
                       onValueChange={handleCustomerChange}
                       disabled={customersLoading}
                     >
@@ -1211,7 +1216,7 @@ const SalesEntry = () => {
                           <div className="text-center py-8">
                             <div className="text-4xl mb-4">📦</div>
                             <p className="text-muted-foreground">
-                              Add SKU configurations for <strong>{getCustomerName(findCustomerById(saleForm.customer_id) as any)}</strong> - <strong>{saleForm.area}</strong> in Configuration Management for this client branch.
+                              Add SKU configurations for <strong>{getCustomerName(findCustomerById(saleForm.customer_id))}</strong> - <strong>{saleForm.area}</strong> in Configuration Management for this client branch.
                             </p>
                           </div>
                         </CardContent>
@@ -1510,6 +1515,7 @@ const SalesEntry = () => {
             onFormChange={(updates) => setPaymentForm((prev) => ({ ...prev, ...updates }))}
             safeNumValue={safeNumValue}
           />
+          {/* eslint-disable-next-line no-constant-binary-expression */}
           {false && (
             <form onSubmit={handlePaymentSubmit} className="space-y-4">
                 {/* First Row: Dealer, Area, Amount */}
@@ -1517,7 +1523,7 @@ const SalesEntry = () => {
                   <div className="space-y-2">
                     <Label htmlFor="payment-customer">Client *</Label>
                     <Select 
-                      value={paymentForm.customer_id ? getCustomerName(findCustomerById(paymentForm.customer_id) as any) : ""}
+                      value={paymentForm.customer_id ? getCustomerName(findCustomerById(paymentForm.customer_id)) : ""}
                       onValueChange={(customerName) => {
                         const selectedCustomer = findCustomerRecord({ customerName });
                         setPaymentForm({...paymentForm, customer_id: selectedCustomer?.id || "", area: ""});

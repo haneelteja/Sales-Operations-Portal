@@ -209,10 +209,10 @@ serve(async (req) => {
     // Step 5: Send message via 360Messenger API
     // When attachment is present: send text first (main path), then try media as fallback (provider may support PDF).
     try {
-      let apiResponse: any;
+      let apiResponse: Record<string, unknown>;
 
       // --- Helper: send text message (reliable path) ---
-      const sendTextMessage = async (): Promise<any> => {
+      const sendTextMessage = async (): Promise<Record<string, unknown>> => {
         const endpoint = `/sendMessage/${apiKey}`;
         const fullUrl = `${apiUrl}${endpoint}`;
         console.log(`📤 Sending WhatsApp message via 360Messenger API: ${fullUrl}`);
@@ -228,11 +228,11 @@ serve(async (req) => {
         });
         if (!textResponse.ok) {
           const responseText = await textResponse.text();
-          let errorData: any = { error: responseText || 'Unknown error' };
+          let errorData: Record<string, unknown> = { error: responseText || 'Unknown error' };
           try {
-            if (responseText) errorData = JSON.parse(responseText);
+            if (responseText) errorData = JSON.parse(responseText) as Record<string, unknown>;
             if (!errorData.error) errorData.error = errorData.message || errorData.statusText || 'Unknown error';
-          } catch (_) {}
+          } catch (_) { /* JSON parse failed, use raw text as error */ }
           throw new Error(`API returned ${textResponse.status}: ${JSON.stringify(errorData)}`);
         }
         try {
@@ -326,7 +326,7 @@ serve(async (req) => {
           try {
             const buf = await tryPublicUrl(url);
             if (buf) return buf;
-          } catch (_) {}
+          } catch (_) { /* fetch failed for this URL, try next */ }
         }
         return null;
       };

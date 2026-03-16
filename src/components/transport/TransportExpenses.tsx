@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download } from "lucide-react";
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 import { ColumnFilter } from '@/components/ui/column-filter';
 
 const TransportExpenses = () => {
@@ -530,7 +530,7 @@ const TransportExpenses = () => {
 
 
   // Export filtered data to Excel (memoized)
-  const exportToExcel = useCallback(() => {
+  const exportToExcel = useCallback(async () => {
     const exportData = filteredAndSortedExpenses.map((expense) => {
       return {
         'Date': new Date(expense.expense_date).toLocaleDateString(),
@@ -543,12 +543,8 @@ const TransportExpenses = () => {
       };
     });
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Transport Expenses');
-    
     const fileName = `Transport_Expenses_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    await exportJsonToExcel(exportData, 'Transport Expenses', fileName);
     
     toast({
       title: "Export Successful",

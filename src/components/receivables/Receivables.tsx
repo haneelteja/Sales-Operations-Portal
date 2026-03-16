@@ -31,6 +31,7 @@ const Receivables = () => {
   const [dateFilter, setDateFilter] = useState<string>('all');
 
   // Transform sales transactions into receivables
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const receivables: ReceivableTransaction[] = salesTransactions?.map(transaction => ({
     id: transaction.id,
     customer_name: transaction.customers?.dealer_name || 'Unknown Customer',

@@ -48,7 +48,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ColumnFilter } from "@/components/ui/column-filter";
-import * as XLSX from "xlsx";
+import { exportJsonToExcel } from "@/services/export/excelExport";
 
 interface ProductionRecord {
   id: string;
@@ -277,16 +277,13 @@ const Production = () => {
     [productionRecords]
   );
 
-  const exportToExcel = useCallback(() => {
+  const exportToExcel = useCallback(async () => {
     const exportData = filteredAndSortedRecords.map((r) => ({
       Date: new Date(r.production_date).toLocaleDateString(),
       SKU: r.sku,
       "No of Cases": r.no_of_cases,
     }));
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Production");
-    XLSX.writeFile(wb, `Production_${new Date().toISOString().split("T")[0]}.xlsx`);
+    await exportJsonToExcel(exportData, 'Production', `Production_${new Date().toISOString().split("T")[0]}.xlsx`);
     toast({ title: "Export Successful", description: `Exported ${exportData.length} records` });
   }, [filteredAndSortedRecords, toast]);
 

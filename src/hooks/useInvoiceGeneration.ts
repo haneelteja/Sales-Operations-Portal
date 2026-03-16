@@ -277,7 +277,7 @@ async function sendInvoiceWhatsAppMessage(
   invoice: Invoice,
   customer: Customer,
   transaction: SalesTransaction,
-  invoiceData: any,
+  invoiceData: Record<string, unknown>,
   options?: { toast?: (p: { title: string; description: string }) => void }
 ): Promise<void> {
   try {

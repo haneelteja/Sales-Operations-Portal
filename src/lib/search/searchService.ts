@@ -163,9 +163,11 @@ export class SearchService {
    * Uses ilike for simple matching, can use database function for multi-field search
    */
   private static applyFullTextSearch(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query: any,
     module: SearchModule,
     searchText: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): any {
     // Get searchable text fields for the module
     const textFields = this.getSearchableTextFields(module);
@@ -182,7 +184,7 @@ export class SearchService {
     
     // Simple approach: search in primary field with ilike
     // This works well for most cases
-    let resultQuery = query.ilike(primaryField, `%${searchText.trim()}%`);
+    const resultQuery = query.ilike(primaryField, `%${searchText.trim()}%`);
     
     // Alternative: Use database function for better multi-field search
     // Uncomment to use the search_multiple_fields function:
@@ -211,6 +213,7 @@ export class SearchService {
   /**
    * Apply filters to query
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static applyFilters(query: any, filter: SearchFilter): any {
     const { conditions, logic } = filter;
 
@@ -238,11 +241,13 @@ export class SearchService {
    * Apply a single filter condition
    */
   private static applyCondition(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query: any,
     field: string,
     operator: string,
     value: string | number | boolean | string[] | null,
     value2?: string | number | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): any {
     switch (operator) {
       case 'equals':

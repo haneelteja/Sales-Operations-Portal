@@ -170,7 +170,7 @@ export function validateFolderPath(path: string): { valid: boolean; error?: stri
   // Can contain letters, numbers, spaces, forward slashes, hyphens, underscores
   // Google Drive: Must start with "MyDrive/"
   // OneDrive: Can start with any folder name or be relative
-  const pathPattern = /^[a-zA-Z0-9\s\/\-_]+$/;
+  const pathPattern = /^[a-zA-Z0-9\s/\-_]+$/;
   
   if (!pathPattern.test(path)) {
     return {

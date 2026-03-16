@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download, Search, Filter } from "lucide-react";
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 
 interface LabelPayment {
   id: string;
@@ -458,7 +458,7 @@ const LabelPayments = () => {
   };
 
   // Export functions
-  const handleExportVendorOutstanding = () => {
+  const handleExportVendorOutstanding = async () => {
     const exportData = filteredAndSortedVendorOutstanding.map(vendor => ({
       'Vendor': vendor.vendor_name,
       'Total Purchased (₹)': vendor.total_purchased,
@@ -466,13 +466,10 @@ const LabelPayments = () => {
       'Outstanding (₹)': vendor.outstanding
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Vendor Outstanding');
-    XLSX.writeFile(wb, `vendor-outstanding-${new Date().toISOString().split('T')[0]}.xlsx`);
+    await exportJsonToExcel(exportData, 'Vendor Outstanding', `vendor-outstanding-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const handleExportPayments = () => {
+  const handleExportPayments = async () => {
     const exportData = filteredAndSortedPayments.map(payment => ({
       'Payment Date': new Date(payment.payment_date).toLocaleDateString(),
       'Vendor': payment.vendor_id,
@@ -481,10 +478,7 @@ const LabelPayments = () => {
       'Description': payment.description || ''
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Label Payments');
-    XLSX.writeFile(wb, `label-payments-${new Date().toISOString().split('T')[0]}.xlsx`);
+    await exportJsonToExcel(exportData, 'Label Payments', `label-payments-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (

@@ -140,7 +140,7 @@ async function resolveFolderPath(folderPath: string, accessToken: string): Promi
   try {
     // Parse folder path (e.g., "MyDrive/DatabaseBackups" or "DatabaseBackups")
     // Remove "MyDrive/" prefix if present (it's just a display name, not a real folder)
-    let normalizedPath = folderPath.replace(/^MyDrive\//i, '').trim();
+    const normalizedPath = folderPath.replace(/^MyDrive\//i, '').trim();
     
     const parts = normalizedPath.split('/').filter(Boolean);
     

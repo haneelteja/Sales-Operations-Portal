@@ -191,7 +191,7 @@ serve(async (req) => {
  */
 async function sendFailureNotification(
   email: string,
-  logEntry: any,
+  logEntry: Record<string, unknown>,
   supabaseUrl: string,
   supabaseAnonKey: string
 ): Promise<void> {

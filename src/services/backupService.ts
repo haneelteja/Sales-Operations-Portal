@@ -270,7 +270,7 @@ export function validateBackupFolderPath(path: string): { valid: boolean; error?
   }
 
   // Google Drive path validation
-  const pathPattern = /^[a-zA-Z0-9\s\/\-_]+$/;
+  const pathPattern = /^[a-zA-Z0-9\s/\-_]+$/;
   
   if (!pathPattern.test(path)) {
     return {

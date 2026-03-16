@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 
 const ConfigurationManagement = () => {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -418,7 +418,7 @@ const ConfigurationManagement = () => {
   };
 
   // Export filtered data to Excel
-  const exportCustomersToExcel = () => {
+  const exportCustomersToExcel = async () => {
     const exportData = filteredAndSortedCustomers?.map((customer) => ({
       'Dealer Name': customer.dealer_name || '',
       'Area': customer.area || '',
@@ -428,10 +428,7 @@ const ConfigurationManagement = () => {
       'Price per Bottle': customer.price_per_bottle ? `₹${customer.price_per_bottle}` : ''
     })) || [];
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Customers");
-    XLSX.writeFile(wb, `customers_${new Date().toISOString().split('T')[0]}.xlsx`);
+    await exportJsonToExcel(exportData, 'Customers', `customers_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   // Handler functions for advanced customer management

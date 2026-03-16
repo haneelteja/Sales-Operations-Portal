@@ -15,7 +15,7 @@ import { Trash2, Send, Plus } from "lucide-react";
 import { getWhatsAppConfig, sendWhatsAppMessage } from "@/services/whatsappService";
 import { getTentativeDeliveryDays } from "@/services/invoiceConfigService";
 import { logger } from "@/lib/logger";
-import * as XLSX from "xlsx";
+import { exportJsonToExcel } from "@/services/export/excelExport";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import ProductionInventory from "@/components/sales/ProductionInventory";
@@ -124,7 +124,7 @@ const OrderManagement: React.FC = () => {
             .select("*")
             .order("created_at", { ascending: false });
           if (!e && d) {
-            return (d as any[]).map((o) => ({
+            return (d as Array<Record<string, unknown>>).map((o) => ({
               ...o,
               area: o.area ?? o.branch,
               number_of_cases: o.number_of_cases ?? o.quantity,
@@ -158,7 +158,7 @@ const OrderManagement: React.FC = () => {
   // Create order mutation (accepts array of orders for multiple SKUs)
   // Uses insert_orders RPC - run docs/migration/ADD_INSERT_ORDERS_RPC_ONLY.sql in Supabase SQL Editor once
   const createOrderMutation = useMutation({
-    mutationFn: async (newOrders: any[]) => {
+    mutationFn: async (newOrders: Record<string, unknown>[]) => {
       const ordersJson = newOrders.map((o) => ({
         client: o.client,
         area: o.area,
@@ -176,7 +176,7 @@ const OrderManagement: React.FC = () => {
         return (rpcData.ids as string[]).map((id) => ({ id }));
       }
       const errMsg = rpcError?.message ?? "Unknown error";
-      const errDetails = rpcError ? JSON.stringify({ code: (rpcError as any).code, details: (rpcError as any).details, hint: (rpcError as any).hint }) : "";
+      const errDetails = rpcError ? JSON.stringify({ code: rpcError.code, details: rpcError.details, hint: rpcError.hint }) : "";
       logger.error("[insert_orders] RPC failed", { message: errMsg, details: errDetails, payload: ordersJson });
       throw new Error(`Order creation failed: ${errMsg}${errDetails ? ` (${errDetails})` : ""}`);
     },
@@ -200,7 +200,7 @@ const OrderManagement: React.FC = () => {
       });
       setSkuRows([{ sku: "", number_of_cases: "" }]);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
         description: error.message || "Failed to create order",
@@ -295,7 +295,7 @@ const OrderManagement: React.FC = () => {
       });
       invalidateRelated('orders');
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
         description: error.message || "Failed to dispatch order",
@@ -321,7 +321,7 @@ const OrderManagement: React.FC = () => {
       });
       invalidateRelated('orders');
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
         description: error.message || "Failed to delete order",
@@ -346,7 +346,7 @@ const OrderManagement: React.FC = () => {
           .order("delivery_date", { ascending: false });
 
         if (error) {
-          logger.error("[orders_dispatch] Query failed", { message: error.message, code: (error as any).code, details: (error as any).details });
+          logger.error("[orders_dispatch] Query failed", { message: error.message, code: (error as { code?: string }).code, details: (error as { details?: string }).details });
           throw error;
         }
         return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
@@ -612,6 +612,7 @@ const OrderManagement: React.FC = () => {
         tentative_delivery_date: defaultDeliveryDate.toISOString().split("T")[0],
       }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tentativeDeliveryDays]);
 
   // Get unique customers for form dropdown (by dealer_name, not by id)
@@ -674,8 +675,8 @@ const OrderManagement: React.FC = () => {
       const direction = ordersColumnSorts[sortKey];
       if (!direction) return 0;
 
-      let aValue: any;
-      let bValue: any;
+      let aValue: string | number;
+      let bValue: string | number;
 
       switch (sortKey) {
         case 'client':
@@ -751,8 +752,8 @@ const OrderManagement: React.FC = () => {
       const direction = dispatchColumnSorts[sortKey];
       if (!direction) return 0;
 
-      let aValue: any;
-      let bValue: any;
+      let aValue: string | number;
+      let bValue: string | number;
 
       switch (sortKey) {
         case 'client':
@@ -786,7 +787,7 @@ const OrderManagement: React.FC = () => {
   }, [dispatchData, debouncedDispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts]);
 
   // Export functions (defined after filteredAndSortedOrders and filteredAndSortedDispatch)
-  const exportOrdersToExcel = useCallback(() => {
+  const exportOrdersToExcel = useCallback(async () => {
     if (!filteredAndSortedOrders.length) return;
 
     const exportData = filteredAndSortedOrders.map((order) => ({
@@ -799,14 +800,11 @@ const OrderManagement: React.FC = () => {
       "Created At": new Date(order.created_at).toLocaleString(),
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Current Orders");
     const fileName = `Current_Orders_${new Date().toISOString().split("T")[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    await exportJsonToExcel(exportData, 'Current Orders', fileName);
   }, [filteredAndSortedOrders]);
 
-  const exportDispatchToExcel = useCallback(() => {
+  const exportDispatchToExcel = useCallback(async () => {
     if (!filteredAndSortedDispatch.length) return;
 
     const exportData = filteredAndSortedDispatch.map((row) => ({
@@ -817,11 +815,8 @@ const OrderManagement: React.FC = () => {
       "Delivery Date": row.delivery_date,
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Orders Dispatch");
     const fileName = `Orders_Dispatch_${new Date().toISOString().split("T")[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    await exportJsonToExcel(exportData, 'Orders Dispatch', fileName);
   }, [filteredAndSortedDispatch]);
 
   // Handle column filter changes for Current Orders

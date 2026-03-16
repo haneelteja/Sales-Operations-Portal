@@ -43,7 +43,8 @@ serve(async (req) => {
     if (!tokenResponse.ok) {
       const error = await tokenResponse.json().catch(() => ({ error: 'Unknown error' }));
 
-      const debugInfo = {
+      // Enhanced debugging for unauthorized_client error
+      const debugInfo: Record<string, string | number | boolean | null | object> = {
         status: tokenResponse.status,
         statusText: tokenResponse.statusText,
         error,

@@ -216,6 +216,7 @@ const ResetPassword = () => {
       }
       window.removeEventListener('hashchange', handleHashChange);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {

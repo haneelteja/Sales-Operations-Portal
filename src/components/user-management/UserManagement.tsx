@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, X, Shield } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { userFormSchema, type UserFormInput } from "@/lib/validation/schemas";
 import { safeValidate } from "@/lib/validation/utils";
@@ -79,6 +79,7 @@ const UserManagement = () => {
         setUserForm(saved);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
@@ -700,7 +701,34 @@ const UserManagement = () => {
     }
   };
 
-  const exportToExcel = () => {
+  const handleClientBranchToggle = (clientBranch: string) => {
+    setUserForm(prev => ({
+      ...prev,
+      associated_dealer_areas: prev.associated_dealer_areas.includes(clientBranch)
+        ? prev.associated_dealer_areas.filter(cb => cb !== clientBranch)
+        : [...prev.associated_dealer_areas, clientBranch]
+    }));
+  };
+
+  const handleSelectAllFiltered = () => {
+    const filteredCombinations = getFilteredDealerAreas();
+    const newSelections = [...new Set([...userForm.associated_dealer_areas, ...filteredCombinations])];
+    setUserForm(prev => ({
+      ...prev,
+      associated_dealer_areas: newSelections
+    }));
+  };
+
+  const handleDeselectAllFiltered = () => {
+    const filteredCombinations = getFilteredDealerAreas();
+    const newSelections = userForm.associated_dealer_areas.filter(cb => !filteredCombinations.includes(cb));
+    setUserForm(prev => ({
+      ...prev,
+      associated_dealer_areas: newSelections
+    }));
+  };
+
+  const exportToExcel = async () => {
     const filteredUsers = getSortedAndFilteredUsers();
     if (!filteredUsers.length) return;
 
@@ -719,10 +747,7 @@ const UserManagement = () => {
       'Last Login': record.last_login ? new Date(record.last_login).toLocaleDateString() : 'Never'
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "User Management");
-    XLSX.writeFile(wb, `user_management_${new Date().toISOString().split('T')[0]}.xlsx`);
+    await exportJsonToExcel(exportData, 'User Management', `user_management_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const getStatusColor = (status: string) => {

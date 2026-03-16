@@ -31,6 +31,8 @@ import { EditWhatsAppApiKeyDialog } from './EditWhatsAppApiKeyDialog';
 import { triggerManualBackup, getBackupConfig, type BackupConfig } from '@/services/backupService';
 import { Database, Play } from 'lucide-react';
 
+const BACKUP_TABLE_KEYS = ['backup_folder_path', 'backup_schedule_time_ist'];
+
 const ApplicationConfigurationTab: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingConfig, setEditingConfig] = useState<InvoiceConfiguration | null>(null);
@@ -84,7 +86,14 @@ const ApplicationConfigurationTab: React.FC = () => {
   });
 
   // Filter configurations: exclude WhatsApp; include main configs + Database Backup Folder Path + Database Backup Time
-  const backupTableKeys = ['backup_folder_path', 'backup_schedule_time_ist'];
+  const mainConfigsCount = useMemo(() => {
+    if (!configurations) return 0;
+    return configurations.filter(
+      (c) =>
+        (c.config_key === 'whatsapp_api_key' || !c.config_key.startsWith('whatsapp_')) &&
+        (!c.config_key.startsWith('backup_') || BACKUP_TABLE_KEYS.includes(c.config_key))
+    ).length;
+  }, [configurations]);
 
   // Display order: 1. SKUs, 2. Item list, 3. Auto Invoice, then rest (exclude whatsapp_ except whatsapp_api_key)
   const orderedDisplayConfigs = useMemo(() => {
@@ -93,7 +102,7 @@ const ApplicationConfigurationTab: React.FC = () => {
     const mainAndBackupConfigs = configurations.filter(
       (config) =>
         (config.config_key === 'whatsapp_api_key' || !config.config_key.startsWith('whatsapp_')) &&
-        (!config.config_key.startsWith('backup_') || backupTableKeys.includes(config.config_key))
+        (!config.config_key.startsWith('backup_') || BACKUP_TABLE_KEYS.includes(config.config_key))
     );
 
     const order: string[] = [

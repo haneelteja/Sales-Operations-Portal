@@ -21,7 +21,7 @@ export interface WhatsAppLog {
   attachment_url: string | null;
   attachment_type: string | null;
   failure_reason: string | null;
-  api_response: any;
+  api_response: Record<string, unknown> | null;
   scheduled_for: string | null;
   sent_at: string | null;
   created_at: string;
@@ -164,14 +164,15 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig> {
       if (!mappedKey) return;
 
       const value = item.config_value;
+      const configRecord = config as Record<string, unknown>;
 
       // Convert string values to appropriate types
       if (mappedKey.includes('_enabled')) {
-        config[mappedKey] = (value === 'true') as any;
+        configRecord[mappedKey] = value === 'true';
       } else if (mappedKey === 'whatsapp_retry_max' || mappedKey === 'whatsapp_retry_interval_minutes') {
-        config[mappedKey] = parseInt(value, 10) as any;
+        configRecord[mappedKey] = parseInt(value, 10);
       } else {
-        config[mappedKey] = value as any;
+        configRecord[mappedKey] = value;
       }
     });
 

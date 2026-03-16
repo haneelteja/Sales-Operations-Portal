@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, Search, Filter } from "lucide-react";
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 
 interface ClientLabelSummary {
   client_id: string;
@@ -300,7 +300,7 @@ const LabelAvailability = () => {
   };
 
   // Export to Excel
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportData = filteredAndSortedData.map(item => ({
       'Client': item.dealer_name,
       'SKU': item.sku,
@@ -311,10 +311,7 @@ const LabelAvailability = () => {
       'Status': item.labels_available > 2500 ? 'Available' : item.labels_available > 0 ? 'Low Stock' : item.labels_available < 0 ? 'Shortage' : 'Out of Stock'
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Label Availability');
-    XLSX.writeFile(wb, `label-availability-${new Date().toISOString().split('T')[0]}.xlsx`);
+    await exportJsonToExcel(exportData, 'Label Availability', `label-availability-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (

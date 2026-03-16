@@ -14,7 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { Edit, Trash2, ArrowUpDown, Search, X, Download } from "lucide-react";
 import { ColumnFilter } from "@/components/ui/column-filter";
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 
 const LabelPurchases = () => {
   const [form, setForm] = useState({
@@ -458,7 +458,7 @@ const LabelPurchases = () => {
     });
 
     return filtered;
-  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts, customers]);
+  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts]);
 
   // Calculate total purchases (memoized)
   const totalPurchases = useMemo(() => {
@@ -514,7 +514,7 @@ const LabelPurchases = () => {
   }, []);
 
   // Export to Excel (memoized)
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     const exportData = filteredAndSortedPurchases.map(purchase => ({
       'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
       'Vendor': purchase.vendor_id || 'N/A',
@@ -525,12 +525,8 @@ const LabelPurchases = () => {
       'Description': purchase.description || ''
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(wb, ws, 'Label Purchases');
-    XLSX.writeFile(wb, `label-purchases-${new Date().toISOString().split('T')[0]}.xlsx`);
-  }, [filteredAndSortedPurchases, customers]);
+    await exportJsonToExcel(exportData, 'Label Purchases', `label-purchases-${new Date().toISOString().split('T')[0]}.xlsx`);
+  }, [filteredAndSortedPurchases]);
 
   return (
     <div className="space-y-6">
