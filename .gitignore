@@ -84,6 +84,9 @@ create_*.sh
 # Bun
 bun.lockb
 
+# Accidental nested clone / stray files (keep repo root single-project only)
+Sales-Operations-Portal/
+
 # Supabase CLI local cache (changes on every CLI run)
 supabase/.temp/
 
