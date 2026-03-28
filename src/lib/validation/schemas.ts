@@ -49,7 +49,7 @@ export const userFormSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
   associated_dealer_areas: z
-    .array(z.string().min(1, 'Dealer-area combination cannot be empty'))
+    .array(z.string().min(1, 'Client / branch entry cannot be empty'))
     .min(0),
   role: roleSchema,
 });
@@ -210,7 +210,7 @@ export const updatePasswordSchema = z.object({
 export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>;
 
 // ---------------------------------------------------------------------------
-// Dealer (Configurations) validation
+// Client / branch (Configurations) validation — DB column remains dealer_name
 // ---------------------------------------------------------------------------
 
 /** GSTIN: 15 characters — 2 digit state, 10 char PAN (5 alpha + 4 digit + 1 alpha), 1 entity, 1 Z, 1 checksum */
@@ -236,7 +236,7 @@ export const indiaWhatsAppSchema = z
   )
   .transform((val) => (val.startsWith('+') ? val : `+91${val}`));
 
-/** Single SKU pricing row for dealer form */
+/** Single SKU pricing row for add-client form */
 export const dealerSkuPricingRowSchema = z.object({
   sku: z.string().min(1, 'SKU is required'),
   price_per_bottle: z
@@ -246,11 +246,11 @@ export const dealerSkuPricingRowSchema = z.object({
   bottles_per_case: z.number().int().positive(),
 });
 
-/** Dealer form: main fields + at least one SKU pricing row */
+/** Add-client form: main fields + at least one SKU pricing row */
 export const dealerFormSchema = z.object({
   date: z.string().min(1, 'Date is required').regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date'),
-  dealer_name: z.string().min(1, 'Dealer Name is required').max(200).trim(),
-  area: z.string().min(1, 'Area is required').max(200).trim(),
+  dealer_name: z.string().min(1, 'Client name is required').max(200).trim(),
+  area: z.string().min(1, 'Branch is required').max(200).trim(),
   gst_number: gstinSchema,
   whatsapp_number: indiaWhatsAppSchema,
   sku_rows: z.array(dealerSkuPricingRowSchema).min(1, 'Add at least one SKU pricing row'),

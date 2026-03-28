@@ -21,7 +21,6 @@ import {
   Download
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import ProductionInventory from "@/components/sales/ProductionInventory";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 
 const Dashboard = memo(() => {
@@ -545,8 +544,6 @@ const Dashboard = memo(() => {
           </CardContent>
         </Card>
       </div>
-
-      <ProductionInventory />
     </div>
   );
 });

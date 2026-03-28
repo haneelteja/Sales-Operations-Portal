@@ -6,6 +6,7 @@ import Index from '@/pages/Index';
 import ResetPassword from '@/pages/ResetPassword';
 import { Loader2 } from 'lucide-react';
 import { SessionWarning } from '@/components/SessionWarning';
+import { isRecoveryInProgress } from '@/lib/sessionKeys';
 
 const PortalRouter: React.FC = () => {
   const { user, session, loading: authLoading, requiresPasswordReset } = useAuth();
@@ -61,7 +62,7 @@ const PortalRouter: React.FC = () => {
   }
 
   // Recovery in progress: user landed from reset link but has not set new password yet — do not show portal
-  if (user && typeof window !== 'undefined' && sessionStorage.getItem('absolute_portal_recovery_in_progress') === 'true') {
+  if (user && typeof window !== 'undefined' && isRecoveryInProgress()) {
     return <ResetPassword />;
   }
 

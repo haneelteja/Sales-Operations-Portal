@@ -136,12 +136,12 @@ const UserManagement = () => {
     },
   });
 
-  // Get unique client-area combinations
-  const getUniqueDealerAreas = () => {
+  /** All distinct client + area (branch) pairs from customers — used for access checks */
+  const getUniqueClientBranchPairs = () => {
     if (!customers) return [];
     const combinations = customers
       .filter(c => c.dealer_name && c.area)
-      .map(c => `${c.dealer_name} - ${c.area}`)
+      .map(c => `${c.dealer_name} / ${c.area}`)
       .filter(Boolean);
     return [...new Set(combinations)].sort();
   };
@@ -736,10 +736,10 @@ const UserManagement = () => {
       Username: record.username,
       Email: record.email,
       Role: record.role,
-      'Dealer-Area Access': record.associated_dealers && record.associated_dealers.length > 0 ? 
+      'Client / branch access': record.associated_dealers && record.associated_dealers.length > 0 ? 
         record.associated_dealers.map((client, idx) => {
-          const area = record.associated_areas && record.associated_areas[idx] ? record.associated_areas[idx] : 'All Areas';
-          return `${client} - ${area}`;
+          const branch = record.associated_areas && record.associated_areas[idx] ? record.associated_areas[idx] : 'All branches';
+          return `${client} / ${branch}`;
         }).join('; ') : 'No access assigned',
       Status: record.status,
       'Created On': record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A',
@@ -775,14 +775,14 @@ const UserManagement = () => {
     // For admin/manager roles, show "All Clients" if they have access to all
     if (user.role === 'admin' || user.role === 'manager') {
       // Check if they have all available clients (or a large number indicating all access)
-      const allDealerAreas = getUniqueDealerAreas();
-      const hasAllAccess = allDealerAreas.length > 0 && 
-        (user.associated_dealers?.length || 0) >= allDealerAreas.length;
+      const allClientBranchPairs = getUniqueClientBranchPairs();
+      const hasAllAccess = allClientBranchPairs.length > 0 && 
+        (user.associated_dealers?.length || 0) >= allClientBranchPairs.length;
       
       if (hasAllAccess || (user.associated_dealers?.length || 0) > 5) {
         return (
           <Badge variant="secondary" className="text-xs px-1 py-0 bg-blue-100 text-blue-800">
-            All Clients & Branches
+            All clients & branches
           </Badge>
         );
       }
@@ -791,7 +791,7 @@ const UserManagement = () => {
     const clientBranches = user.associated_dealers && user.associated_dealers.length > 0 ? 
       user.associated_dealers.map((client, idx) => {
         const area = user.associated_areas && user.associated_areas[idx] ? user.associated_areas[idx] : 'All';
-        return `${client}-${area}`;
+        return `${client} / ${area}`;
       }) : [];
 
     if (clientBranches.length === 0) {
@@ -1167,7 +1167,7 @@ const UserManagement = () => {
                       onClick={() => handleSort('associated_dealers')}
                     >
                       <div className="flex items-center space-x-1">
-                        <span>Dealer-Area Access</span>
+                        <span>Client / branch access</span>
                         {sortField === 'associated_dealers' && (
                           <span className="text-blue-600">
                             {sortDirection === 'asc' ? '↑' : '↓'}

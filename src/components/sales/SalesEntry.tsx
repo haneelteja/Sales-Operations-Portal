@@ -33,7 +33,6 @@ import { InvoiceActions, InvoiceNumberCell } from "@/components/sales/InvoiceAct
 import { PaymentEntryCard } from "@/components/sales/PaymentEntryCard";
 import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
 import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
-import ProductionInventory from "@/components/sales/ProductionInventory";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirectory";
 import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
@@ -1112,8 +1111,6 @@ const SalesEntry = () => {
 
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden min-w-0">
-      {/* Production Inventory (Production − Sales) - top of Dealer Transactions */}
-      <ProductionInventory />
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="sale">Record Sale</TabsTrigger>
@@ -1518,7 +1515,7 @@ const SalesEntry = () => {
           {/* eslint-disable-next-line no-constant-binary-expression */}
           {false && (
             <form onSubmit={handlePaymentSubmit} className="space-y-4">
-                {/* First Row: Dealer, Area, Amount */}
+                {/* First Row: Client, branch, amount */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="payment-customer">Client *</Label>

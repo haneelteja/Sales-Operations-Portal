@@ -123,7 +123,7 @@ const ConfigurationManagement = () => {
         if (checkError) {
           console.error('Error checking for duplicates:', checkError);
         } else if (existingCustomers && existingCustomers.length > 0) {
-          throw new Error(`A customer with Dealer Name "${data.dealer_name}" and Area "${data.area}" already exists. Please use different values.`);
+          throw new Error(`A customer with client name "${data.dealer_name}" and branch "${data.area}" already exists. Please use different values.`);
         }
       }
 
@@ -166,7 +166,7 @@ const ConfigurationManagement = () => {
         
         // Handle 409 conflict (unique constraint violation)
         if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
-          throw new Error(`A customer with Dealer Name "${data.dealer_name}" and Area "${data.area}" already exists. Please use different values.`);
+          throw new Error(`A customer with client name "${data.dealer_name}" and branch "${data.area}" already exists. Please use different values.`);
         }
         
         throw error;
@@ -420,8 +420,8 @@ const ConfigurationManagement = () => {
   // Export filtered data to Excel
   const exportCustomersToExcel = async () => {
     const exportData = filteredAndSortedCustomers?.map((customer) => ({
-      'Dealer Name': customer.dealer_name || '',
-      'Area': customer.area || '',
+      'Client name': customer.dealer_name || '',
+      'Branch': customer.area || '',
       'SKU': customer.sku || '',
       'Pricing Date': customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '',
       'Price per Case': customer.price_per_case ? `₹${customer.price_per_case}` : '',
@@ -474,9 +474,9 @@ const ConfigurationManagement = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Dealer Management</h2>
+        <h2 className="text-lg font-semibold">Client management</h2>
         <Button onClick={() => setIsAddDealerOpen(true)}>
-          Add Dealer
+          Add client
         </Button>
       </div>
 
@@ -484,14 +484,14 @@ const ConfigurationManagement = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Dealer list</CardTitle>
+                  <CardTitle>Client list</CardTitle>
                   <CardDescription>
-                    All registered dealers with their pricing
+                    Registered clients and branches with pricing
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">
-                    {filteredAndSortedCustomers?.length || 0} of {customers?.length || 0} dealers
+                    {filteredAndSortedCustomers?.length || 0} of {customers?.length || 0} rows
                   </span>
                   <Button
                     onClick={exportCustomersToExcel}
@@ -510,7 +510,7 @@ const ConfigurationManagement = () => {
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
                     <Input
-                      placeholder="Search customers by name, area, SKU, pricing date, or amount..."
+                      placeholder="Search customers by name, branch, SKU, pricing date, or amount..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="max-w-sm"
@@ -532,10 +532,10 @@ const ConfigurationManagement = () => {
                     <TableRow>
                       <TableHead>
                         <div className="flex items-center gap-2">
-                          Dealer Name
+                          Client name
                         <ColumnFilter
                           columnKey="dealer_name"
-                          columnName="Dealer Name"
+                          columnName="Client name"
                           filterValue={columnFilters.dealer_name}
                           onFilterChange={(value) => handleColumnFilterChange('dealer_name', value)}
                           onSortChange={(direction) => handleColumnSortChange('dealer_name', direction)}
@@ -545,10 +545,10 @@ const ConfigurationManagement = () => {
                       </TableHead>
                       <TableHead>
                         <div className="flex items-center gap-2">
-                          Area
+                          Branch
                         <ColumnFilter
                           columnKey="area"
-                          columnName="Area"
+                          columnName="Branch"
                           filterValue={columnFilters.area}
                           onFilterChange={(value) => handleColumnFilterChange('area', value)}
                           onSortChange={(direction) => handleColumnSortChange('area', direction)}
@@ -683,24 +683,24 @@ const ConfigurationManagement = () => {
               </div>
             </CardContent>
           </Card>
-      {/* Add Dealer dialog */}
+      {/* Add client dialog */}
       <AddDealerDialog
         open={isAddDealerOpen}
         onOpenChange={setIsAddDealerOpen}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["customers-management"] })}
       />
 
-      {/* Edit Dealer Dialog */}
+      {/* Edit client dialog */}
       <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>
-        <DialogContent className="max-w-2xl" aria-describedby="edit-dealer-desc">
+        <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc">
           <DialogHeader>
-            <DialogTitle>Edit Dealer</DialogTitle>
-            <DialogDescription id="edit-dealer-desc">Update dealer details and pricing.</DialogDescription>
+            <DialogTitle>Edit client</DialogTitle>
+            <DialogDescription id="edit-client-desc">Update client details and pricing.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-client-name">Dealer Name *</Label>
+                <Label htmlFor="edit-client-name">Client name *</Label>
                 <Input
                   id="edit-client-name"
                   value={editForm.dealer_name}
@@ -710,12 +710,12 @@ const ConfigurationManagement = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="edit-area">Area</Label>
+                <Label htmlFor="edit-area">Branch</Label>
                 <Input
                   id="edit-area"
                   value={editForm.area}
                   onChange={(e) => setEditForm({...editForm, area: e.target.value})}
-                  placeholder="Area or location"
+                  placeholder="Branch or location"
                 />
               </div>
               

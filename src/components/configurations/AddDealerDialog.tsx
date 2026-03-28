@@ -1,6 +1,6 @@
 /**
- * Add Dealer Dialog – Configurations
- * Form: Date, Dealer Name, Area, GST Number, WhatsApp Number, and repeatable SKU pricing rows.
+ * Add client (customer row) dialog – Configurations
+ * Form: Date, client name, branch, GST, WhatsApp, and repeatable SKU pricing rows.
  * Price per case is auto-calculated from SKU bottles per case × price per bottle.
  * SKU list comes from Application Configurations (sku_configurations).
  */
@@ -151,8 +151,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
     if (!date?.trim()) errors.date = "Date is required";
-    if (!dealerName?.trim()) errors.dealer_name = "Dealer Name is required";
-    if (!area?.trim()) errors.area = "Area is required";
+    if (!dealerName?.trim()) errors.dealer_name = "Client name is required";
+    if (!area?.trim()) errors.area = "Branch is required";
     const gstResult = gstinSchema.safeParse(gstNumber?.trim().toUpperCase());
     if (!gstResult.success) errors.gst_number = gstResult.error.errors[0]?.message ?? "Invalid GST Number";
     const waResult = indiaWhatsAppSchema.safeParse(whatsappNumber?.trim());
@@ -193,7 +193,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
-      toast({ title: "Success", description: "Dealer added successfully." });
+      toast({ title: "Success", description: "Client added successfully." });
       onSuccess?.();
       onOpenChange(false);
     },
@@ -215,9 +215,9 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Add Dealer</DialogTitle>
+          <DialogTitle>Add client</DialogTitle>
           <DialogDescription>
-            Enter dealer details and SKU pricing. Price per case is calculated from bottles per case.
+            Enter client and branch details and SKU pricing. Price per case is calculated from bottles per case.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 flex-1 min-h-0 overflow-auto">
@@ -233,22 +233,22 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               {fieldErrors.date && <p className="text-sm text-destructive">{fieldErrors.date}</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="dealer-name">Dealer Name *</Label>
+              <Label htmlFor="dealer-name">Client name *</Label>
               <Input
                 id="dealer-name"
                 value={dealerName}
                 onChange={(e) => setDealerName(e.target.value)}
-                placeholder="Dealer Name"
+                placeholder="Client name"
               />
               {fieldErrors.dealer_name && <p className="text-sm text-destructive">{fieldErrors.dealer_name}</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="dealer-area">Area *</Label>
+              <Label htmlFor="dealer-area">Branch *</Label>
               <Input
                 id="dealer-area"
                 value={area}
                 onChange={(e) => setArea(e.target.value)}
-                placeholder="Area"
+                placeholder="Branch"
               />
               {fieldErrors.area && <p className="text-sm text-destructive">{fieldErrors.area}</p>}
             </div>
@@ -372,7 +372,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
             </Button>
             <Button type="submit" disabled={saveMutation.isPending}>
               {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Save Dealer
+              Save client
             </Button>
           </DialogFooter>
         </form>

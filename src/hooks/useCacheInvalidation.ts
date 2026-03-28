@@ -17,7 +17,6 @@ const invalidationMap: Record<string, string[]> = {
     'dashboard-metrics',
     'dashboard-profit',
     'client-report',
-    'sales-transactions-for-inventory',
   ],
   'customers': [
     'customers',

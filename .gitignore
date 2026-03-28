@@ -84,6 +84,9 @@ create_*.sh
 # Bun
 bun.lockb
 
+# Supabase CLI local cache (changes on every CLI run)
+supabase/.temp/
+
 # Database
 *.db
 *.sqlite

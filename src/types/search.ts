@@ -156,8 +156,8 @@ export const SEARCH_CONFIGS: Record<SearchModule, SearchConfig> = {
   customers: {
     module: 'customers',
     fields: [
-      { name: 'dealer_name', label: 'Dealer Name', type: 'text', searchable: true, filterable: true },
-      { name: 'area', label: 'Area', type: 'text', searchable: true, filterable: true },
+      { name: 'dealer_name', label: 'Client name', type: 'text', searchable: true, filterable: true },
+      { name: 'area', label: 'Branch', type: 'text', searchable: true, filterable: true },
       { name: 'contact_person', label: 'Contact Person', type: 'text', searchable: true, filterable: true },
       { name: 'email', label: 'Email', type: 'text', searchable: true, filterable: true },
       { name: 'phone', label: 'Phone', type: 'text', searchable: true, filterable: true },

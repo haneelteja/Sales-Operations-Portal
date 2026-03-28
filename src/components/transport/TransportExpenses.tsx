@@ -74,7 +74,7 @@ const TransportExpenses = () => {
     },
   });
 
-  // Fetch all customers for transport lookup (including inactive - for historical dealer/area display)
+  // Fetch all customers for transport lookup (including inactive - for historical client/branch display)
   const { data: customersForLookup } = useQuery({
     queryKey: ["customers-for-transport-lookup"],
     queryFn: async () => {
@@ -535,8 +535,8 @@ const TransportExpenses = () => {
       return {
         'Date': new Date(expense.expense_date).toLocaleDateString(),
         'Transport Vendor': (expense as { transport_vendor?: string }).transport_vendor || '',
-        'Dealer': expense.dealer_name || '',
-        'Area': expense.area || '',
+        'Client': expense.dealer_name || '',
+        'Branch': expense.area || '',
         'Group': expense.expense_group || '',
         'Amount (₹)': expense.amount || 0,
         'Description': expense.description || ''
@@ -562,7 +562,7 @@ const TransportExpenses = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Row 1: Date, Dealer, Area */}
+        {/* Row 1: Date, Client, Branch */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="expense-date">Date</Label>
@@ -575,10 +575,10 @@ const TransportExpenses = () => {
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="client">Dealer</Label>
+            <Label htmlFor="client">Client</Label>
             <Select value={form.client_id || ""} onValueChange={(value) => setForm({ ...form, client_id: value, area: "" })}>
               <SelectTrigger>
-                <SelectValue placeholder="Select dealer" />
+                <SelectValue placeholder="Select client" />
               </SelectTrigger>
               <SelectContent>
                 {getUniqueCustomers().map((customer) => (
@@ -591,10 +591,10 @@ const TransportExpenses = () => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="area">Area</Label>
+            <Label htmlFor="area">Branch</Label>
             <Select value={form.area || ""} onValueChange={(value) => setForm({ ...form, area: value })} disabled={!form.client_id}>
               <SelectTrigger>
-                <SelectValue placeholder="Select area" />
+                <SelectValue placeholder="Select branch" />
               </SelectTrigger>
               <SelectContent>
                 {getAvailableAreas(form.client_id).map((area, index) => (
@@ -760,10 +760,10 @@ const TransportExpenses = () => {
             </TableHead>
             <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
               <div className="flex items-center justify-between">
-                <span>Dealer</span>
+                <span>Client</span>
                 <ColumnFilter
                   columnKey="client"
-                  columnName="Dealer"
+                  columnName="Client"
                   filterValue={columnFilters.client || ""}
                   onFilterChange={(value) => handleColumnFilterChange('client', value)}
                   onClearFilter={() => handleClearColumnFilter('client')}
@@ -775,10 +775,10 @@ const TransportExpenses = () => {
             </TableHead>
             <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-left border-r border-slate-200/50">
               <div className="flex items-center justify-between">
-                <span>Area</span>
+                <span>Branch</span>
                 <ColumnFilter
                   columnKey="area"
-                  columnName="Area"
+                  columnName="Branch"
                   filterValue={columnFilters.area || ""}
                   onFilterChange={(value) => handleColumnFilterChange('area', value)}
                   onClearFilter={() => handleClearColumnFilter('area')}
@@ -977,10 +977,10 @@ const TransportExpenses = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-client">Dealer</Label>
+                <Label htmlFor="edit-client">Client</Label>
                 <Select value={editForm.client_id || ""} onValueChange={(value) => setEditForm({ ...editForm, client_id: value, area: "" })}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select dealer" />
+                    <SelectValue placeholder="Select client" />
                   </SelectTrigger>
                   <SelectContent>
                     {getUniqueCustomers().map((customer) => (
@@ -993,10 +993,10 @@ const TransportExpenses = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-area">Area</Label>
+                <Label htmlFor="edit-area">Branch</Label>
                 <Select value={editForm.area || ""} onValueChange={(value) => setEditForm({ ...editForm, area: value })} disabled={!editForm.client_id}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select area" />
+                    <SelectValue placeholder="Select branch" />
                   </SelectTrigger>
                   <SelectContent>
                     {getAvailableAreas(editForm.client_id).map((area, index) => (

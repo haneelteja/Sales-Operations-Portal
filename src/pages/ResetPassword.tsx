@@ -9,8 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Lock, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-
-const RECOVERY_IN_PROGRESS_KEY = 'absolute_portal_recovery_in_progress';
+import { clearRecoveryInProgress, setRecoveryInProgress } from '@/lib/sessionKeys';
 
 const ResetPassword = () => {
   const { updatePassword, signOut, session, user } = useAuth();
@@ -123,7 +122,7 @@ const ResetPassword = () => {
           } else {
             sessionSetRef.current = true;
             setHasValidSession(true);
-            sessionStorage.setItem(RECOVERY_IN_PROGRESS_KEY, 'true');
+            setRecoveryInProgress();
             setTimeout(() => {
               if (isMounted) {
                 window.history.replaceState({}, document.title, window.location.pathname);
@@ -260,7 +259,7 @@ const ResetPassword = () => {
           variant: "destructive",
         });
       } else {
-        sessionStorage.removeItem(RECOVERY_IN_PROGRESS_KEY);
+        clearRecoveryInProgress();
         await signOut();
         setSuccess(true);
         

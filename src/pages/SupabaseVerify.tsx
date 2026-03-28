@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { setRecoveryInProgress } from '@/lib/sessionKeys';
 
 const SupabaseVerify: React.FC = () => {
   const navigate = useNavigate();
@@ -52,7 +53,7 @@ const SupabaseVerify: React.FC = () => {
             console.log('Session set successfully:', data);
             setSuccess(true);
             // Mark recovery in progress so portal is not shown until password is set
-            sessionStorage.setItem('absolute_portal_recovery_in_progress', 'true');
+            setRecoveryInProgress();
             // Clear the URL hash
             window.history.replaceState({}, document.title, '/reset-password');
             
