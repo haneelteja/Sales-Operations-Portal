@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -49,6 +49,10 @@ const Auth = () => {
     newPassword: '',
     confirmPassword: '',
   });
+
+  useEffect(() => {
+    setShowForcedPasswordReset(requiresPasswordReset);
+  }, [requiresPasswordReset]);
 
   // Redirect if already authenticated AND password reset is not required
   // If password reset is required, stay on Auth page to show the dialog
@@ -475,6 +479,7 @@ const Auth = () => {
                   <Input
                     id="forced-new-password"
                     type="password"
+                    autoComplete="new-password"
                     placeholder="Enter new password (min 6 characters)"
                     value={forcedPasswordResetForm.newPassword}
                     onChange={(e) => setForcedPasswordResetForm({ ...forcedPasswordResetForm, newPassword: e.target.value })}
@@ -487,6 +492,7 @@ const Auth = () => {
                   <Input
                     id="forced-confirm-password"
                     type="password"
+                    autoComplete="new-password"
                     placeholder="Confirm new password"
                     value={forcedPasswordResetForm.confirmPassword}
                     onChange={(e) => setForcedPasswordResetForm({ ...forcedPasswordResetForm, confirmPassword: e.target.value })}
@@ -536,6 +542,7 @@ const Auth = () => {
                   <Input
                     id="reset-new-password"
                     type="password"
+                    autoComplete="new-password"
                     placeholder="Enter new password (min 6 characters)"
                     value={resetPasswordForm.newPassword}
                     onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, newPassword: e.target.value })}
@@ -547,6 +554,7 @@ const Auth = () => {
                   <Input
                     id="reset-confirm-password"
                     type="password"
+                    autoComplete="new-password"
                     placeholder="Confirm new password"
                     value={resetPasswordForm.confirmPassword}
                     onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, confirmPassword: e.target.value })}

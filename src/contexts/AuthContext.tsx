@@ -65,6 +65,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
 
+  const shouldRequirePasswordReset = useCallback((authUser: User | null): boolean => {
+    if (!authUser) return false;
+
+    return authUser.user_metadata?.requires_password_reset === true ||
+      authUser.user_metadata?.first_login === true;
+  }, []);
+
   // Extract profile fetching logic to avoid duplication and fix memory leaks
   const fetchUserProfile = useCallback(async (userId: string, email: string | undefined): Promise<UserProfile | null> => {
     try {
@@ -120,10 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Check if user requires password reset
         if (session?.user) {
-          const requiresReset = session.user.user_metadata?.requires_password_reset === true || 
-                                session.user.user_metadata?.first_login === true ||
-                                !session.user.user_metadata?.password_changed_at;
-          setRequiresPasswordReset(requiresReset);
+          setRequiresPasswordReset(shouldRequirePasswordReset(session.user));
         } else {
           setRequiresPasswordReset(false);
         }
@@ -178,7 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       subscription.unsubscribe();
     };
-  }, [fetchUserProfile]);
+  }, [fetchUserProfile, shouldRequirePasswordReset]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     // For production: Use real Supabase auth
@@ -193,14 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.user) {
-        // Check if user requires password reset (first login with temporary password)
-        const requiresReset = data.user.user_metadata?.requires_password_reset === true || 
-                            data.user.user_metadata?.first_login === true;
-        
-        // Also check if password_changed_at is null (user hasn't changed password yet)
-        const passwordNotChanged = !data.user.user_metadata?.password_changed_at;
-        
-        const shouldForceReset = requiresReset || passwordNotChanged;
+        const shouldForceReset = shouldRequirePasswordReset(data.user);
         
         if (shouldForceReset) {
           setRequiresPasswordReset(true);
@@ -262,7 +259,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       error: null,
       requiresPasswordReset: requiresPasswordReset 
     };
-  }, [requiresPasswordReset]);
+  }, [shouldRequirePasswordReset]);
 
   const signUp = useCallback(async (email: string, password: string, fullName: string) => {
     const redirectUrl = `${window.location.origin}/`;
@@ -514,6 +511,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password: newPassword,
       data: {
         requires_password_reset: false,
+        first_login: false,
         password_changed_at: new Date().toISOString()
       }
     });
@@ -531,6 +529,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.auth.updateUser({
         data: {
           requires_password_reset: false,
+          first_login: false,
           password_changed_at: new Date().toISOString()
         }
       });
