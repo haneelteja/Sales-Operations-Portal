@@ -1,5 +1,5 @@
 /**
- * Add client (customer rows) – Configurations
+ * Add client (customer rows) - Configurations
  * Supports new or existing client/branch; pricing changes always INSERT new rows (history preserved).
  */
 
@@ -128,7 +128,9 @@ function latestRowPerSku(rows: Customer[]): Map<string, Customer> {
   return map;
 }
 
-async function fetchSampleContactForClient(dealerName: string): Promise<{ gst_number: string | null; whatsapp_number: string | null } | null> {
+async function fetchSampleContactForClient(
+  dealerName: string
+): Promise<{ gst_number: string | null; whatsapp_number: string | null } | null> {
   const { data, error } = await supabase
     .from("customers")
     .select("gst_number, whatsapp_number")
@@ -168,7 +170,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [skuRows, setSkuRows] = useState<SkuPricingRow[]>([getInitialRow()]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  /** After loading an existing client+branch, baseline prices per SKU — inserts only when price changes or SKU is new */
+  /** After loading an existing client+branch, baseline prices per SKU - inserts only when price changes or SKU is new */
   const initialPricesBySkuRef = useRef<Record<string, number>>({});
 
   const { data: skuOptions = [], isLoading: skusLoading } = useQuery({
@@ -264,7 +266,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     if (open) resetForm();
   }, [open, resetForm]);
 
-  // Prefill GST / WhatsApp when picking an existing client (from any row for that client)
+  // Prefill GST / WhatsApp when picking an existing client (from the latest active row for that client)
   useEffect(() => {
     if (!open || !isExistingClient || !selectedExistingClient.trim()) return;
     if (!sampleContact) return;
@@ -272,7 +274,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setWhatsappNumber(sampleContact.whatsapp_number || "");
   }, [open, isExistingClient, selectedExistingClient, sampleContact]);
 
-  // When both client and branch are existing, load latest SKU rows (display only — saves insert new rows)
+  // When both client and branch are existing, load latest SKU rows (display only - saves insert new rows)
   useEffect(() => {
     if (!open || !pairKey || pairRowsLoading) return;
     if (!rowsForPair.length) {
@@ -508,7 +510,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   disabled={clientsLoading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={clientsLoading ? "Loading…" : "Select client"} />
+                    <SelectValue placeholder={clientsLoading ? "Loading..." : "Select client"} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">Select client</SelectItem>
@@ -543,7 +545,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   disabled={!selectedExistingClient || branchesLoading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={branchesLoading ? "Loading…" : "Select branch"} />
+                    <SelectValue placeholder={branchesLoading ? "Loading..." : "Select branch"} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">Select branch</SelectItem>
@@ -598,7 +600,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
           {isPairHistoryMode && (
             <p className="text-sm text-muted-foreground rounded-md border border-dashed px-3 py-2">
               Loaded latest prices per SKU for this client and branch. Change a price or add a SKU to create new rows
-              for <strong>{date}</strong> — existing rows are not updated.
+              for <strong>{date}</strong> - existing rows are not updated.
             </p>
           )}
 
@@ -616,8 +618,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[40%]">SKU</TableHead>
-                    <TableHead className="w-[30%]">Price per Bottle (₹)</TableHead>
-                    <TableHead className="w-[30%]">Price per Case (₹)</TableHead>
+                    <TableHead className="w-[30%]">Price per Bottle (INR)</TableHead>
+                    <TableHead className="w-[30%]">Price per Case (INR)</TableHead>
                     <TableHead className="w-[40px]" />
                   </TableRow>
                 </TableHeader>
@@ -638,7 +640,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                             disabled={skusLoading || pairRowsLoading}
                           >
                             <SelectTrigger className="h-9">
-                              <SelectValue placeholder={skusLoading ? "Loading…" : "Select SKU"} />
+                              <SelectValue placeholder={skusLoading ? "Loading..." : "Select SKU"} />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="__none__">Select SKU</SelectItem>
