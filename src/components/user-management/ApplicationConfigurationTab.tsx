@@ -5,12 +5,14 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { Search, RefreshCw, Edit, Settings } from 'lucide-react';
+import { Search, RefreshCw, Edit, Settings, Shield } from 'lucide-react';
 import {
   getInvoiceConfigurations,
   updateInvoiceConfiguration,
@@ -34,6 +36,7 @@ import { Database, Play } from 'lucide-react';
 const BACKUP_TABLE_KEYS = ['backup_folder_path', 'backup_schedule_time_ist'];
 
 const ApplicationConfigurationTab: React.FC = () => {
+  const { profile } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [editingConfig, setEditingConfig] = useState<InvoiceConfiguration | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -283,6 +286,18 @@ const ApplicationConfigurationTab: React.FC = () => {
     setIsNotificationEmailDialogOpen(false);
     setEditingConfig(null);
   };
+
+  if (profile?.role !== 'manager') {
+    return (
+      <Alert className="m-6" variant="destructive">
+        <Shield className="h-4 w-4" />
+        <AlertDescription>
+          Access denied. This page is only available to users with Manager role.
+          Your current role: {profile?.role || 'Unknown'}
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   if (isLoading) {
     return (

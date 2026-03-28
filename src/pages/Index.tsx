@@ -101,13 +101,13 @@ const Index = () => {
           </Suspense>
         );
       case "application-configuration":
-        // Only allow managers and admins to access application configuration
-        if (profile?.role !== 'manager' && profile?.role !== 'admin') {
+        // Only allow managers to access application configuration
+        if (profile?.role !== 'manager') {
           return (
             <Alert className="m-6">
               <Shield className="h-4 w-4" />
               <AlertDescription>
-                Access denied. The Application Configuration tab is only available to users with Manager or Admin role.
+                Access denied. The Application Configuration tab is only available to users with Manager role.
                 Your current role: {profile?.role || 'Unknown'}
               </AlertDescription>
             </Alert>
@@ -119,13 +119,13 @@ const Index = () => {
           </Suspense>
         );
       case "whatsapp-configuration":
-        // Only allow managers and admins to access WhatsApp configuration
-        if (profile?.role !== 'manager' && profile?.role !== 'admin') {
+        // Only allow managers to access WhatsApp configuration
+        if (profile?.role !== 'manager') {
           return (
             <Alert className="m-6">
               <Shield className="h-4 w-4" />
               <AlertDescription>
-                Access denied. The WhatsApp Configuration tab is only available to users with Manager or Admin role.
+                Access denied. The WhatsApp Configuration tab is only available to users with Manager role.
                 Your current role: {profile?.role || 'Unknown'}
               </AlertDescription>
             </Alert>

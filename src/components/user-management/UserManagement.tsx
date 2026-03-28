@@ -827,13 +827,13 @@ const UserManagement = () => {
     );
   };
 
-  // Role-based access control - only managers and admins can access
-  if (profile?.role !== 'manager' && profile?.role !== 'admin') {
+  // Role-based access control - only managers can access
+  if (profile?.role !== 'manager') {
     return (
       <Alert className="m-6" variant="destructive">
         <Shield className="h-4 w-4" />
         <AlertDescription>
-          Access denied. This page is only available to users with Manager or Admin role.
+          Access denied. This page is only available to users with Manager role.
           Your current role: {profile?.role || 'Unknown'}
         </AlertDescription>
       </Alert>
