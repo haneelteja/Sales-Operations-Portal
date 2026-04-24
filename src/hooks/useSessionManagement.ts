@@ -225,7 +225,7 @@ export const useSessionManagement = (
     }
 
     const sessionId = getSessionId(session);
-    if (sessionInitLoggedRef.current !== sessionId) {
+    if (enableKeepAlive && sessionInitLoggedRef.current !== sessionId) {
       const timeRemaining = getTimeUntilExpiry(session);
       logger.info('Session Management Initialized', {
         timeRemainingSeconds: timeRemaining,

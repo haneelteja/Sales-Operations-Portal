@@ -396,7 +396,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         whatsapp_number: wa || null,
         sku: row.sku.trim(),
         price_per_bottle: parseFloat(row.price_per_bottle),
-        price_per_case: row.price_per_case,
+        bottles_per_case: row.bottles_per_case,
       }));
       const { error } = await supabase.from("customers").insert(inserts);
       if (error) throw new Error(handleSupabaseError(error));
@@ -637,7 +637,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                           <Select
                             value={row.sku || "__none__"}
                             onValueChange={(v) => setRow(index, { sku: v === "__none__" ? "" : v })}
-                            disabled={skusLoading || pairRowsLoading}
+                            disabled={skusLoading}
                           >
                             <SelectTrigger className="h-9">
                               <SelectValue placeholder={skusLoading ? "Loading..." : "Select SKU"} />

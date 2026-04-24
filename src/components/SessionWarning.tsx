@@ -17,7 +17,7 @@ export const SessionWarning = ({ className = '', position = 'top-right' }: Sessi
   const { warning, isRefreshing, refreshSession, dismissWarning } = useSessionManagement(session, {
     warningThreshold: 300, // 5 minutes
     criticalThreshold: 60, // 1 minute
-    enableKeepAlive: true,
+    enableKeepAlive: false,
   });
 
   const [isVisible, setIsVisible] = useState(false);
