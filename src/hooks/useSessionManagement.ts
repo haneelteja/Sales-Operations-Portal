@@ -3,6 +3,9 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/lib/logger';
 
+// Module-level: ensures "Session Management Initialized" logs exactly once per session token across all hook instances
+let _sessionInitLoggedGlobal: string | null = null;
+
 /**
  * Expected session duration configuration
  *
@@ -221,11 +224,12 @@ export const useSessionManagement = (
       setWarning({ show: false, timeRemaining: 0, message: '' });
       sessionDurationLoggedRef.current = null;
       sessionInitLoggedRef.current = null;
+      _sessionInitLoggedGlobal = null;
       return;
     }
 
     const sessionId = getSessionId(session);
-    if (enableKeepAlive && sessionInitLoggedRef.current !== sessionId) {
+    if (_sessionInitLoggedGlobal !== sessionId) {
       const timeRemaining = getTimeUntilExpiry(session);
       logger.info('Session Management Initialized', {
         timeRemainingSeconds: timeRemaining,
@@ -233,7 +237,7 @@ export const useSessionManagement = (
         expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'unknown',
         expectedDurationMinutes: EXPECTED_SESSION_DURATION_MINUTES,
       });
-      sessionInitLoggedRef.current = sessionId;
+      _sessionInitLoggedGlobal = sessionId;
     }
 
     checkSessionStatus();

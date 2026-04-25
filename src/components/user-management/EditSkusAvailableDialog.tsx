@@ -138,8 +138,9 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
       }
 
       if (toInsert.length) {
-        const { error } = await supabase.from('sku_configurations').insert(
-          toInsert.map((r) => ({ sku: r.sku, bottles_per_case: r.bottles_per_case }))
+        const { error } = await supabase.from('sku_configurations').upsert(
+          toInsert.map((r) => ({ sku: r.sku, bottles_per_case: r.bottles_per_case })),
+          { onConflict: 'sku' }
         );
         if (error) errors.push(error.message);
       }
