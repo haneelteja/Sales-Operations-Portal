@@ -255,9 +255,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(mockProfile);
     
     console.log('✅ Mock authentication successful!');
-    return { 
+    return {
       error: null,
-      requiresPasswordReset: requiresPasswordReset 
+      requiresPasswordReset: false
     };
   }, [shouldRequirePasswordReset]);
 
