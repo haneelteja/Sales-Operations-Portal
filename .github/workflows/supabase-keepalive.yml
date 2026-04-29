@@ -7,7 +7,7 @@ name: Supabase keep-alive
 on:
   schedule:
     # 09:00 UTC on Monday and Thursday (twice a week, well under free limits)
-    - cron: '0 * * * *'
+    - cron: '0 9 * * 1,4'
   workflow_dispatch: # Allow manual run from Actions tab
 
 jobs:
