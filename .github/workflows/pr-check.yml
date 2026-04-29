@@ -31,6 +31,6 @@ jobs:
       - name: Build (Vite)
         run: npm run build
 
-      - name: Optional: Run smoke script
+      - name: "Optional: Run smoke script"
         if: ${{ always() }}
         run: bash ./scripts/smoke-check.sh
