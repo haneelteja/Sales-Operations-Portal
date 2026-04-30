@@ -386,34 +386,81 @@ serve(async (req) => {
             }
 
             if (documentUrlToSend) {
-              // Send document via /sendMessage with url param (360Messenger fetches URL and sends as media)
-              const urlParamNames = ['url', 'file_url', 'document_url', 'document', 'file', 'media_url'];
-              for (const param of urlParamNames) {
-                try {
-                  const formParams: Record<string, string> = {
+              // Try WhatsApp Business API JSON format (correct format per 360Messenger docs).
+              // 360Messenger uses the WABA message structure: { type: "document", document: { link, filename, caption } }
+              const jsonAttempts: Array<{ endpoint: string; body: Record<string, unknown>; headers: Record<string, string> }> = [
+                // 360Messenger /sendMessage with phonenumber field + WABA JSON body
+                {
+                  endpoint: `/sendMessage/${apiKey}`,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: {
                     phonenumber: customer.whatsapp_number,
-                    text: caption,
-                    '360notify-medium': 'wordpress_order_notification',
-                    [param]: documentUrlToSend,
-                    filename: pdfFileName,
-                  };
+                    type: 'document',
+                    document: { link: documentUrlToSend, filename: pdfFileName, caption },
+                  },
+                },
+                // Standard WABA /messages endpoint with Bearer auth
+                {
+                  endpoint: '/messages',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                  body: {
+                    messaging_product: 'whatsapp',
+                    to: customer.whatsapp_number,
+                    type: 'document',
+                    document: { link: documentUrlToSend, filename: pdfFileName, caption },
+                  },
+                },
+                // /sendMessage with "to" field instead of "phonenumber"
+                {
+                  endpoint: `/sendMessage/${apiKey}`,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: {
+                    to: customer.whatsapp_number,
+                    messaging_product: 'whatsapp',
+                    type: 'document',
+                    document: { link: documentUrlToSend, filename: pdfFileName, caption },
+                  },
+                },
+              ];
+
+              for (const attempt of jsonAttempts) {
+                try {
+                  const res = await fetch(`${apiUrl}${attempt.endpoint}`, {
+                    method: 'POST',
+                    headers: attempt.headers,
+                    body: JSON.stringify(attempt.body),
+                  });
+                  if (res.ok) {
+                    const resBody = await res.json().catch(() => ({}));
+                    console.log(`✅ Document (PDF) sent via JSON ${attempt.endpoint}`, resBody);
+                    return true;
+                  }
+                  await logResponse(res, `JSON ${attempt.endpoint}`);
+                } catch (err) {
+                  console.log(`Document JSON ${attempt.endpoint} failed:`, err instanceof Error ? err.message : err);
+                }
+              }
+
+              // Last resort: form-urlencoded url param (unlikely to work but harmless to try)
+              for (const param of ['url', 'file_url', 'document_url']) {
+                try {
                   const res = await fetch(`${apiUrl}/sendMessage/${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams(formParams).toString(),
+                    body: new URLSearchParams({ phonenumber: customer.whatsapp_number, text: caption, [param]: documentUrlToSend, filename: pdfFileName }).toString(),
                   });
                   if (res.ok) {
-                    console.log(`✅ Document (PDF) sent via /sendMessage with param ${param}`);
+                    console.log(`✅ Document (PDF) sent via form-urlencoded param ${param}`);
                     return true;
                   }
-                  await logResponse(res, `/sendMessage ${param}`);
+                  await logResponse(res, `/sendMessage form ${param}`);
                 } catch (err) {
-                  console.log(`Document /sendMessage ${param} failed:`, err instanceof Error ? err.message : err);
+                  console.log(`Document form ${param} failed:`, err instanceof Error ? err.message : err);
                 }
               }
             }
 
-            // Fallback: /sendMessage multipart (returns 200 but 360Messenger may only deliver text)
+            // Final fallback: multipart binary upload
             try {
               const form = new FormData();
               form.append('phonenumber', customer.whatsapp_number);
@@ -422,7 +469,7 @@ serve(async (req) => {
               form.append('file', new Blob([pdfBytes], { type: 'application/pdf' }), pdfFileName);
               const uploadRes = await fetch(`${apiUrl}/sendMessage/${apiKey}`, { method: 'POST', body: form });
               if (uploadRes.ok) {
-                console.log('✅ Document (PDF) sent via /sendMessage multipart file (fallback)');
+                console.log('✅ Document (PDF) sent via /sendMessage multipart file');
                 return true;
               }
               await logResponse(uploadRes, '/sendMessage multipart');
