@@ -356,14 +356,14 @@ serve(async (req) => {
     }
 
     // Send welcome email with username and password
+    let emailResponse = null
+    let emailError = null
     try {
       console.log('Attempting to send welcome email to:', email)
       const appUrl = Deno.env.get('APP_URL') || 'https://sales-operations-portal.vercel.app'
-      
+
       // Try sending via SMTP first (no domain verification needed)
       console.log('Trying SMTP email function first...')
-      let emailResponse = null
-      let emailError = null
       
       try {
         const smtpResult = await supabase.functions.invoke('send-welcome-email-smtp', {
