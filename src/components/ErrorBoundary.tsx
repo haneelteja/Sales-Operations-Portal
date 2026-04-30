@@ -35,17 +35,23 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    this.setState({
-      error,
-      errorInfo,
-    });
+    this.setState({ error, errorInfo });
 
-    // Log error
     logger.error('Error Boundary caught an error:', error, errorInfo);
 
-    // Call custom error handler if provided
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
+    }
+
+    // Stale chunk after a new Vercel deployment — reload once to get fresh assets.
+    const isChunkError =
+      error.message.includes('Failed to fetch dynamically imported module') ||
+      error.message.includes('Importing a module script failed') ||
+      error.name === 'ChunkLoadError';
+
+    if (isChunkError && !sessionStorage.getItem('chunk_reload_attempted')) {
+      sessionStorage.setItem('chunk_reload_attempted', '1');
+      window.location.reload();
     }
   }
 
@@ -113,6 +119,7 @@ class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    sessionStorage.removeItem('chunk_reload_attempted');
     return this.props.children;
   }
 }
