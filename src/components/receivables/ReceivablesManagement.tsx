@@ -2,14 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Search, TrendingUp, CreditCard, Users, AlertTriangle, ChevronDown } from 'lucide-react';
+import {
+  Loader2, Search, TrendingUp, CreditCard, Users, AlertTriangle,
+  ChevronDown, MapPin, X, IndianRupee, Package, Calendar,
+} from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface MonthlyData {
-  month: string;        // 'YYYY-MM'
+  month: string;
   revenue: number;
   factory_cost: number;
   profit: number;
@@ -32,6 +34,7 @@ interface CustomerRow {
 }
 
 type SortKey = 'balance' | 'name' | 'profit' | 'orders';
+type RiskLevel = 'high' | 'medium' | 'low';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,19 +45,34 @@ function fmt(n: number): string {
 }
 
 function fmtDate(d: string | null): string {
-  if (!d) return 'N/A';
+  if (!d) return 'Never';
   const dt = new Date(d);
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function daysSince(d: string | null): number | null {
+  if (!d) return null;
+  return Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+}
+
 function toYYYYMM(dateStr: string): string {
-  return dateStr.slice(0, 7); // 'YYYY-MM'
+  return dateStr.slice(0, 7);
 }
 
 function formatMonthLabel(ym: string): string {
   const [y, m] = ym.split('-');
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[parseInt(m, 10) - 1]} ${y.slice(2)}`;
+}
+
+function initials(name: string): string {
+  return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+}
+
+function getRisk(c: CustomerRow): RiskLevel {
+  if (c.orders_after_last_payment >= 5 || c.outstanding_balance > 100000) return 'high';
+  if (c.orders_after_last_payment >= 2 || c.outstanding_balance > 30000) return 'medium';
+  return 'low';
 }
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
@@ -77,7 +95,6 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
   const txRows = txRes.data ?? [];
   const fpRows = fpRes.data ?? [];
 
-  // Index factory payables per customer per month
   const factoryCostMap: Record<string, Record<string, number>> = {};
   for (const fp of fpRows) {
     if (!fp.customer_id) continue;
@@ -86,7 +103,6 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
     factoryCostMap[fp.customer_id][ym] = (factoryCostMap[fp.customer_id][ym] ?? 0) + (fp.amount ?? 0);
   }
 
-  // Group transactions by customer
   type CustomerAcc = {
     customer_id: string;
     name: string;
@@ -102,16 +118,9 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
     const cust = tx.customers as { id: string; dealer_name: string; area: string } | null;
     const name = cust?.dealer_name ?? cid;
     const area = cust?.area ?? null;
-
     if (!map[cid]) map[cid] = { customer_id: cid, name, area, sales: [], payments: [] };
-
     if (tx.transaction_type === 'sale') {
-      map[cid].sales.push({
-        amount: tx.amount ?? 0,
-        cases: tx.quantity ?? 0,
-        date: tx.transaction_date,
-        ym: toYYYYMM(tx.transaction_date),
-      });
+      map[cid].sales.push({ amount: tx.amount ?? 0, cases: tx.quantity ?? 0, date: tx.transaction_date, ym: toYYYYMM(tx.transaction_date) });
     } else if (tx.transaction_type === 'payment') {
       map[cid].payments.push({ amount: tx.amount ?? 0, date: tx.transaction_date });
     }
@@ -135,7 +144,6 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
       ? acc.sales.filter(s => s.date > lastPaymentDate).length
       : acc.sales.length;
 
-    // Monthly aggregation
     const monthlyMap: Record<string, { revenue: number; cases: number }> = {};
     for (const s of acc.sales) {
       if (!monthlyMap[s.ym]) monthlyMap[s.ym] = { revenue: 0, cases: 0 };
@@ -153,8 +161,6 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
 
     const totalFactoryCost = Object.values(fcMap).reduce((s, v) => s + v, 0);
     const totalProfit = totalRevenue - totalFactoryCost;
-
-    // Avg credit per month: outstanding / number of active months
     const activeMonths = new Set(acc.sales.map(s => s.ym)).size || 1;
     const avgCreditPerMonth = outstanding / activeMonths;
 
@@ -182,71 +188,143 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
 function SummaryStrip({ data }: { data: CustomerRow[] }) {
   const totalOutstanding = data.reduce((s, c) => s + c.outstanding_balance, 0);
   const totalProfit = data.reduce((s, c) => s + c.total_profit, 0);
-  const highRisk = data.filter(c => c.orders_after_last_payment >= 5).length;
+  const highRisk = data.filter(c => getRisk(c) === 'high').length;
+  const totalRevenue = data.reduce((s, c) => s + c.total_revenue, 0);
+
+  const stats = [
+    {
+      label: 'Active Customers',
+      value: data.length.toString(),
+      sub: `${data.filter(c => c.last_order_date).length} with orders`,
+      icon: Users,
+      iconBg: 'bg-violet-100 dark:bg-violet-900/40',
+      iconColor: 'text-violet-600 dark:text-violet-400',
+      valueColor: 'text-foreground',
+    },
+    {
+      label: 'Total Receivable',
+      value: fmt(totalOutstanding),
+      sub: `${fmt(totalRevenue)} total revenue`,
+      icon: CreditCard,
+      iconBg: 'bg-blue-100 dark:bg-blue-900/40',
+      iconColor: 'text-blue-600 dark:text-blue-400',
+      valueColor: 'text-blue-600 dark:text-blue-400',
+    },
+    {
+      label: 'Cumulative Profit',
+      value: fmt(totalProfit),
+      sub: totalRevenue > 0 ? `${((totalProfit / totalRevenue) * 100).toFixed(1)}% margin` : '—',
+      icon: TrendingUp,
+      iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
+      valueColor: 'text-emerald-600 dark:text-emerald-400',
+    },
+    {
+      label: 'High-Risk Accounts',
+      value: highRisk.toString(),
+      sub: `${data.filter(c => getRisk(c) === 'medium').length} medium risk`,
+      icon: AlertTriangle,
+      iconBg: 'bg-red-100 dark:bg-red-900/40',
+      iconColor: 'text-red-600 dark:text-red-400',
+      valueColor: highRisk > 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground',
+    },
+  ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border border-b bg-card">
-      <div className="px-6 py-4">
-        <div className="flex items-center gap-2 mb-1">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Customers</span>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-b bg-card">
+      {stats.map((s, i) => (
+        <div
+          key={i}
+          className={`flex items-center gap-4 px-6 py-5 ${i < stats.length - 1 ? 'border-r border-border' : ''}`}
+        >
+          <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center ${s.iconBg}`}>
+            <s.icon className={`h-5 w-5 ${s.iconColor}`} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground font-medium mb-0.5">{s.label}</p>
+            <p className={`text-2xl font-bold leading-none ${s.valueColor}`}>{s.value}</p>
+            <p className="text-[11px] text-muted-foreground mt-1">{s.sub}</p>
+          </div>
         </div>
-        <div className="text-2xl font-bold text-foreground">{data.length}</div>
-      </div>
-      <div className="px-6 py-4">
-        <div className="flex items-center gap-2 mb-1">
-          <CreditCard className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Total Receivable</span>
-        </div>
-        <div className="text-2xl font-bold text-blue-600">{fmt(totalOutstanding)}</div>
-      </div>
-      <div className="px-6 py-4">
-        <div className="flex items-center gap-2 mb-1">
-          <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">Cumulative Profit</span>
-        </div>
-        <div className="text-2xl font-bold text-green-600">{fmt(totalProfit)}</div>
-      </div>
-      <div className="px-6 py-4">
-        <div className="flex items-center gap-2 mb-1">
-          <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">High-Risk (5+ Unpaid)</span>
-        </div>
-        <div className="text-2xl font-bold text-red-500">{highRisk}</div>
-      </div>
+      ))}
     </div>
   );
 }
 
 // ── Mini bar chart ─────────────────────────────────────────────────────────────
 
-function MiniBarChart({ monthly, valueKey, color }: {
+function MiniBarChart({ monthly, valueKey, positiveColor, negativeColor }: {
   monthly: MonthlyData[];
   valueKey: 'profit' | 'cases';
-  color: string;
+  positiveColor: string;
+  negativeColor: string;
 }) {
   const vals = monthly.map(m => m[valueKey]);
   const maxAbs = Math.max(...vals.map(Math.abs), 0.01);
 
   return (
-    <div className="flex items-end gap-0.5 h-14">
+    <div className="flex items-end gap-1 h-16">
       {monthly.map((m, i) => {
         const v = m[valueKey];
-        const h = Math.max(2, (Math.abs(v) / maxAbs) * 48);
-        const bg = v < 0 ? '#f87171' : color;
+        const h = Math.max(3, (Math.abs(v) / maxAbs) * 52);
+        const bg = v < 0 ? negativeColor : positiveColor;
         return (
-          <div key={i} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
-            <div
-              style={{ height: `${h}px`, background: bg }}
-              className="w-full rounded-t"
-              title={`${formatMonthLabel(m.month)}: ${valueKey === 'profit' ? fmt(v) : Math.round(v) + ' cases'}`}
-            />
-            <span className="text-[8px] text-muted-foreground leading-none truncate w-full text-center">
-              {formatMonthLabel(m.month).replace(' ', "'")}
+          <div key={i} className="flex-1 flex flex-col items-center gap-0.5 min-w-0" title={`${formatMonthLabel(m.month)}: ${valueKey === 'profit' ? fmt(v) : Math.round(v) + ' cases'}`}>
+            <div style={{ height: `${h}px`, background: bg, borderRadius: '3px 3px 0 0' }} className="w-full" />
+            <span className="text-[8px] text-muted-foreground leading-none truncate w-full text-center select-none">
+              {formatMonthLabel(m.month).split(' ')[0]}
             </span>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Risk badge ────────────────────────────────────────────────────────────────
+
+function RiskBadge({ risk }: { risk: RiskLevel }) {
+  if (risk === 'high') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400">
+      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+      High Risk
+    </span>
+  );
+  if (risk === 'medium') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+      Medium
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+      Low Risk
+    </span>
+  );
+}
+
+// ── Avatar ─────────────────────────────────────────────────────────────────────
+
+const AVATAR_COLORS = [
+  'bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500',
+  'bg-pink-500', 'bg-indigo-500', 'bg-teal-500', 'bg-orange-500',
+];
+
+function getAvatarColor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffffffff;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+
+// ── Metric cell ───────────────────────────────────────────────────────────────
+
+function MetricCell({ label, value, sub, valueClass }: { label: string; value: string; sub?: string; valueClass?: string }) {
+  return (
+    <div className="bg-muted/40 rounded-lg px-3 py-2.5">
+      <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium mb-1">{label}</p>
+      <p className={`text-sm font-semibold leading-none ${valueClass ?? 'text-foreground'}`}>{value}</p>
+      {sub && <p className="text-[10px] text-muted-foreground mt-1 leading-none">{sub}</p>}
     </div>
   );
 }
@@ -258,130 +336,186 @@ function CustomerCard({ c, isExpanded, onToggle }: {
   isExpanded: boolean;
   onToggle: () => void;
 }) {
-  const balanceColor =
-    c.outstanding_balance > 50000 ? 'text-red-500 bg-red-50 dark:bg-red-950/30' :
-    c.outstanding_balance > 10000 ? 'text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30' :
-    'text-green-600 bg-green-50 dark:bg-green-950/30';
-
-  const ordersColor =
-    c.orders_after_last_payment >= 5 ? 'text-red-500' :
-    c.orders_after_last_payment >= 2 ? 'text-yellow-600' :
-    'text-green-600';
-
+  const risk = getRisk(c);
   const activeMonths = c.monthly.filter(m => m.revenue > 0).length;
+  const daysSincePayment = daysSince(c.last_payment_date);
+
+  const borderColor =
+    risk === 'high' ? 'border-l-red-500' :
+    risk === 'medium' ? 'border-l-amber-400' :
+    'border-l-emerald-500';
+
+  const balanceColor =
+    risk === 'high' ? 'text-red-600 dark:text-red-400' :
+    risk === 'medium' ? 'text-amber-600 dark:text-amber-400' :
+    'text-emerald-600 dark:text-emerald-400';
+
+  const avatarBg = getAvatarColor(c.customer_id);
+
+  const daysSincePaymentLabel = daysSincePayment === null
+    ? 'Never paid'
+    : daysSincePayment === 0
+    ? 'Today'
+    : `${daysSincePayment}d ago`;
+
+  const daysSinceColor = daysSincePayment === null || daysSincePayment > 60
+    ? 'text-red-500'
+    : daysSincePayment > 30
+    ? 'text-amber-600'
+    : 'text-emerald-600';
 
   return (
     <div
-      className={`rounded-xl border bg-card transition-all duration-200 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-700 ${isExpanded ? 'border-orange-400 dark:border-orange-600' : ''}`}
+      className={`rounded-xl border-l-4 border border-border bg-card transition-all duration-200 cursor-pointer
+        hover:shadow-md hover:border-border hover:-translate-y-0.5
+        ${borderColor}
+        ${isExpanded ? 'shadow-md ring-1 ring-blue-400/30 dark:ring-blue-500/30' : ''}
+      `}
       onClick={onToggle}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            {c.orders_after_last_payment >= 5 && (
-              <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-            )}
-            <h3 className="font-semibold text-sm leading-snug truncate">{c.name}</h3>
+      {/* ── Card header ── */}
+      <div className="flex items-start justify-between px-4 pt-4 pb-3">
+        {/* Left: avatar + name + area */}
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className={`flex-shrink-0 w-10 h-10 rounded-xl ${avatarBg} flex items-center justify-center text-white text-sm font-bold shadow-sm`}>
+            {initials(c.name)}
           </div>
-          {c.area && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              <span className="inline-block bg-muted rounded px-1.5 py-0.5 text-[10px] font-medium">{c.area}</span>
-            </p>
-          )}
-          <p className="text-xs text-muted-foreground mt-1">
-            Last order: <span className="text-foreground">{fmtDate(c.last_order_date)}</span>
-          </p>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm leading-snug truncate text-foreground">{c.name}</h3>
+            <div className="flex items-center flex-wrap gap-1.5 mt-1">
+              {c.area && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground bg-muted rounded-full px-2 py-0.5">
+                  <MapPin className="h-2.5 w-2.5" />
+                  {c.area}
+                </span>
+              )}
+              <RiskBadge risk={risk} />
+            </div>
+          </div>
         </div>
-        <div className="text-right flex-shrink-0 ml-3">
-          <Badge className={`text-xs font-semibold px-2.5 py-0.5 rounded-md ${balanceColor} border-0`}>
-            {fmt(c.outstanding_balance)}
-          </Badge>
-          <div className="text-xs text-muted-foreground mt-1.5 flex items-center justify-end gap-0.5">
-            balance
-            <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+
+        {/* Right: balance */}
+        <div className="text-right flex-shrink-0 ml-2">
+          <p className={`text-xl font-bold leading-none ${balanceColor}`}>{fmt(c.outstanding_balance)}</p>
+          <div className="flex items-center justify-end gap-1 mt-1">
+            <p className="text-[10px] text-muted-foreground">outstanding</p>
+            <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
           </div>
         </div>
       </div>
 
-      {/* Metrics grid */}
-      <div className="grid grid-cols-3 gap-x-4 gap-y-3 px-5 py-3">
-        <div>
-          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Last Payment</p>
-          <p className={`text-xs font-medium ${c.last_payment_date ? '' : 'text-red-500'}`}>
-            {fmtDate(c.last_payment_date)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Avg Credit/Mo</p>
-          <p className="text-xs font-medium text-blue-600">{fmt(Math.max(0, c.avg_credit_per_month))}</p>
-        </div>
-        <div>
-          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Orders After Pay</p>
-          <p className={`text-xs font-medium ${ordersColor}`}>{c.orders_after_last_payment}</p>
-        </div>
-        <div>
-          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Total Profit</p>
-          <p className={`text-xs font-medium ${c.total_profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-            {fmt(c.total_profit)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Total Cases</p>
-          <p className="text-xs font-medium">{Math.round(c.total_cases).toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Active Months</p>
-          <p className="text-xs font-medium">{activeMonths}</p>
-        </div>
+      {/* ── Divider ── */}
+      <div className="mx-4 border-t border-border/60" />
+
+      {/* ── Metrics grid ── */}
+      <div className="grid grid-cols-3 gap-2 px-4 py-3">
+        <MetricCell
+          label="Last Payment"
+          value={daysSincePaymentLabel}
+          sub={c.last_payment_date ? fmtDate(c.last_payment_date) : undefined}
+          valueClass={daysSinceColor}
+        />
+        <MetricCell
+          label="Avg Credit/Mo"
+          value={fmt(Math.max(0, c.avg_credit_per_month))}
+          valueClass="text-blue-600 dark:text-blue-400"
+        />
+        <MetricCell
+          label="Unpaid Orders"
+          value={c.orders_after_last_payment.toString()}
+          sub={c.orders_after_last_payment >= 5 ? 'needs attention' : undefined}
+          valueClass={
+            c.orders_after_last_payment >= 5 ? 'text-red-500' :
+            c.orders_after_last_payment >= 2 ? 'text-amber-600' :
+            'text-emerald-600'
+          }
+        />
+        <MetricCell
+          label="Total Profit"
+          value={fmt(c.total_profit)}
+          valueClass={c.total_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}
+        />
+        <MetricCell
+          label="Total Cases"
+          value={Math.round(c.total_cases).toLocaleString()}
+        />
+        <MetricCell
+          label="Active Months"
+          value={activeMonths.toString()}
+          sub={`since ${c.monthly[0] ? formatMonthLabel(c.monthly[0].month) : '—'}`}
+        />
       </div>
 
-      {/* Expanded section */}
+      {/* ── Expanded section ── */}
       {isExpanded && c.monthly.length > 0 && (
-        <div className="px-5 pb-4 border-t pt-3 space-y-3" onClick={e => e.stopPropagation()}>
-          <div>
-            <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-1.5">
-              Profit by Month
-            </p>
-            <MiniBarChart monthly={c.monthly} valueKey="profit" color="#38bdf8" />
-          </div>
-          <div>
-            <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-1.5">
-              Volume (Cases) by Month
-            </p>
-            <MiniBarChart monthly={c.monthly} valueKey="cases" color="#a78bfa" />
+        <div className="border-t border-border/60 px-4 pt-3 pb-4 space-y-4" onClick={e => e.stopPropagation()}>
+
+          {/* Charts row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-muted/30 rounded-lg p-3">
+              <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium mb-2">Profit / Month</p>
+              <MiniBarChart monthly={c.monthly} valueKey="profit" positiveColor="#34d399" negativeColor="#f87171" />
+            </div>
+            <div className="bg-muted/30 rounded-lg p-3">
+              <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium mb-2">Cases / Month</p>
+              <MiniBarChart monthly={c.monthly} valueKey="cases" positiveColor="#818cf8" negativeColor="#f87171" />
+            </div>
           </div>
 
           {/* Monthly table */}
-          <div className="overflow-x-auto">
+          <div className="rounded-lg border border-border/60 overflow-hidden">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b">
-                  <th className="text-left py-1.5 pr-3 text-muted-foreground font-medium">Month</th>
-                  <th className="text-right py-1.5 pr-3 text-muted-foreground font-medium">Revenue</th>
-                  <th className="text-right py-1.5 pr-3 text-muted-foreground font-medium">Factory Cost</th>
-                  <th className="text-right py-1.5 pr-3 text-muted-foreground font-medium">Profit</th>
-                  <th className="text-right py-1.5 text-muted-foreground font-medium">Cases</th>
+                <tr className="bg-muted/60">
+                  <th className="text-left py-2 px-3 text-muted-foreground font-semibold">Month</th>
+                  <th className="text-right py-2 px-3 text-muted-foreground font-semibold">Revenue</th>
+                  <th className="text-right py-2 px-3 text-muted-foreground font-semibold">Factory</th>
+                  <th className="text-right py-2 px-3 text-muted-foreground font-semibold">Profit</th>
+                  <th className="text-right py-2 px-3 text-muted-foreground font-semibold">Cases</th>
                 </tr>
               </thead>
               <tbody>
                 {c.monthly.map((m, i) => (
-                  <tr key={i} className="border-b last:border-0">
-                    <td className="py-1.5 pr-3 text-muted-foreground">{formatMonthLabel(m.month)}</td>
-                    <td className="py-1.5 pr-3 text-right text-blue-600">{fmt(m.revenue)}</td>
-                    <td className="py-1.5 pr-3 text-right text-muted-foreground">{fmt(m.factory_cost)}</td>
-                    <td className={`py-1.5 pr-3 text-right ${m.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {fmt(m.profit)}
-                    </td>
-                    <td className="py-1.5 text-right text-muted-foreground">{Math.round(m.cases)}</td>
+                  <tr key={i} className={`border-t border-border/40 ${i % 2 === 0 ? 'bg-background' : 'bg-muted/20'}`}>
+                    <td className="py-2 px-3 font-medium text-foreground">{formatMonthLabel(m.month)}</td>
+                    <td className="py-2 px-3 text-right text-blue-600 dark:text-blue-400 font-medium">{fmt(m.revenue)}</td>
+                    <td className="py-2 px-3 text-right text-muted-foreground">{fmt(m.factory_cost)}</td>
+                    <td className={`py-2 px-3 text-right font-semibold ${m.profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>{fmt(m.profit)}</td>
+                    <td className="py-2 px-3 text-right text-muted-foreground">{Math.round(m.cases)}</td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border bg-muted/60">
+                  <td className="py-2 px-3 font-bold text-foreground">Total</td>
+                  <td className="py-2 px-3 text-right text-blue-600 dark:text-blue-400 font-bold">{fmt(c.total_revenue)}</td>
+                  <td className="py-2 px-3 text-right text-muted-foreground font-semibold">{fmt(c.monthly.reduce((s, m) => s + m.factory_cost, 0))}</td>
+                  <td className={`py-2 px-3 text-right font-bold ${c.total_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>{fmt(c.total_profit)}</td>
+                  <td className="py-2 px-3 text-right text-muted-foreground font-semibold">{Math.round(c.total_cases)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// ── Sort tab ──────────────────────────────────────────────────────────────────
+
+function SortTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+        active
+          ? 'bg-foreground text-background shadow-sm'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -401,7 +535,9 @@ const ReceivablesManagement: React.FC = () => {
   const sorted = useMemo(() => {
     if (!data) return [];
     const q = search.toLowerCase();
-    const filtered = q ? data.filter(c => c.name.toLowerCase().includes(q) || (c.area ?? '').toLowerCase().includes(q)) : data;
+    const filtered = q
+      ? data.filter(c => c.name.toLowerCase().includes(q) || (c.area ?? '').toLowerCase().includes(q))
+      : data;
     return [...filtered].sort((a, b) => {
       if (sortKey === 'balance') return b.outstanding_balance - a.outstanding_balance;
       if (sortKey === 'name') return a.name.localeCompare(b.name);
@@ -413,64 +549,98 @@ const ReceivablesManagement: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        <p className="text-sm text-muted-foreground">Loading receivables…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6 text-center text-red-500">
-        Failed to load receivables data. Please refresh.
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+          <AlertTriangle className="h-6 w-6 text-red-500" />
+        </div>
+        <div>
+          <p className="font-semibold text-foreground">Failed to load data</p>
+          <p className="text-sm text-muted-foreground mt-1">Please refresh the page</p>
+        </div>
       </div>
     );
   }
 
-  const sortButtons: { key: SortKey; label: string }[] = [
-    { key: 'balance', label: '↓ Balance' },
-    { key: 'name', label: 'A→Z Name' },
-    { key: 'profit', label: '↓ Profit' },
-    { key: 'orders', label: 'Orders Pending' },
-  ];
+  const highCount = sorted.filter(c => getRisk(c) === 'high').length;
+  const medCount = sorted.filter(c => getRisk(c) === 'medium').length;
 
   return (
-    <div className="space-y-0 min-h-full">
-      {/* Summary strip */}
+    <div className="min-h-full flex flex-col">
+      {/* Summary */}
       <SummaryStrip data={sorted} />
 
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-2 items-center px-4 py-3 border-b bg-card">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
+      <div className="flex flex-wrap gap-3 items-center px-5 py-3 border-b bg-card sticky top-0 z-10">
+        {/* Search */}
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search customer..."
-            className="pl-8 h-9 text-sm"
+            placeholder="Search by name or area…"
+            className="w-full pl-9 pr-8 py-2 text-sm bg-muted/50 border border-border rounded-lg outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder:text-muted-foreground"
           />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {sortButtons.map(({ key, label }) => (
-            <Button
-              key={key}
-              variant={sortKey === key ? 'default' : 'outline'}
-              size="sm"
-              className="h-9 text-xs"
-              onClick={() => setSortKey(key)}
-            >
-              {label}
-            </Button>
-          ))}
+
+        {/* Sort tabs */}
+        <div className="flex items-center gap-1 bg-muted/50 rounded-xl p-1">
+          <SortTab active={sortKey === 'balance'} onClick={() => setSortKey('balance')}>
+            <IndianRupee className="inline h-3 w-3 mr-1" />Balance
+          </SortTab>
+          <SortTab active={sortKey === 'orders'} onClick={() => setSortKey('orders')}>
+            <Package className="inline h-3 w-3 mr-1" />Pending
+          </SortTab>
+          <SortTab active={sortKey === 'profit'} onClick={() => setSortKey('profit')}>
+            <TrendingUp className="inline h-3 w-3 mr-1" />Profit
+          </SortTab>
+          <SortTab active={sortKey === 'name'} onClick={() => setSortKey('name')}>
+            <Calendar className="inline h-3 w-3 mr-1" />A–Z
+          </SortTab>
         </div>
-        <span className="text-xs text-muted-foreground ml-auto">{sorted.length} customers</span>
+
+        {/* Risk chips + count */}
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
+          {highCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              {highCount} high risk
+            </span>
+          )}
+          {medCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              {medCount} medium
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground">{sorted.length} customers</span>
+        </div>
       </div>
 
       {/* Card grid */}
-      <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="flex-1 p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {sorted.length === 0 ? (
-          <div className="col-span-full text-center py-16 text-muted-foreground">
-            No customers match your search
+          <div className="col-span-full flex flex-col items-center justify-center py-20 gap-3 text-center">
+            <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
+              <Search className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">No customers found</p>
+              <p className="text-sm text-muted-foreground mt-1">Try a different search term</p>
+            </div>
           </div>
         ) : (
           sorted.map(c => (
