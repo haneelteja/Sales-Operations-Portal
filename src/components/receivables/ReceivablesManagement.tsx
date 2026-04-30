@@ -19,6 +19,7 @@ interface MonthlyData {
 interface CustomerRow {
   customer_id: string;
   name: string;
+  area: string | null;
   outstanding_balance: number;
   last_order_date: string | null;
   last_payment_date: string | null;
@@ -89,6 +90,7 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
   type CustomerAcc = {
     customer_id: string;
     name: string;
+    area: string | null;
     sales: Array<{ amount: number; cases: number; date: string; ym: string }>;
     payments: Array<{ amount: number; date: string }>;
   };
@@ -99,8 +101,9 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
     if (!cid) continue;
     const cust = tx.customers as { id: string; dealer_name: string; area: string } | null;
     const name = cust?.dealer_name ?? cid;
+    const area = cust?.area ?? null;
 
-    if (!map[cid]) map[cid] = { customer_id: cid, name, sales: [], payments: [] };
+    if (!map[cid]) map[cid] = { customer_id: cid, name, area, sales: [], payments: [] };
 
     if (tx.transaction_type === 'sale') {
       map[cid].sales.push({
@@ -158,6 +161,7 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
     result.push({
       customer_id: acc.customer_id,
       name: acc.name,
+      area: acc.area,
       outstanding_balance: outstanding,
       last_order_date: lastOrderDate,
       last_payment_date: lastPaymentDate,
@@ -280,6 +284,11 @@ function CustomerCard({ c, isExpanded, onToggle }: {
             )}
             <h3 className="font-semibold text-sm leading-snug truncate">{c.name}</h3>
           </div>
+          {c.area && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              <span className="inline-block bg-muted rounded px-1.5 py-0.5 text-[10px] font-medium">{c.area}</span>
+            </p>
+          )}
           <p className="text-xs text-muted-foreground mt-1">
             Last order: <span className="text-foreground">{fmtDate(c.last_order_date)}</span>
           </p>
@@ -392,7 +401,7 @@ const ReceivablesManagement: React.FC = () => {
   const sorted = useMemo(() => {
     if (!data) return [];
     const q = search.toLowerCase();
-    const filtered = q ? data.filter(c => c.name.toLowerCase().includes(q)) : data;
+    const filtered = q ? data.filter(c => c.name.toLowerCase().includes(q) || (c.area ?? '').toLowerCase().includes(q)) : data;
     return [...filtered].sort((a, b) => {
       if (sortKey === 'balance') return b.outstanding_balance - a.outstanding_balance;
       if (sortKey === 'name') return a.name.localeCompare(b.name);
