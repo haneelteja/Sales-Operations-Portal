@@ -17,6 +17,7 @@ const Reports = lazy(() => import("@/components/reports/Reports"));
 const UserManagement = lazy(() => import("@/components/user-management/UserManagement"));
 const ApplicationConfigurationTab = lazy(() => import("@/components/user-management/ApplicationConfigurationTab"));
 const WhatsAppConfigurationTab = lazy(() => import("@/components/user-management/WhatsAppConfigurationTab"));
+const ReceivablesManagement = lazy(() => import("@/components/receivables/ReceivablesManagement"));
 
 // Loading component for route transitions
 const RouteLoader = () => (
@@ -44,6 +45,12 @@ const Index = () => {
         return (
           <Suspense fallback={<RouteLoader />}>
             <OrderManagement />
+          </Suspense>
+        );
+      case "receivables-management":
+        return (
+          <Suspense fallback={<RouteLoader />}>
+            <ReceivablesManagement />
           </Suspense>
         );
       case "client-transactions":

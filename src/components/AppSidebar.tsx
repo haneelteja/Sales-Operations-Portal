@@ -1,10 +1,10 @@
-import { 
-  BarChart3, 
-  DollarSign, 
-  Users, 
-  Factory, 
-  Truck, 
-  Tag, 
+import {
+  BarChart3,
+  DollarSign,
+  Users,
+  Factory,
+  Truck,
+  Tag,
   UserPlus,
   FileText,
   Cog,
@@ -13,7 +13,8 @@ import {
   ShoppingCart,
   Shield,
   Settings,
-  MessageSquare
+  MessageSquare,
+  Wallet
 } from "lucide-react";
 
 import {
@@ -46,6 +47,7 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { id: "dashboard", title: "Dashboard", icon: BarChart3 },
   { id: "order-management", title: "Orders Management", icon: ShoppingCart },
+  { id: "receivables-management", title: "Receivables Management", icon: Wallet },
   { id: "client-transactions", title: "Client Transactions", icon: DollarSign },
   { id: "factory", title: "Factory Payables", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
