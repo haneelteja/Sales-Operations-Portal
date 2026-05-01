@@ -12,6 +12,7 @@ import {
   updateInvoiceFiles,
   markInvoiceRegenerated,
   prepareInvoiceData,
+  prepareMultiInvoiceData,
   calculateDueDate,
 } from '@/services/invoiceService';
 import { StorageService } from '@/services/cloudStorage/storageService';
@@ -73,11 +74,14 @@ export function useInvoiceGeneration() {
       transaction,
       customer,
       companyConfig = DEFAULT_COMPANY_CONFIG,
+      allTransactions,
     }: {
       transactionId: string;
       transaction: SalesTransaction;
       customer: Customer;
       companyConfig?: CompanyConfig;
+      /** All transactions for a multi-SKU sale — generates one combined invoice */
+      allTransactions?: SalesTransaction[];
     }) => {
       try {
         // Get storage provider from configuration
@@ -88,15 +92,16 @@ export function useInvoiceGeneration() {
         const existingInvoice = await getInvoiceByTransactionId(transactionId);
         if (existingInvoice) {
           logger.info('Invoice already exists, regenerating...');
-          // Regenerate invoice
-          return await regenerateInvoice(existingInvoice, transaction, customer, companyConfig);
+          return await regenerateInvoice(existingInvoice, transaction, customer, companyConfig, allTransactions);
         }
 
         // Generate invoice number
         const invoiceNumber = await generateInvoiceNumber('INV', true, true);
 
-        // Prepare invoice data
-        const invoiceData = prepareInvoiceData(transaction, customer, companyConfig);
+        // Prepare invoice data (multi-SKU or single)
+        const invoiceData = (allTransactions && allTransactions.length > 1)
+          ? prepareMultiInvoiceData(allTransactions, customer, companyConfig)
+          : prepareInvoiceData(transaction, customer, companyConfig);
         invoiceData.invoiceNumber = invoiceNumber;
 
         // Generate documents
@@ -220,14 +225,15 @@ async function regenerateInvoice(
   existingInvoice: Invoice,
   transaction: SalesTransaction,
   customer: Customer,
-  companyConfig: CompanyConfig
+  companyConfig: CompanyConfig,
+  allTransactions?: SalesTransaction[]
 ): Promise<Invoice> {
-  // Use the storage provider from the existing invoice, or get from config
   const storageProvider = existingInvoice.storage_provider || await getStorageProvider();
   const storageService = new StorageService(storageProvider);
 
-  // Prepare invoice data with existing invoice number
-  const invoiceData = prepareInvoiceData(transaction, customer, companyConfig);
+  const invoiceData = (allTransactions && allTransactions.length > 1)
+    ? prepareMultiInvoiceData(allTransactions, customer, companyConfig)
+    : prepareInvoiceData(transaction, customer, companyConfig);
   invoiceData.invoiceNumber = existingInvoice.invoice_number;
 
   // Generate new documents

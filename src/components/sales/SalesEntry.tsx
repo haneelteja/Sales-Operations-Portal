@@ -385,6 +385,9 @@ const SalesEntry = () => {
     buildTransportDescription,
     calculateTotalAmount,
     onSuccessReset: resetItemsState,
+    customers,
+    generateInvoice,
+    getInvoiceFailureDescription,
   });
 
   const handleMultipleSalesSubmit = useCallback(() => {

@@ -15,6 +15,14 @@ export interface InvoiceGenerationResult {
   pdfFileUrl: string | null;
 }
 
+export interface InvoiceItem {
+  sku: string;
+  description?: string;
+  quantity: number;
+  pricePerCase: number;
+  amount: number;
+}
+
 export interface InvoiceData {
   invoiceNumber: string;
   invoiceDate: string;
@@ -29,6 +37,8 @@ export interface InvoiceData {
   clientAddress?: string;
   clientPhone?: string;
   clientEmail?: string;
+  /** Multi-item support: when present, overrides single sku/quantity/pricePerCase/amount fields */
+  items?: InvoiceItem[];
   sku: string;
   quantity: number;
   pricePerCase: number;
@@ -289,6 +299,66 @@ export function prepareInvoiceData(
     taxAmount: 0, // Can be calculated if tax is applicable
     grandTotal: safeTotalAmount,
     terms: companyConfig.terms || 'Payment due within 30 days. Late payment may incur interest charges.'
+  };
+}
+
+/**
+ * Prepare invoice data from multiple transactions (multi-SKU sale)
+ */
+export function prepareMultiInvoiceData(
+  transactions: SalesTransaction[],
+  customer: Customer,
+  companyConfig: {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    gstin?: string;
+    terms?: string;
+  }
+): InvoiceData {
+  const invoiceDate = transactions[0].transaction_date;
+  const dueDate = calculateDueDate(invoiceDate);
+
+  const items: InvoiceItem[] = transactions.map((t) => {
+    const qty = t.quantity ?? 0;
+    const amount = t.amount ?? 0;
+    const pricePerCase = qty > 0 ? amount / qty : 0;
+    return {
+      sku: t.sku || 'N/A',
+      description: t.description || t.sku || 'N/A',
+      quantity: qty,
+      pricePerCase,
+      amount,
+    };
+  });
+
+  const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+
+  return {
+    invoiceNumber: '',
+    invoiceDate,
+    dueDate,
+    companyName: companyConfig.name,
+    companyAddress: companyConfig.address,
+    companyPhone: companyConfig.phone,
+    companyEmail: companyConfig.email,
+    companyGSTIN: companyConfig.gstin,
+    dealerName: customer.dealer_name,
+    area: customer.area,
+    clientAddress: undefined,
+    clientPhone: undefined,
+    clientEmail: undefined,
+    items,
+    sku: items[0]?.sku || 'N/A',
+    quantity: items[0]?.quantity ?? 0,
+    pricePerCase: items[0]?.pricePerCase ?? 0,
+    amount: items[0]?.amount ?? 0,
+    totalAmount,
+    amountInWords: convertNumberToWords(totalAmount),
+    taxAmount: 0,
+    grandTotal: totalAmount,
+    terms: companyConfig.terms || 'Payment due within 30 days. Late payment may incur interest charges.',
   };
 }
 

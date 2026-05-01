@@ -571,9 +571,14 @@ serve(async (req) => {
 
       const hasDocument = attachmentType && (documentUrl || attachmentUrl || (attachmentFileId && (attachmentType === 'application/pdf' || attachmentType === 'document')));
       if (hasDocument) {
-        apiResponse = await sendTextMessage();
+        // Try document first (caption carries the message text). Only fall back to text if document send fails.
         const documentSent = await trySendDocument();
-        apiResponse = { ...apiResponse, documentSent };
+        if (documentSent) {
+          apiResponse = { documentSent: true };
+        } else {
+          apiResponse = await sendTextMessage();
+          apiResponse = { ...apiResponse, documentSent: false };
+        }
       } else {
         apiResponse = await sendTextMessage();
       }

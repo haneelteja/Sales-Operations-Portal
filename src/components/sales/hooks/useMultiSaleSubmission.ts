@@ -3,11 +3,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { useCacheInvalidation } from '@/hooks/useCacheInvalidation';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
+import { isAutoInvoiceEnabled } from '@/services/invoiceConfigService';
+import type { Customer, SalesTransaction } from '@/types';
 import type { SaleForm } from '@/types';
 import type { SalesItem } from '@/components/sales/hooks/useSalesItemsManager';
 
-type CustomerDirectoryRecord = {
-  id: string;
+type CustomerDirectoryRecord = Customer & { client_name?: string | null; branch?: string | null };
+
+type InvoiceGenerationArgs = {
+  transactionId: string;
+  transaction: SalesTransaction;
+  customer: Customer;
+  allTransactions?: SalesTransaction[];
 };
 
 type UseMultiSaleSubmissionOptions = {
@@ -21,6 +28,9 @@ type UseMultiSaleSubmissionOptions = {
   ) => string;
   calculateTotalAmount: () => number;
   onSuccessReset: () => void;
+  customers?: CustomerDirectoryRecord[];
+  generateInvoice?: { mutate: (args: InvoiceGenerationArgs) => void };
+  getInvoiceFailureDescription?: (error: unknown) => string;
 };
 
 export function useMultiSaleSubmission({
@@ -31,12 +41,15 @@ export function useMultiSaleSubmission({
   buildTransportDescription,
   calculateTotalAmount,
   onSuccessReset,
+  customers,
+  generateInvoice,
+  getInvoiceFailureDescription,
 }: UseMultiSaleSubmissionOptions) {
   const { toast } = useToast();
   const { invalidateRelated } = useCacheInvalidation();
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<{ transactions: SalesTransaction[]; customerId: string }> => {
       if (!saleForm.customer_id || !saleForm.area || salesItems.length === 0) {
         throw new Error('Please select client, branch, and add at least one item');
       }
@@ -46,6 +59,8 @@ export function useMultiSaleSubmission({
         .select('dealer_name, area')
         .eq('id', saleForm.customer_id)
         .single();
+
+      const insertedTransactions: SalesTransaction[] = [];
 
       for (const item of salesItems) {
         const saleData = {
@@ -59,11 +74,16 @@ export function useMultiSaleSubmission({
           transaction_date: saleForm.transaction_date,
         };
 
-        const { error: saleError } = await supabase.from('sales_transactions').insert(saleData);
+        const { data: inserted, error: saleError } = await supabase
+          .from('sales_transactions')
+          .insert(saleData)
+          .select()
+          .single();
         if (saleError) {
           logger.error('Multiple sales transaction error:', saleError);
           throw saleError;
         }
+        insertedTransactions.push(inserted as SalesTransaction);
 
         const { data: factoryPricing, error: pricingError } = await supabase
           .from('factory_pricing')
@@ -131,8 +151,10 @@ export function useMultiSaleSubmission({
           throw new Error(`Transport transaction creation failed: ${transportError.message}`);
         }
       }
+
+      return { transactions: insertedTransactions, customerId: saleForm.customer_id };
     },
-    onSuccess: () => {
+    onSuccess: async ({ transactions, customerId }) => {
       toast({
         title: 'Success',
         description: `Successfully recorded ${salesItems.length} sale${salesItems.length > 1 ? 's' : ''} with total amount ₹${calculateTotalAmount().toFixed(2)} and corresponding factory transactions!`,
@@ -141,6 +163,44 @@ export function useMultiSaleSubmission({
       invalidateRelated('sales_transactions');
       invalidateRelated('factory_payables');
       invalidateRelated('transport_expenses');
+      invalidateRelated('invoices');
+
+      // Auto-generate one combined invoice for all items
+      if (generateInvoice && transactions.length > 0) {
+        const autoEnabled = await isAutoInvoiceEnabled();
+        if (autoEnabled) {
+          try {
+            let customer = customers?.find((c) => c.id === customerId);
+            if (!customer) {
+              const { data: customerData, error: customerError } = await supabase
+                .from('customers')
+                .select('*')
+                .eq('id', customerId)
+                .single();
+              if (customerError || !customerData) {
+                throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
+              }
+              customer = customerData as CustomerDirectoryRecord;
+            }
+
+            generateInvoice.mutate({
+              transactionId: transactions[0].id,
+              transaction: transactions[0],
+              customer,
+              allTransactions: transactions,
+            });
+          } catch (error) {
+            logger.error('Auto-invoice generation failed (multi-SKU):', error);
+            toast({
+              title: 'Invoice Generation Warning',
+              description: getInvoiceFailureDescription
+                ? getInvoiceFailureDescription(error)
+                : 'Sale recorded successfully, but invoice generation failed.',
+              variant: 'destructive',
+            });
+          }
+        }
+      }
     },
     onError: (error) => {
       toast({

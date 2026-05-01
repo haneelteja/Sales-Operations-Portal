@@ -80,16 +80,21 @@ export async function generateWordDocument(
       clientPhone: data.clientPhone || '',
       clientEmail: data.clientEmail || '',
       
-      // Invoice items
-      items: [
-        {
-          sku: data.sku,
-          description: data.sku, // Can be enhanced with product description
-          quantity: data.quantity,
-          unitPrice: formatCurrency(data.pricePerCase),
-          amount: formatCurrency(data.amount),
-        }
-      ],
+      // Invoice items (supports single and multi-SKU)
+      items: (data.items && data.items.length > 0 ? data.items : [{
+        sku: data.sku,
+        description: data.sku,
+        quantity: data.quantity,
+        pricePerCase: data.pricePerCase,
+        amount: data.amount,
+      }]).map((item, i) => ({
+        sno: i + 1,
+        sku: item.sku,
+        description: item.description || item.sku,
+        quantity: item.quantity,
+        unitPrice: formatCurrency(item.pricePerCase),
+        amount: formatCurrency(item.amount),
+      })),
       
       // Totals
       subtotal: formatCurrency(data.totalAmount),
@@ -162,13 +167,30 @@ async function loadHTMLTemplate(): Promise<string> {
  * Replace template placeholders with actual data
  */
 function replaceTemplatePlaceholders(template: string, data: InvoiceData): string {
+  const allItems = data.items && data.items.length > 0
+    ? data.items
+    : [{ sku: data.sku, description: data.sku, quantity: data.quantity, pricePerCase: data.pricePerCase, amount: data.amount }];
+
+  const itemRows = allItems.map((item, i) => `
+                    <tr>
+                        <td>${i + 1}.</td>
+                        <td>${item.description || item.sku}</td>
+                        <td>${item.sku}</td>
+                        <td>${item.quantity} cases</td>
+                        <td>${formatCurrency(item.pricePerCase)}</td>
+                        <td class="amount-cell">${formatCurrency(item.amount)}</td>
+                    </tr>`).join('\n');
+
   const replacements: Record<string, string> = {
     companyName: data.companyName,
     companyAddress: data.companyAddress.replace(/\n/g, '<br>'),
     dealerName: data.dealerName,
+    clientName: data.dealerName,
     area: data.area || '',
+    branch: data.area || '',
     invoiceNumber: data.invoiceNumber,
     invoiceDate: formatDate(data.invoiceDate),
+    itemRows,
     sku: data.sku,
     quantity: data.quantity.toString(),
     unitPrice: formatCurrency(data.pricePerCase),
@@ -179,7 +201,7 @@ function replaceTemplatePlaceholders(template: string, data: InvoiceData): strin
 
   let html = template;
   Object.entries(replacements).forEach(([key, value]) => {
-    const regex = new RegExp(`{{${key}}}`, 'g');
+    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
     html = html.replace(regex, value || '');
   });
 
