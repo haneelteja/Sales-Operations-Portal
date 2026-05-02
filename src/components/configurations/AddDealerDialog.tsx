@@ -398,7 +398,9 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         price_per_bottle: parseFloat(row.price_per_bottle),
         bottles_per_case: row.bottles_per_case,
       }));
-      const { error } = await supabase.from("customers").insert(inserts);
+      const { error } = await supabase
+        .from("customers")
+        .upsert(inserts, { onConflict: "dealer_name,area,sku,pricing_date" });
       if (error) throw new Error(handleSupabaseError(error));
     },
     onSuccess: () => {
