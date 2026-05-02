@@ -280,11 +280,11 @@ export async function generatePDFDocument(
     const pageHeight = 297; // A4 height in mm
     let heightLeft = imgHeight;
     let position = 0;
-    
+
     pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
-    
-    while (heightLeft > 0) {
+
+    while (heightLeft > 20) {
       position = heightLeft - imgHeight;
       pdf.addPage();
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
