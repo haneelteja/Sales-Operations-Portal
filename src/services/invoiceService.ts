@@ -275,7 +275,7 @@ export function prepareInvoiceData(
   const amountInWords = convertNumberToWords(safeTotalAmount);
 
   const sku = transaction.sku || 'N/A';
-  const description = skuDescriptions[sku] || sku;
+  const description = skuDescriptions[sku] || skuDescriptions[sku.toLowerCase().trim()] || sku;
 
   return {
     invoiceNumber: '',
@@ -336,7 +336,7 @@ export function prepareMultiInvoiceData(
     const sku = t.sku || 'N/A';
     return {
       sku,
-      description: skuDescriptions[sku] || sku,
+      description: skuDescriptions[sku] || skuDescriptions[sku.toLowerCase().trim()] || sku,
       quantity: qty,
       pricePerCase,
       amount,

@@ -106,6 +106,7 @@ export function useInvoiceGeneration() {
         for (const s of skuConfigs ?? []) {
           if (s.sku && s.description) {
             skuDescriptions[s.sku] = s.description;
+            skuDescriptions[s.sku.toLowerCase().trim()] = s.description;
           }
         }
 
@@ -249,6 +250,7 @@ async function regenerateInvoice(
   for (const s of skuConfigs ?? []) {
     if (s.sku && s.description) {
       skuDescriptions[s.sku] = s.description;
+      skuDescriptions[s.sku.toLowerCase().trim()] = s.description;
     }
   }
 
