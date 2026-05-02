@@ -605,12 +605,12 @@ const UserManagement = () => {
 
       const { error } = await supabase
         .from("user_management")
-        .update({ 
+        .update({
           username,
           email,
           role,
-          associated_dealers: associatedClients,
-          associated_areas: associatedBranches,
+          associated_clients: associatedClients,
+          associated_branches: associatedBranches,
           updated_at: new Date().toISOString()
         })
         .eq("user_id", userId);
