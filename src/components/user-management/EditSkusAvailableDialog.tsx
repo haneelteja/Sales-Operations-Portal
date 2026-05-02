@@ -52,7 +52,7 @@ async function fetchSkuConfigurations(): Promise<SkuRow[]> {
     id: row.id,
     sku: row.sku ?? '',
     bottles_per_case: Number(row.bottles_per_case) || 0,
-    description: (row as { description?: string }).description ?? '',
+    description: row.description ?? '',
   }));
 }
 

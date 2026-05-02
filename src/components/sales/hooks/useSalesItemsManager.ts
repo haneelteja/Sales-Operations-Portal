@@ -65,6 +65,7 @@ export function useSalesItemsManager({
       return false;
     }
 
+    const addedSku = currentItem.sku;
     setSalesItems((prev) => [
       ...prev,
       {
@@ -72,13 +73,8 @@ export function useSalesItemsManager({
         ...currentItem,
       },
     ]);
-    setCurrentItem((prev) => ({
-      ...prev,
-      quantity: '',
-      amount: '',
-      price_per_case: '',
-    }));
-    onItemAdded(currentItem.sku);
+    setCurrentItem(EMPTY_ITEM);
+    onItemAdded(addedSku);
     return true;
   }, [currentItem, onItemAdded, onValidationError]);
 

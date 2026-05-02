@@ -104,8 +104,8 @@ export function useInvoiceGeneration() {
           .select('sku, description');
         const skuDescriptions: Record<string, string> = {};
         for (const s of skuConfigs ?? []) {
-          if (s.sku && (s as { description?: string | null }).description) {
-            skuDescriptions[s.sku] = (s as { description?: string | null }).description as string;
+          if (s.sku && s.description) {
+            skuDescriptions[s.sku] = s.description;
           }
         }
 
@@ -247,8 +247,8 @@ async function regenerateInvoice(
     .select('sku, description');
   const skuDescriptions: Record<string, string> = {};
   for (const s of skuConfigs ?? []) {
-    if (s.sku && (s as { description?: string | null }).description) {
-      skuDescriptions[s.sku] = (s as { description?: string | null }).description as string;
+    if (s.sku && s.description) {
+      skuDescriptions[s.sku] = s.description;
     }
   }
 

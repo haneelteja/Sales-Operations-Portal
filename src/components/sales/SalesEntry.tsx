@@ -131,6 +131,20 @@ const SalesEntry = () => {
         title: "Item Added",
         description: `${sku} added to sale items`,
       });
+      // Auto-select the next SKU if exactly one remains unselected
+      // salesItems state hasn't updated yet, so we include the just-added sku manually
+      const alreadyUsed = new Set([...salesItems.map((i) => i.sku), sku]);
+      const remaining = availableSkus.filter((s) => !alreadyUsed.has(s.sku));
+      if (remaining.length === 1) {
+        handleCurrentItemSKUChange(remaining[0].sku, (nextSku) => {
+          const pricing = findCustomerRecord({
+            customerId: saleForm.customer_id,
+            branch: saleForm.area,
+            sku: nextSku,
+          });
+          return pricing?.price_per_case?.toString() || '';
+        });
+      }
     },
     onItemLoadedForEdit: (sku) => {
       toast({
@@ -1329,11 +1343,13 @@ const SalesEntry = () => {
                                       <SelectValue placeholder="Select SKU" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {availableSkus.map((customer) => (
-                                        <SelectItem key={`${customer.id}-${customer.sku}`} value={customer.sku || ""}>
-                                          {customer.sku}
-                                        </SelectItem>
-                                      ))}
+                                      {availableSkus
+                                        .filter((s) => !salesItems.some((item) => item.sku === s.sku))
+                                        .map((customer) => (
+                                          <SelectItem key={`${customer.id}-${customer.sku}`} value={customer.sku || ""}>
+                                            {customer.sku}
+                                          </SelectItem>
+                                        ))}
                                     </SelectContent>
                                   </Select>
                                 </div>

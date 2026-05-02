@@ -400,6 +400,7 @@ export type Database = {
           cost_per_bottle: number
           cost_per_case: number | null
           created_at: string | null
+          description: string | null
           id: string
           sku: string
           updated_at: string | null
@@ -409,6 +410,7 @@ export type Database = {
           cost_per_bottle: number
           cost_per_case?: number | null
           created_at?: string | null
+          description?: string | null
           id?: string
           sku: string
           updated_at?: string | null
@@ -418,6 +420,7 @@ export type Database = {
           cost_per_bottle?: number
           cost_per_case?: number | null
           created_at?: string | null
+          description?: string | null
           id?: string
           sku?: string
           updated_at?: string | null
