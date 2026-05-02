@@ -31,6 +31,7 @@ export interface SkuRow {
   id: string | null;
   sku: string;
   bottles_per_case: number;
+  description?: string;
   isNew?: boolean;
 }
 
@@ -43,7 +44,7 @@ interface EditSkusAvailableDialogProps {
 async function fetchSkuConfigurations(): Promise<SkuRow[]> {
   const { data, error } = await supabase
     .from('sku_configurations')
-    .select('id, sku, bottles_per_case')
+    .select('id, sku, bottles_per_case, description')
     .order('sku', { ascending: true });
 
   if (error) throw new Error(handleSupabaseError(error));
@@ -51,6 +52,7 @@ async function fetchSkuConfigurations(): Promise<SkuRow[]> {
     id: row.id,
     sku: row.sku ?? '',
     bottles_per_case: Number(row.bottles_per_case) || 0,
+    description: (row as { description?: string }).description ?? '',
   }));
 }
 
@@ -80,7 +82,7 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
   const addRow = () => {
     setRows((prev) => [
       ...prev,
-      { id: null, sku: '', bottles_per_case: 0, isNew: true },
+      { id: null, sku: '', bottles_per_case: 0, description: '', isNew: true },
     ]);
     setHasLocalChanges(true);
   };
@@ -90,11 +92,13 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     setHasLocalChanges(true);
   };
 
-  const updateRow = (index: number, field: 'sku' | 'bottles_per_case', value: string | number) => {
+  const updateRow = (index: number, field: 'sku' | 'bottles_per_case' | 'description', value: string | number) => {
     setRows((prev) => {
       const next = [...prev];
       if (field === 'bottles_per_case') {
         next[index] = { ...next[index], bottles_per_case: Number(value) || 0 };
+      } else if (field === 'description') {
+        next[index] = { ...next[index], description: String(value) };
       } else {
         next[index] = { ...next[index], sku: String(value).trim() };
       }
@@ -105,20 +109,21 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
 
   const saveMutation = useMutation({
     mutationFn: async (rowsToSave: SkuRow[]) => {
-      const toInsert: { sku: string; bottles_per_case: number }[] = [];
-      const toUpdate: { id: string; sku: string; bottles_per_case: number }[] = [];
+      const toInsert: { sku: string; bottles_per_case: number; description: string | null }[] = [];
+      const toUpdate: { id: string; sku: string; bottles_per_case: number; description: string | null }[] = [];
       const keptIds = new Set(rowsToSave.filter((r) => r.id && !r.isNew).map((r) => r.id as string));
       const toDelete = (initialRows ?? []).filter((r) => r.id && !keptIds.has(r.id)).map((r) => r.id as string);
 
       for (const row of rowsToSave) {
         const sku = row.sku.trim();
         const bottles = Math.max(0, Math.floor(Number(row.bottles_per_case) || 0));
+        const description = row.description?.trim() || null;
         if (!sku) continue;
 
         if (row.id && !row.isNew) {
-          toUpdate.push({ id: row.id, sku, bottles_per_case: bottles });
+          toUpdate.push({ id: row.id, sku, bottles_per_case: bottles, description });
         } else {
-          toInsert.push({ sku, bottles_per_case: bottles });
+          toInsert.push({ sku, bottles_per_case: bottles, description });
         }
       }
 
@@ -132,14 +137,14 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
       for (const row of toUpdate) {
         const { error } = await supabase
           .from('sku_configurations')
-          .update({ sku: row.sku, bottles_per_case: row.bottles_per_case, updated_at: new Date().toISOString() })
+          .update({ sku: row.sku, bottles_per_case: row.bottles_per_case, description: row.description, updated_at: new Date().toISOString() })
           .eq('id', row.id);
         if (error) errors.push(`${row.sku}: ${error.message}`);
       }
 
       if (toInsert.length) {
         const { error } = await supabase.from('sku_configurations').upsert(
-          toInsert.map((r) => ({ sku: r.sku, bottles_per_case: r.bottles_per_case })),
+          toInsert.map((r) => ({ sku: r.sku, bottles_per_case: r.bottles_per_case, description: r.description })),
           { onConflict: 'sku' }
         );
         if (error) errors.push(error.message);
@@ -177,7 +182,7 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col" aria-describedby="skus-plant-desc">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col" aria-describedby="skus-plant-desc">
         <DialogHeader>
           <DialogTitle>SKU&apos;s available in the plant</DialogTitle>
           <DialogDescription id="skus-plant-desc">Add, edit, or remove SKUs. Deleted rows will be removed when you save.</DialogDescription>
@@ -193,9 +198,10 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[50%]">SKU</TableHead>
-                    <TableHead className="w-[40%]">Bottles per case</TableHead>
-                    <TableHead className="w-[10%] text-right">Action</TableHead>
+                    <TableHead className="w-[25%]">SKU</TableHead>
+                    <TableHead className="w-[45%]">Invoice Description</TableHead>
+                    <TableHead className="w-[22%]">Bottles per case</TableHead>
+                    <TableHead className="w-[8%] text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -205,7 +211,15 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
                         <Input
                           value={row.sku}
                           onChange={(e) => updateRow(index, 'sku', e.target.value)}
-                          placeholder="e.g. P 500 ML"
+                          placeholder="e.g. 500p"
+                          className="h-9"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={row.description ?? ''}
+                          onChange={(e) => updateRow(index, 'description', e.target.value)}
+                          placeholder="e.g. Premium Drinking Water 500 ml"
                           className="h-9"
                         />
                       </TableCell>

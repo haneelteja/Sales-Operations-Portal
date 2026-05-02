@@ -263,21 +263,22 @@ export function prepareInvoiceData(
     email: string;
     gstin?: string;
     terms?: string;
-  }
+  },
+  skuDescriptions: Record<string, string> = {}
 ): InvoiceData {
   const invoiceDate = transaction.transaction_date;
   const dueDate = calculateDueDate(invoiceDate);
 
-  // Calculate safe amounts with proper fallbacks
   const safeAmount = transaction.amount ?? 0;
   const safeTotalAmount = transaction.total_amount ?? safeAmount;
   const safePricePerCase = customer.price_per_case ?? 0;
-
-  // Calculate amount in words (use safe total amount)
   const amountInWords = convertNumberToWords(safeTotalAmount);
 
+  const sku = transaction.sku || 'N/A';
+  const description = skuDescriptions[sku] || sku;
+
   return {
-    invoiceNumber: '', // Will be generated
+    invoiceNumber: '',
     invoiceDate,
     dueDate,
     companyName: companyConfig.name,
@@ -287,18 +288,25 @@ export function prepareInvoiceData(
     companyGSTIN: companyConfig.gstin,
     dealerName: customer.dealer_name,
     area: customer.area,
-    clientAddress: undefined, // Not in current schema
-    clientPhone: undefined,   // Not in current schema
-    clientEmail: undefined,   // Not in current schema
-    sku: transaction.sku || 'N/A',
+    clientAddress: undefined,
+    clientPhone: undefined,
+    clientEmail: undefined,
+    sku,
     quantity: transaction.quantity ?? 0,
     pricePerCase: safePricePerCase,
     amount: safeAmount,
     totalAmount: safeTotalAmount,
     amountInWords,
-    taxAmount: 0, // Can be calculated if tax is applicable
+    taxAmount: 0,
     grandTotal: safeTotalAmount,
-    terms: companyConfig.terms || 'Payment due within 30 days. Late payment may incur interest charges.'
+    terms: companyConfig.terms || 'Payment due within 30 days. Late payment may incur interest charges.',
+    items: [{
+      sku,
+      description,
+      quantity: transaction.quantity ?? 0,
+      pricePerCase: safePricePerCase,
+      amount: safeAmount,
+    }],
   };
 }
 
@@ -315,7 +323,8 @@ export function prepareMultiInvoiceData(
     email: string;
     gstin?: string;
     terms?: string;
-  }
+  },
+  skuDescriptions: Record<string, string> = {}
 ): InvoiceData {
   const invoiceDate = transactions[0].transaction_date;
   const dueDate = calculateDueDate(invoiceDate);
@@ -324,9 +333,10 @@ export function prepareMultiInvoiceData(
     const qty = t.quantity ?? 0;
     const amount = t.amount ?? 0;
     const pricePerCase = qty > 0 ? amount / qty : 0;
+    const sku = t.sku || 'N/A';
     return {
-      sku: t.sku || 'N/A',
-      description: t.description || t.sku || 'N/A',
+      sku,
+      description: skuDescriptions[sku] || sku,
       quantity: qty,
       pricePerCase,
       amount,

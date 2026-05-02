@@ -98,10 +98,21 @@ export function useInvoiceGeneration() {
         // Generate invoice number
         const invoiceNumber = await generateInvoiceNumber('INV', true, true);
 
+        // Fetch SKU descriptions for invoice line items
+        const { data: skuConfigs } = await supabase
+          .from('sku_configurations')
+          .select('sku, description');
+        const skuDescriptions: Record<string, string> = {};
+        for (const s of skuConfigs ?? []) {
+          if (s.sku && (s as { description?: string | null }).description) {
+            skuDescriptions[s.sku] = (s as { description?: string | null }).description as string;
+          }
+        }
+
         // Prepare invoice data (multi-SKU or single)
         const invoiceData = (allTransactions && allTransactions.length > 1)
-          ? prepareMultiInvoiceData(allTransactions, customer, companyConfig)
-          : prepareInvoiceData(transaction, customer, companyConfig);
+          ? prepareMultiInvoiceData(allTransactions, customer, companyConfig, skuDescriptions)
+          : prepareInvoiceData(transaction, customer, companyConfig, skuDescriptions);
         invoiceData.invoiceNumber = invoiceNumber;
 
         // Generate documents
@@ -231,9 +242,19 @@ async function regenerateInvoice(
   const storageProvider = existingInvoice.storage_provider || await getStorageProvider();
   const storageService = new StorageService(storageProvider);
 
+  const { data: skuConfigs } = await supabase
+    .from('sku_configurations')
+    .select('sku, description');
+  const skuDescriptions: Record<string, string> = {};
+  for (const s of skuConfigs ?? []) {
+    if (s.sku && (s as { description?: string | null }).description) {
+      skuDescriptions[s.sku] = (s as { description?: string | null }).description as string;
+    }
+  }
+
   const invoiceData = (allTransactions && allTransactions.length > 1)
-    ? prepareMultiInvoiceData(allTransactions, customer, companyConfig)
-    : prepareInvoiceData(transaction, customer, companyConfig);
+    ? prepareMultiInvoiceData(allTransactions, customer, companyConfig, skuDescriptions)
+    : prepareInvoiceData(transaction, customer, companyConfig, skuDescriptions);
   invoiceData.invoiceNumber = existingInvoice.invoice_number;
 
   // Generate new documents
