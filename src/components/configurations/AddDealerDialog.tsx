@@ -174,7 +174,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const initialPricesBySkuRef = useRef<Record<string, number>>({});
 
   const { data: skuOptions = [], isLoading: skusLoading } = useQuery({
-    queryKey: ["sku-configurations"],
+    queryKey: ["sku-configurations-options"],
     queryFn: fetchSkuConfigurations,
     enabled: open,
   });
@@ -408,6 +408,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       queryClient.invalidateQueries({ queryKey: ["add-client-distinct-names"] });
       queryClient.invalidateQueries({ queryKey: ["add-client-branches"] });
       queryClient.invalidateQueries({ queryKey: ["add-client-pair-rows"] });
+      queryClient.invalidateQueries({ queryKey: ["sku-configurations-options"] });
       toast({
         title: "Success",
         description: isPairHistoryMode
