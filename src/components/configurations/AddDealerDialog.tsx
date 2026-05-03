@@ -266,13 +266,14 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     if (open) resetForm();
   }, [open, resetForm]);
 
-  // Prefill GST / WhatsApp when picking an existing client (from the latest active row for that client)
+  // Prefill GST / WhatsApp when picking an existing client (only when branch is not yet selected)
   useEffect(() => {
     if (!open || !isExistingClient || !selectedExistingClient.trim()) return;
+    if (isExistingBranch && selectedExistingBranch.trim()) return; // branch data takes precedence
     if (!sampleContact) return;
     setGstNumber(sampleContact.gst_number || "");
     setWhatsappNumber(sampleContact.whatsapp_number || "");
-  }, [open, isExistingClient, selectedExistingClient, sampleContact]);
+  }, [open, isExistingClient, selectedExistingClient, isExistingBranch, selectedExistingBranch, sampleContact]);
 
   // When both client and branch are existing, load latest SKU rows (display only - saves insert new rows)
   useEffect(() => {
@@ -398,10 +399,35 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         price_per_bottle: parseFloat(row.price_per_bottle),
         bottles_per_case: row.bottles_per_case,
       }));
-      const { error } = await supabase
+      // Insert pricing rows; on unique conflict (same date+SKU), update price fields
+      for (const row of inserts) {
+        const { error: insertErr } = await supabase.from("customers").insert(row);
+        if (insertErr) {
+          if (insertErr.code === "23505") {
+            const { error: updateErr } = await supabase
+              .from("customers")
+              .update({
+                price_per_bottle: row.price_per_bottle,
+                bottles_per_case: row.bottles_per_case,
+              })
+              .eq("dealer_name", row.dealer_name)
+              .eq("area", row.area)
+              .eq("sku", row.sku)
+              .eq("pricing_date", row.pricing_date);
+            if (updateErr) throw new Error(handleSupabaseError(updateErr));
+          } else {
+            throw new Error(handleSupabaseError(insertErr));
+          }
+        }
+      }
+
+      // Sync updated GST / WhatsApp across all existing rows for this client+branch
+      const { error: syncErr } = await supabase
         .from("customers")
-        .upsert(inserts, { onConflict: "dealer_name,area,sku,pricing_date" });
-      if (error) throw new Error(handleSupabaseError(error));
+        .update({ gst_number: gst || null, whatsapp_number: wa || null })
+        .eq("dealer_name", resolvedDealerName)
+        .eq("area", resolvedArea);
+      if (syncErr) throw new Error(handleSupabaseError(syncErr));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
