@@ -295,7 +295,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       rows.push({
         sku,
         price_per_bottle: String(ppb),
-        bottles_per_case: opt?.bottles_per_case ?? 0,
+        bottles_per_case: opt?.bottles_per_case ?? cust.bottles_per_case ?? 0,
         price_per_case: cust.price_per_case ?? 0,
       });
     });
@@ -306,9 +306,10 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       setSkuRows(updateRowPricePerCase(rows));
     }
     const one = rowsForPair[0];
-    if (one?.gst_number) setGstNumber(one.gst_number);
-    if (one?.whatsapp_number) setWhatsappNumber(one.whatsapp_number);
-  }, [open, pairKey, rowsForPair, pairRowsLoading, skuOptions, updateRowPricePerCase]);
+    // Always set GST/WA; fall back to client-level data if branch rows have none
+    setGstNumber(one?.gst_number ?? sampleContact?.gst_number ?? "");
+    setWhatsappNumber(one?.whatsapp_number ?? sampleContact?.whatsapp_number ?? "");
+  }, [open, pairKey, rowsForPair, pairRowsLoading, skuOptions, sampleContact, updateRowPricePerCase]);
 
   const resolvedDealerName = isExistingClient ? selectedExistingClient.trim() : dealerNameInput.trim();
   const resolvedArea =
