@@ -405,7 +405,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         const { error: insertErr } = await supabase.from("customers").insert(row);
         if (insertErr) {
           if (insertErr.code === "23505") {
-            const { error: updateErr } = await supabase
+            // Try exact-date match first (works when 4-column constraint is active)
+            const { data: exactUpdated, error: updateErr } = await supabase
               .from("customers")
               .update({
                 price_per_bottle: row.price_per_bottle,
@@ -414,8 +415,23 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               .eq("dealer_name", row.dealer_name)
               .eq("area", row.area)
               .eq("sku", row.sku)
-              .eq("pricing_date", row.pricing_date);
+              .eq("pricing_date", row.pricing_date)
+              .select("id");
             if (updateErr) throw new Error(handleSupabaseError(updateErr));
+            if (!exactUpdated || exactUpdated.length === 0) {
+              // Old 3-column constraint still active — update any existing row for this client/branch/SKU
+              const { error: fallbackErr } = await supabase
+                .from("customers")
+                .update({
+                  price_per_bottle: row.price_per_bottle,
+                  bottles_per_case: row.bottles_per_case,
+                  pricing_date: row.pricing_date,
+                })
+                .eq("dealer_name", row.dealer_name)
+                .eq("area", row.area)
+                .eq("sku", row.sku);
+              if (fallbackErr) throw new Error(handleSupabaseError(fallbackErr));
+            }
           } else {
             throw new Error(handleSupabaseError(insertErr));
           }
