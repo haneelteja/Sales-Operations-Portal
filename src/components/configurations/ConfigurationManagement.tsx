@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, memo, useEffect } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
@@ -55,6 +55,16 @@ const ConfigurationManagement = () => {
     price_per_case: null,
     price_per_bottle: null
   });
+
+  // Radix Dialog sets pointer-events:none on body while open; restore it if cleanup is missed
+  useEffect(() => {
+    if (!isEditCustomerOpen) {
+      const t = setTimeout(() => {
+        document.body.style.removeProperty('pointer-events');
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [isEditCustomerOpen]);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -687,7 +697,7 @@ const ConfigurationManagement = () => {
 
       {/* Edit client dialog */}
       <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>
-        {isEditCustomerOpen && <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc" onCloseAutoFocus={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc" onCloseAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Edit client</DialogTitle>
             <DialogDescription id="edit-client-desc">Update client details and pricing.</DialogDescription>
@@ -804,7 +814,7 @@ const ConfigurationManagement = () => {
               </Button>
             </div>
           </form>
-        </DialogContent>}
+        </DialogContent>
       </Dialog>
     </div>
   );
