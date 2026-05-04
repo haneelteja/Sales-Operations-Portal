@@ -2,6 +2,15 @@
 ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_dealer_name_area_sku_key;
 
 -- Add new 4-column constraint: same SKU can have multiple rows on different dates
-ALTER TABLE customers
-  ADD CONSTRAINT customers_dealer_area_sku_date_key
-  UNIQUE (dealer_name, area, sku, pricing_date);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'customers_dealer_area_sku_date_key'
+  ) THEN
+    ALTER TABLE customers
+      ADD CONSTRAINT customers_dealer_area_sku_date_key
+      UNIQUE (dealer_name, area, sku, pricing_date);
+  END IF;
+END
+$$;
