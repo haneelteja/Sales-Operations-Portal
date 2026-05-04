@@ -177,6 +177,7 @@ const ConfigurationManagement = () => {
     onSuccess: () => {
       toast({ title: "Success", description: "Customer updated successfully!" });
       setIsEditCustomerOpen(false);
+      setEditingCustomer(null);
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
     },
@@ -686,7 +687,7 @@ const ConfigurationManagement = () => {
 
       {/* Edit client dialog */}
       <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>
-        <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc">
+        <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc" onCloseAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Edit client</DialogTitle>
             <DialogDescription id="edit-client-desc">Update client details and pricing.</DialogDescription>
