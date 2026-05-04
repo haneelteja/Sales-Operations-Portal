@@ -32,7 +32,8 @@ const ConfigurationManagement = () => {
     sku: "",
     price_per_case: "",
     price_per_bottle: "",
-    whatsapp_number: ""
+    whatsapp_number: "",
+    pricing_date: "",
   });
 
   // Filtering and sorting state for customers
@@ -95,14 +96,14 @@ const ConfigurationManagement = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("sku_configurations")
-        .select("sku")
+        .select("sku, bottles_per_case")
         .order("sku", { ascending: true });
       if (error) throw new Error(handleSupabaseError(error));
       const seen = new Set<string>();
       return (data || [])
         .filter((r) => r.sku && !seen.has((r.sku as string).toLowerCase()) && (seen.add((r.sku as string).toLowerCase()), true))
-        .map((r) => (r.sku as string).trim())
-        .sort();
+        .map((r) => ({ sku: (r.sku as string).trim(), bottles_per_case: Number(r.bottles_per_case) || 0 }))
+        .sort((a, b) => a.sku.localeCompare(b.sku));
     },
     retry: 2,
   });
@@ -110,20 +111,22 @@ const ConfigurationManagement = () => {
   // Update customer mutation (edit form)
   const updateCustomerMutation = useMutation({
     mutationFn: async (data: { id: string } & typeof editForm) => {
-      // First, check if updating dealer_name or area would create a duplicate
-      if (data.dealer_name && data.area) {
+      // Check if the 4-column unique key would conflict with another row
+      if (data.dealer_name && data.area && data.sku && data.pricing_date) {
         const { data: existingCustomers, error: checkError } = await supabase
           .from("customers")
           .select("id")
           .eq("dealer_name", data.dealer_name)
           .eq("area", data.area)
+          .eq("sku", data.sku)
+          .eq("pricing_date", data.pricing_date)
           .neq("id", data.id)
           .limit(1);
 
         if (checkError) {
           console.error('Error checking for duplicates:', checkError);
         } else if (existingCustomers && existingCustomers.length > 0) {
-          throw new Error(`A customer with client name "${data.dealer_name}" and branch "${data.area}" already exists. Please use different values.`);
+          throw new Error(`A pricing row for "${data.dealer_name}" / "${data.area}" / "${data.sku}" on ${data.pricing_date} already exists.`);
         }
       }
 
@@ -440,7 +443,8 @@ const ConfigurationManagement = () => {
       sku: customer.sku || "",
       price_per_case: customer.price_per_case?.toString() || "",
       price_per_bottle: customer.price_per_bottle?.toString() || "",
-      whatsapp_number: customer.whatsapp_number || ""
+      whatsapp_number: customer.whatsapp_number || "",
+      pricing_date: customer.pricing_date || new Date().toISOString().split('T')[0],
     });
     setIsEditCustomerOpen(true);
   };
@@ -448,16 +452,9 @@ const ConfigurationManagement = () => {
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCustomer) return;
-    
     updateCustomerMutation.mutate({
       id: editingCustomer.id,
-      dealer_name: editForm.dealer_name,
-      area: editForm.area,
-      sku: editForm.sku,
-      price_per_case: editForm.price_per_case,
-      price_per_bottle: editForm.price_per_bottle,
-      whatsapp_number: editForm.whatsapp_number,
-      pricing_date: editingCustomer.pricing_date || customerForm.pricing_date || new Date().toISOString().split('T')[0]
+      ...editForm,
     });
   };
 
@@ -708,7 +705,17 @@ const ConfigurationManagement = () => {
                   placeholder="Customer company name"
                 />
               </div>
-              
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-pricing-date">Pricing date</Label>
+                <Input
+                  id="edit-pricing-date"
+                  type="date"
+                  value={editForm.pricing_date}
+                  onChange={(e) => setEditForm({...editForm, pricing_date: e.target.value})}
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="edit-area">Branch</Label>
                 <Input
@@ -718,29 +725,32 @@ const ConfigurationManagement = () => {
                   placeholder="Branch or location"
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="edit-sku">SKU</Label>
-                <Input
-                  id="edit-sku"
-                  value={editForm.sku}
-                  onChange={(e) => setEditForm({...editForm, sku: e.target.value})}
-                  placeholder="Product SKU"
-                />
+                <Select
+                  value={editForm.sku || "__none__"}
+                  onValueChange={(v) => {
+                    const sku = v === "__none__" ? "" : v;
+                    const opt = availableSKUs.find((o) => o.sku === sku);
+                    const ppb = parseFloat(editForm.price_per_bottle);
+                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(2) : editForm.price_per_case;
+                    setEditForm({ ...editForm, sku, price_per_case: ppc });
+                  }}
+                  disabled={availableSKUsLoading}
+                >
+                  <SelectTrigger id="edit-sku">
+                    <SelectValue placeholder="Select SKU" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select SKU</SelectItem>
+                    {availableSKUs.map((o) => (
+                      <SelectItem key={o.sku} value={o.sku}>{o.sku}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-price-per-case">Price per Case (₹)</Label>
-                <Input
-                  id="edit-price-per-case"
-                  type="number"
-                  step="0.01"
-                  value={editForm.price_per_case}
-                  onChange={(e) => setEditForm({...editForm, price_per_case: e.target.value})}
-                  placeholder="0.00"
-                />
-              </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="edit-price-per-bottle">Price per Bottle (₹)</Label>
                 <Input
@@ -748,11 +758,29 @@ const ConfigurationManagement = () => {
                   type="number"
                   step="0.01"
                   value={editForm.price_per_bottle}
-                  onChange={(e) => setEditForm({...editForm, price_per_bottle: e.target.value})}
+                  onChange={(e) => {
+                    const ppb = parseFloat(e.target.value);
+                    const opt = availableSKUs.find((o) => o.sku === editForm.sku);
+                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(2) : editForm.price_per_case;
+                    setEditForm({ ...editForm, price_per_bottle: e.target.value, price_per_case: ppc });
+                  }}
                   placeholder="0.00"
                 />
               </div>
-              
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-price-per-case">Price per Case (₹)</Label>
+                <Input
+                  id="edit-price-per-case"
+                  type="number"
+                  step="0.01"
+                  value={editForm.price_per_case}
+                  readOnly
+                  className="bg-muted"
+                  placeholder="Auto-calculated"
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="edit-whatsapp-number">WhatsApp Number</Label>
                 <Input
