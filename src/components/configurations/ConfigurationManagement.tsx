@@ -134,7 +134,6 @@ const ConfigurationManagement = () => {
         dealer_name: string;
         area: string;
         sku: string | null;
-        price_per_case: number | null;
         price_per_bottle: number | null;
         whatsapp_number: string | null;
         pricing_date: string | null;
@@ -144,9 +143,7 @@ const ConfigurationManagement = () => {
       if (data.dealer_name) updateData.dealer_name = data.dealer_name;
       if (data.area !== undefined) updateData.area = data.area;
       if (data.sku !== undefined) updateData.sku = data.sku;
-      if (data.price_per_case !== undefined) {
-        updateData.price_per_case = data.price_per_case ? parseFloat(data.price_per_case) : null;
-      }
+      // price_per_case is a generated column — never include it in UPDATE
       if (data.price_per_bottle !== undefined) {
         updateData.price_per_bottle = data.price_per_bottle ? parseFloat(data.price_per_bottle) : null;
       }
