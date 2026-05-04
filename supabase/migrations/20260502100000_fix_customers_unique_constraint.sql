@@ -1,5 +1,6 @@
--- Drop the old 3-column unique constraint that prevents price history
+-- Drop old 3-column unique constraints that prevent price history
 ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_dealer_name_area_sku_key;
+ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_client_branch_sku_unique;
 
 -- Add new 4-column constraint: same SKU can have multiple rows on different dates
 DO $$
