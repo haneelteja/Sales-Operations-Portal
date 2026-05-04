@@ -687,7 +687,7 @@ const ConfigurationManagement = () => {
 
       {/* Edit client dialog */}
       <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>
-        <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc" onCloseAutoFocus={(e) => e.preventDefault()}>
+        {isEditCustomerOpen && <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc" onCloseAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Edit client</DialogTitle>
             <DialogDescription id="edit-client-desc">Update client details and pricing.</DialogDescription>
@@ -804,7 +804,7 @@ const ConfigurationManagement = () => {
               </Button>
             </div>
           </form>
-        </DialogContent>
+        </DialogContent>}
       </Dialog>
     </div>
   );
