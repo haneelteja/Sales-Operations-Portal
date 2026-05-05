@@ -33,6 +33,15 @@ type AvailableSku = {
 const normalizeLookupValue = (value: string | null | undefined): string =>
   (value ?? '').trim().toLowerCase();
 
+const getRowTimestamp = (record: { pricing_date?: string | null; created_at?: string | null }): number => {
+  const d = record.pricing_date
+    ? new Date(record.pricing_date).getTime()
+    : NaN;
+  if (!isNaN(d)) return d;
+  const c = record.created_at ? new Date(record.created_at).getTime() : NaN;
+  return isNaN(c) ? 0 : c;
+};
+
 export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | undefined) {
   const customerById = useMemo(() => {
     const index = new Map<string, CustomerDirectoryRecord>();
@@ -90,11 +99,9 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
 
     if (matches.length === 0) return undefined;
     // When multiple rows exist (different pricing_date), return the latest
-    return matches.reduce((latest, current) => {
-      const latestDate = new Date(latest.pricing_date || 0).getTime();
-      const currentDate = new Date(current.pricing_date || 0).getTime();
-      return currentDate > latestDate ? current : latest;
-    });
+    return matches.reduce((latest, current) =>
+      getRowTimestamp(current) >= getRowTimestamp(latest) ? current : latest
+    );
   }, [customerById, customers, getCustomerBranch, getCustomerName]);
 
   const getUniqueCustomerNames = useCallback(() => {
@@ -161,9 +168,9 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
       if (!existing) {
         skuMap.set(normalizedSku, customer);
       } else {
-        const existingDate = new Date(existing.pricing_date || 0).getTime();
-        const currentDate = new Date(customer.pricing_date || 0).getTime();
-        if (currentDate > existingDate) skuMap.set(normalizedSku, customer);
+        if (getRowTimestamp(customer) >= getRowTimestamp(existing)) {
+          skuMap.set(normalizedSku, customer);
+        }
       }
     });
 
