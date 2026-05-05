@@ -74,7 +74,7 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
     const normalizedBranch = normalizeLookupValue(params.branch);
     const normalizedSku = normalizeLookupValue(params.sku);
 
-    return customers.find((customer) => {
+    const matches = customers.filter((customer) => {
       const nameMatches = normalizedName
         ? normalizeLookupValue(getCustomerName(customer)) === normalizedName
         : true;
@@ -86,6 +86,14 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
         : true;
 
       return nameMatches && branchMatches && skuMatches;
+    });
+
+    if (matches.length === 0) return undefined;
+    // When multiple rows exist (different pricing_date), return the latest
+    return matches.reduce((latest, current) => {
+      const latestDate = new Date(latest.pricing_date || 0).getTime();
+      const currentDate = new Date(current.pricing_date || 0).getTime();
+      return currentDate > latestDate ? current : latest;
     });
   }, [customerById, customers, getCustomerBranch, getCustomerName]);
 
@@ -136,21 +144,36 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
     const selectedCustomerName = normalizeLookupValue(getCustomerName(selectedCustomer));
     const normalizedBranch = normalizeLookupValue(branch);
 
-    return customers
-      .filter((customer) => {
-        return (
-          normalizeLookupValue(getCustomerName(customer)) === selectedCustomerName &&
-          normalizeLookupValue(getCustomerBranch(customer)) === normalizedBranch &&
-          !!customer.sku?.trim()
-        );
-      })
-      .map((customer) => ({
-        id: `sku-${customer.sku}`,
-        sku: customer.sku ?? '',
-        dealer_name: customer.dealer_name,
-        area: customer.area,
-        price_per_case: customer.price_per_case || 0,
-      }));
+    const matchingRecords = customers.filter((customer) => {
+      return (
+        normalizeLookupValue(getCustomerName(customer)) === selectedCustomerName &&
+        normalizeLookupValue(getCustomerBranch(customer)) === normalizedBranch &&
+        !!customer.sku?.trim()
+      );
+    });
+
+    // Deduplicate by SKU — when the same SKU has multiple rows (different pricing_date),
+    // keep only the row with the latest pricing_date so the current price is shown.
+    const skuMap = new Map<string, CustomerDirectoryRecord>();
+    matchingRecords.forEach((customer) => {
+      const normalizedSku = normalizeLookupValue(customer.sku);
+      const existing = skuMap.get(normalizedSku);
+      if (!existing) {
+        skuMap.set(normalizedSku, customer);
+      } else {
+        const existingDate = new Date(existing.pricing_date || 0).getTime();
+        const currentDate = new Date(customer.pricing_date || 0).getTime();
+        if (currentDate > existingDate) skuMap.set(normalizedSku, customer);
+      }
+    });
+
+    return Array.from(skuMap.values()).map((customer) => ({
+      id: `sku-${customer.sku}`,
+      sku: customer.sku ?? '',
+      dealer_name: customer.dealer_name,
+      area: customer.area,
+      price_per_case: customer.price_per_case || 0,
+    }));
   }, [customers, findCustomerById, getCustomerBranch, getCustomerName]);
 
   const resolveCustomerIdForBranch = useCallback((customerId?: string, branch?: string) => {
