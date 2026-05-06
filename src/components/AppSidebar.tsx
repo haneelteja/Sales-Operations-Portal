@@ -49,7 +49,7 @@ const menuItems: MenuItem[] = [
   { id: "order-management", title: "Orders Management", icon: ShoppingCart },
   { id: "receivables-management", title: "Receivables Management", icon: Wallet },
   { id: "client-transactions", title: "Client Transactions", icon: DollarSign },
-  { id: "factory", title: "Factory Payables", icon: Factory },
+  { id: "factory", title: "Factory Transactions", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
   { id: "labels", title: "Labels", icon: Tag },
   { id: "configurations", title: "Configurations", icon: Cog },

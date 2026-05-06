@@ -19,7 +19,7 @@ import { exportJsonToExcel } from '@/services/export/excelExport';
 const LabelPurchases = () => {
   const [form, setForm] = useState({
     vendor_id: "",
-    sku: "",
+    client_id: "",
     quantity: "",
     cost_per_label: "",
     total_amount: "",
@@ -30,7 +30,7 @@ const LabelPurchases = () => {
   const [editingPurchase, setEditingPurchase] = useState<LabelPurchase | null>(null);
   const [editForm, setEditForm] = useState({
     vendor_id: "",
-    sku: "",
+    client_id: "",
     quantity: "",
     cost_per_label: "",
     total_amount: "",
@@ -43,7 +43,7 @@ const LabelPurchases = () => {
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState({
     vendor: "",
-    sku: "",
+    client: "",
     quantity: "",
     cost_per_label: "",
     total_amount: "",
@@ -52,7 +52,7 @@ const LabelPurchases = () => {
   const [columnSorts, setColumnSorts] = useState({
     purchase_date: "desc" as "asc" | "desc" | null,
     vendor: "asc" as "asc" | "desc" | null,
-    sku: "asc" as "asc" | "desc" | null,
+    client: "asc" as "asc" | "desc" | null,
     quantity: "asc" as "asc" | "desc" | null,
     cost_per_label: "asc" as "asc" | "desc" | null,
     total_amount: "asc" as "asc" | "desc" | null
@@ -118,16 +118,16 @@ const LabelPurchases = () => {
       const insertData: {
         vendor_id: string;
         client_id: string | null;
-        sku: string;
+        sku: string | null;
         quantity: number;
         cost_per_label: number;
         total_amount: number;
         purchase_date: string;
         description?: string;
       } = {
-        vendor_id: data.vendor_id, // Store vendor name as text (database expects TEXT)
+        vendor_id: data.vendor_id,
         client_id: data.client_id || null,
-        sku: data.sku,
+        sku: null,
         quantity: parseInt(data.quantity),
         cost_per_label: parseFloat(data.cost_per_label),
         total_amount: parseFloat(data.total_amount),
@@ -152,7 +152,7 @@ const LabelPurchases = () => {
       toast({ title: "Success", description: "Label purchase recorded!" });
       setForm({
         vendor_id: "",
-        sku: "",
+        client_id: "",
         quantity: "",
         cost_per_label: "",
         total_amount: "",
@@ -180,16 +180,16 @@ const LabelPurchases = () => {
       const updateData: {
         vendor_id: string;
         client_id: string | null;
-        sku: string;
+        sku: string | null;
         quantity: number;
         cost_per_label: number;
         total_amount: number;
         purchase_date: string;
         description?: string;
       } = {
-        vendor_id: data.vendor_id, // Store vendor name as text (database expects TEXT)
+        vendor_id: data.vendor_id,
         client_id: data.client_id || null,
-        sku: data.sku,
+        sku: null,
         quantity: parseInt(data.quantity),
         cost_per_label: parseFloat(data.cost_per_label),
         total_amount: parseFloat(data.total_amount),
@@ -215,7 +215,7 @@ const LabelPurchases = () => {
       setEditingPurchase(null);
       setEditForm({
         vendor_id: "",
-        sku: "",
+        client_id: "",
         quantity: "",
         cost_per_label: "",
         total_amount: "",
@@ -268,11 +268,11 @@ const LabelPurchases = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!form.vendor_id || !form.sku || !form.quantity || !form.cost_per_label) {
-      toast({ 
-        title: "Error", 
-        description: "Vendor, SKU, Quantity, and Cost per Label are required",
+
+    if (!form.vendor_id || !form.client_id || !form.quantity || !form.cost_per_label) {
+      toast({
+        title: "Error",
+        description: "Vendor, Client, Quantity, and Cost per Label are required",
         variant: "destructive"
       });
       return;
@@ -303,7 +303,7 @@ const LabelPurchases = () => {
     setEditingPurchase(purchase);
     setEditForm({
       vendor_id: purchase.vendor_id || "",
-      sku: purchase.sku || "",
+      client_id: purchase.client_id || "",
       quantity: purchase.quantity.toString(),
       cost_per_label: purchase.cost_per_label.toString(),
       total_amount: purchase.total_amount.toString(),
@@ -315,11 +315,11 @@ const LabelPurchases = () => {
   // Handle edit submit
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!editForm.vendor_id || !editForm.sku || !editForm.quantity || !editForm.cost_per_label) {
-      toast({ 
-        title: "Error", 
-        description: "Vendor, SKU, Quantity, and Cost per Label are required",
+
+    if (!editForm.vendor_id || !editForm.client_id || !editForm.quantity || !editForm.cost_per_label) {
+      toast({
+        title: "Error",
+        description: "Vendor, Client, Quantity, and Cost per Label are required",
         variant: "destructive"
       });
       return;
@@ -372,11 +372,12 @@ const LabelPurchases = () => {
       if (debouncedSearchTerm) {
         const searchLower = debouncedSearchTerm.toLowerCase();
         const vendorName = purchase.vendor_id?.toLowerCase() || '';
-        const sku = purchase.sku?.toLowerCase() || '';
+        const customer = customers?.find(c => c.id === purchase.client_id);
+        const clientName = customer?.dealer_name?.toLowerCase() || '';
         const description = purchase.description?.toLowerCase() || '';
-        
-        if (!vendorName.includes(searchLower) && 
-            !sku.includes(searchLower) && 
+
+        if (!vendorName.includes(searchLower) &&
+            !clientName.includes(searchLower) &&
             !description.includes(searchLower)) {
           return false;
         }
@@ -389,9 +390,10 @@ const LabelPurchases = () => {
         if (!vendorName.includes(columnFilters.vendor.toLowerCase())) return false;
       }
 
-      if (columnFilters.sku) {
-        const sku = purchase.sku?.toLowerCase() || '';
-        if (!sku.includes(columnFilters.sku.toLowerCase())) return false;
+      if (columnFilters.client) {
+        const customer = customers?.find(c => c.id === purchase.client_id);
+        const clientName = customer?.dealer_name?.toLowerCase() || '';
+        if (!clientName.includes(columnFilters.client.toLowerCase())) return false;
       }
 
       if (columnFilters.quantity) {
@@ -431,10 +433,13 @@ const LabelPurchases = () => {
             aValue = a.vendor_id || '';
             bValue = b.vendor_id || '';
             break;
-          case 'sku':
-            aValue = a.sku || '';
-            bValue = b.sku || '';
+          case 'client': {
+            const ca = customers?.find(c => c.id === a.client_id);
+            const cb = customers?.find(c => c.id === b.client_id);
+            aValue = ca?.dealer_name || '';
+            bValue = cb?.dealer_name || '';
             break;
+          }
           case 'quantity':
             aValue = a.quantity || 0;
             bValue = b.quantity || 0;
@@ -496,7 +501,7 @@ const LabelPurchases = () => {
   const clearAllFilters = useCallback(() => {
     setSearchTerm("");
     setColumnFilters({
-      sku: "",
+      client: "",
       vendor: "",
       quantity: "",
       cost_per_label: "",
@@ -505,7 +510,7 @@ const LabelPurchases = () => {
     });
     setColumnSorts({
       purchase_date: "desc",
-      sku: null,
+      client: null,
       vendor: null,
       quantity: null,
       cost_per_label: null,
@@ -515,15 +520,18 @@ const LabelPurchases = () => {
 
   // Export to Excel (memoized)
   const handleExport = useCallback(async () => {
-    const exportData = filteredAndSortedPurchases.map(purchase => ({
-      'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
-      'Vendor': purchase.vendor_id || 'N/A',
-      'SKU': purchase.sku || 'N/A',
-      'Quantity': purchase.quantity,
-      'Cost per Label': purchase.cost_per_label,
-      'Total Amount': purchase.total_amount,
-      'Description': purchase.description || ''
-    }));
+    const exportData = filteredAndSortedPurchases.map(purchase => {
+      const customer = customers?.find(c => c.id === purchase.client_id);
+      return {
+        'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
+        'Vendor': purchase.vendor_id || 'N/A',
+        'Client': customer?.dealer_name || 'N/A',
+        'Quantity': purchase.quantity,
+        'Cost per Label': purchase.cost_per_label,
+        'Total Amount': purchase.total_amount,
+        'Description': purchase.description || ''
+      };
+    });
 
     await exportJsonToExcel(exportData, 'Label Purchases', `label-purchases-${new Date().toISOString().split('T')[0]}.xlsx`);
   }, [filteredAndSortedPurchases]);
@@ -545,21 +553,21 @@ const LabelPurchases = () => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="sku">SKU *</Label>
-            <Select value={form.sku} onValueChange={(value) => setForm({ ...form, sku: value })}>
+            <Label htmlFor="client">Client *</Label>
+            <Select value={form.client_id} onValueChange={(value) => setForm({ ...form, client_id: value })}>
               <SelectTrigger>
-                <SelectValue placeholder="Select SKU" />
+                <SelectValue placeholder="Select client" />
               </SelectTrigger>
               <SelectContent>
-                {getAvailableSKUs().length > 0 ? (
-                  getAvailableSKUs().map((skuData) => (
-                    <SelectItem key={skuData.sku} value={skuData.sku}>
-                      {skuData.sku}
+                {getUniqueCustomers().length > 0 ? (
+                  getUniqueCustomers().map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.dealer_name}
                     </SelectItem>
                   ))
                 ) : (
                   <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                    No SKU configured. Add SKUs in Application Configuration.
+                    No clients found.
                   </div>
                 )}
               </SelectContent>
@@ -721,17 +729,17 @@ const LabelPurchases = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleColumnSortChange('sku')}
+                      onClick={() => handleColumnSortChange('client')}
                       className="h-6 w-6 p-0"
                     >
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
-                    SKU
+                    Client
                     <ColumnFilter
-                      columnKey="sku"
-                      columnName="SKU"
-                      filterValue={columnFilters.sku}
-                      onFilterChange={(value) => handleColumnFilterChange('sku', value)}
+                      columnKey="client"
+                      columnName="Client"
+                      filterValue={columnFilters.client}
+                      onFilterChange={(value) => handleColumnFilterChange('client', value)}
                       dataType="text"
                     />
                   </div>
@@ -810,7 +818,7 @@ const LabelPurchases = () => {
                       {purchase.vendor_id || 'N/A'}
                     </TableCell>
                     <TableCell>
-                      {purchase.sku || 'N/A'}
+                      {customers?.find(c => c.id === purchase.client_id)?.dealer_name || 'N/A'}
                     </TableCell>
               <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
               <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
@@ -845,21 +853,21 @@ const LabelPurchases = () => {
                                 </div>
 
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-sku">SKU *</Label>
-                                  <Select value={editForm.sku} onValueChange={(value) => setEditForm({ ...editForm, sku: value })}>
+                                  <Label htmlFor="edit-client">Client *</Label>
+                                  <Select value={editForm.client_id} onValueChange={(value) => setEditForm({ ...editForm, client_id: value })}>
                                     <SelectTrigger>
-                                      <SelectValue placeholder="Select SKU" />
+                                      <SelectValue placeholder="Select client" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {getAvailableSKUs().length > 0 ? (
-                                        getAvailableSKUs().map((skuData) => (
-                                          <SelectItem key={skuData.sku} value={skuData.sku}>
-                                            {skuData.sku}
+                                      {getUniqueCustomers().length > 0 ? (
+                                        getUniqueCustomers().map((customer) => (
+                                          <SelectItem key={customer.id} value={customer.id}>
+                                            {customer.dealer_name}
                                           </SelectItem>
                                         ))
                                       ) : (
                                         <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                          No SKU configured
+                                          No clients found
                                         </div>
                                       )}
                                     </SelectContent>

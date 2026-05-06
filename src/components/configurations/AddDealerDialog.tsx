@@ -335,8 +335,11 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       if (!branchInput?.trim()) errors.area = "Branch is required";
     }
 
-    const gstResult = gstinSchema.safeParse(gstNumber?.trim().toUpperCase());
-    if (!gstResult.success) errors.gst_number = gstResult.error.errors[0]?.message ?? "Invalid GST Number";
+    const trimmedGst = gstNumber?.trim().toUpperCase();
+    if (trimmedGst) {
+      const gstResult = gstinSchema.safeParse(trimmedGst);
+      if (!gstResult.success) errors.gst_number = gstResult.error.errors[0]?.message ?? "Invalid GST Number";
+    }
     const waResult = indiaWhatsAppSchema.safeParse(whatsappNumber?.trim());
     if (!waResult.success) errors.whatsapp_number = waResult.error.errors[0]?.message ?? "Invalid WhatsApp Number";
 
@@ -618,7 +621,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="dealer-gst">GST Number *</Label>
+              <Label htmlFor="dealer-gst">GST Number</Label>
               <Input
                 id="dealer-gst"
                 value={gstNumber}
