@@ -48,6 +48,13 @@ const safeNumValue = (v: string | number | undefined | null): string => {
   return isNaN(n) ? "" : String(v);
 };
 
+// Checks whether a value passes a multiselect filter (empty filter = passes everything)
+const passesMultiFilter = (value: string, filter: string | string[] | null | undefined): boolean => {
+  if (!filter) return true;
+  const filters = Array.isArray(filter) ? filter : [filter];
+  return filters.length === 0 || filters.some(f => value.toLowerCase().includes(f.toLowerCase()));
+};
+
 const SalesEntry = () => {
   const { isMobileDevice } = useMobileDetection();
   const [activeTab, setActiveTab] = useState<string>("sale");
@@ -913,40 +920,52 @@ const SalesEntry = () => {
     // Page reset is handled by the hook automatically
   }, [clearColumnFilter]);
 
-  // Get unique values for multi-select filters
+  // Get unique values for multi-select filters — cascading: each column reflects the other active filters
   const getUniqueCustomers = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
+      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
+      if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
+      if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
       const name = t.customers?.dealer_name;
       if (name) unique.add(name);
     });
     return Array.from(unique).sort();
-  }, [recentTransactions]);
+  }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const getUniqueBranches = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
+      if (!passesMultiFilter(t.customers?.dealer_name || '', columnFilters.customer)) return;
+      if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
+      if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
       const area = getTransactionBranch(t);
       if (area) unique.add(area);
     });
     return Array.from(unique).sort();
-  }, [getTransactionBranch, recentTransactions]);
+  }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const getUniqueSKUs = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
+      if (!passesMultiFilter(t.customers?.dealer_name || '', columnFilters.customer)) return;
+      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
+      if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
       if (t.sku) unique.add(t.sku);
     });
     return Array.from(unique).sort();
-  }, [recentTransactions]);
+  }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const getUniqueTypes = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
+      if (!passesMultiFilter(t.customers?.dealer_name || '', columnFilters.customer)) return;
+      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
+      if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
       if (t.transaction_type) unique.add(t.transaction_type);
     });
     return Array.from(unique).sort();
-  }, [recentTransactions]);
+  }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const handleColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
     setColumnSort(columnKey, direction);

@@ -24,6 +24,12 @@ import { Pencil, Trash2, Download } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { ColumnFilter } from '@/components/ui/column-filter';
 
+const passesMultiFilter = (value: string, filter: string | string[] | null | undefined): boolean => {
+  if (!filter) return true;
+  const filters = Array.isArray(filter) ? filter : [filter];
+  return filters.length === 0 || filters.some(f => value.toLowerCase().includes(f.toLowerCase()));
+};
+
 const FactoryPayables = () => {
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
@@ -306,28 +312,42 @@ const FactoryPayables = () => {
     }));
   }, []);
 
-  // Get unique values for multi-select filters
+  // Get unique values for multi-select filters — cascading: each column reflects the other active filters
   const getUniqueClients = useMemo(() => {
     if (!transactions) return [];
     const unique = new Set<string>();
     transactions.forEach(t => {
-      const clientName = t.transaction_type === 'payment' 
+      const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
         : (t.customers?.dealer_name || '');
+      const area = t.customers?.area || '';
+      const sku = t.sku || '';
+      const type = t.transaction_type || '';
+      if (!passesMultiFilter(area, columnFilters.area)) return;
+      if (!passesMultiFilter(sku, columnFilters.sku)) return;
+      if (!passesMultiFilter(type, columnFilters.type)) return;
       if (clientName) unique.add(clientName);
     });
     return Array.from(unique).sort();
-  }, [transactions]);
+  }, [transactions, columnFilters]);
 
   const getUniqueBranches = useMemo(() => {
     if (!transactions) return [];
     const unique = new Set<string>();
     transactions.forEach(t => {
-      const area = t.customers?.area;
+      const clientName = t.transaction_type === 'payment'
+        ? (t.description || 'Elma Payment')
+        : (t.customers?.dealer_name || '');
+      const area = t.customers?.area || '';
+      const sku = t.sku || '';
+      const type = t.transaction_type || '';
+      if (!passesMultiFilter(clientName, columnFilters.client)) return;
+      if (!passesMultiFilter(sku, columnFilters.sku)) return;
+      if (!passesMultiFilter(type, columnFilters.type)) return;
       if (area) unique.add(area);
     });
     return Array.from(unique).sort();
-  }, [transactions]);
+  }, [transactions, columnFilters]);
 
   const handleColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
     setColumnSorts(prev => {
@@ -341,16 +361,32 @@ const FactoryPayables = () => {
     });
   }, []);
 
-  // Get unique values for dropdown filters (memoized)
+  // Get unique values for dropdown filters (memoized, cascading)
   const getUniqueTypes = useMemo(() => {
     if (!transactions) return [];
-    return [...new Set(transactions.map(t => t.transaction_type).filter(Boolean))].sort();
-  }, [transactions]);
+    return [...new Set(transactions.filter(t => {
+      const clientName = t.transaction_type === 'payment'
+        ? (t.description || 'Elma Payment')
+        : (t.customers?.dealer_name || '');
+      if (!passesMultiFilter(clientName, columnFilters.client)) return false;
+      if (!passesMultiFilter(t.customers?.area || '', columnFilters.area)) return false;
+      if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return false;
+      return true;
+    }).map(t => t.transaction_type).filter(Boolean))].sort();
+  }, [transactions, columnFilters]);
 
   const getUniqueSKUs = useMemo(() => {
     if (!transactions) return [];
-    return [...new Set(transactions.map(t => t.sku).filter(Boolean))].sort();
-  }, [transactions]);
+    return [...new Set(transactions.filter(t => {
+      const clientName = t.transaction_type === 'payment'
+        ? (t.description || 'Elma Payment')
+        : (t.customers?.dealer_name || '');
+      if (!passesMultiFilter(clientName, columnFilters.client)) return false;
+      if (!passesMultiFilter(t.customers?.area || '', columnFilters.area)) return false;
+      if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return false;
+      return true;
+    }).map(t => t.sku).filter(Boolean))].sort();
+  }, [transactions, columnFilters]);
 
   // Export filtered transactions to Excel (memoized)
   const exportToExcel = useCallback(async () => {

@@ -860,18 +860,31 @@ const OrderManagement: React.FC = () => {
     });
   }, []);
 
-  // Get unique values for filter options
+  // Get unique values for filter options — cascading: each column's options reflect the other active filters
   const getUniqueOrderValues = useCallback((key: keyof OrderRow) => {
     if (!normalizedOrders) return [];
-    const values = normalizedOrders.map(order => order[key]).filter(Boolean);
+    const filtered = normalizedOrders.filter(order => {
+      if (key !== 'client' && ordersColumnFilters.client && !order.client?.toLowerCase().includes(ordersColumnFilters.client.toLowerCase())) return false;
+      if (key !== 'area' && ordersColumnFilters.area && !order.area?.toLowerCase().includes(ordersColumnFilters.area.toLowerCase())) return false;
+      if (key !== 'sku' && ordersColumnFilters.sku && !order.sku?.toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
+      if (key !== 'status' && ordersColumnFilters.status && order.status !== ordersColumnFilters.status) return false;
+      return true;
+    });
+    const values = filtered.map(order => order[key]).filter(Boolean);
     return Array.from(new Set(values)).sort();
-  }, [normalizedOrders]);
+  }, [normalizedOrders, ordersColumnFilters]);
 
   const getUniqueDispatchValues = useCallback((key: keyof DispatchRow) => {
     if (!dispatchData) return [];
-    const values = (dispatchData as DispatchRow[]).map(order => order[key]).filter(Boolean);
+    const filtered = (dispatchData as DispatchRow[]).filter(order => {
+      if (key !== 'client' && dispatchColumnFilters.client && !order.client?.toLowerCase().includes(dispatchColumnFilters.client.toLowerCase())) return false;
+      if (key !== 'area' && dispatchColumnFilters.area && !order.area?.toLowerCase().includes(dispatchColumnFilters.area.toLowerCase())) return false;
+      if (key !== 'sku' && dispatchColumnFilters.sku && !order.sku?.toLowerCase().includes(dispatchColumnFilters.sku.toLowerCase())) return false;
+      return true;
+    });
+    const values = filtered.map(order => order[key]).filter(Boolean);
     return Array.from(new Set(values)).sort();
-  }, [dispatchData]);
+  }, [dispatchData, dispatchColumnFilters]);
 
   // Get max date (today) for date input
   const maxDate = new Date().toISOString().split("T")[0];
