@@ -552,6 +552,8 @@ const SalesEntry = () => {
     getTransactionBranch,
     buildTransportDescription,
     resolveCustomerIdForBranch,
+    generateInvoice,
+    customers,
     onPaymentSuccess: handlePaymentSuccess,
     onUpdateSuccess: handleUpdateSuccess,
   });

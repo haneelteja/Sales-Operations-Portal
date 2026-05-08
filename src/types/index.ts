@@ -18,18 +18,20 @@ export interface SalesTransaction {
   id: string;
   customer_id: string;
   amount: number;
-  total_amount?: number; // Added to match database schema
+  total_amount?: number;
   quantity: number | null;
   sku: string | null;
   description: string | null;
   transaction_date: string;
   transaction_type: string;
   area: string | null;
+  branch?: string | null;
   created_at: string;
   updated_at: string;
   customers?: {
     dealer_name: string;
     area: string | null;
+    branch?: string | null;
   };
 }
 

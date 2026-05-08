@@ -2,7 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCacheInvalidation } from '@/hooks/useCacheInvalidation';
 import { useToast } from '@/hooks/use-toast';
-import type { PaymentForm, SaleForm, SalesTransaction } from '@/types';
+import { isAutoInvoiceEnabled } from '@/services/invoiceConfigService';
+import type { Customer, PaymentForm, SaleForm, SalesTransaction } from '@/types';
 
 type CustomerDirectoryRecord = {
   id: string;
@@ -10,6 +11,12 @@ type CustomerDirectoryRecord = {
   client_name?: string | null;
   area?: string | null;
   branch?: string | null;
+};
+
+type InvoiceGenerationArgs = {
+  transactionId: string;
+  transaction: SalesTransaction;
+  customer: Customer;
 };
 
 type UseTransactionMutationsOptions = {
@@ -24,6 +31,8 @@ type UseTransactionMutationsOptions = {
     fallbackBranch?: string
   ) => string;
   resolveCustomerIdForBranch: (customerId?: string, branch?: string) => string | undefined;
+  generateInvoice?: { mutate: (args: InvoiceGenerationArgs) => void } | null;
+  customers?: Customer[];
   onPaymentSuccess: () => void;
   onUpdateSuccess: () => void;
 };
@@ -35,6 +44,8 @@ export function useTransactionMutations({
   getTransactionBranch,
   buildTransportDescription,
   resolveCustomerIdForBranch,
+  generateInvoice,
+  customers,
   onPaymentSuccess,
   onUpdateSuccess,
 }: UseTransactionMutationsOptions) {
@@ -104,7 +115,7 @@ export function useTransactionMutations({
       const originalTransactionDate = editingTransaction?.transaction_date || '';
       const originalCustomerId = editingTransaction?.customer_id || '';
 
-      const { error: salesError } = await supabase
+      const { data: updatedRows, error: salesError } = await supabase
         .from('sales_transactions')
         .update({
           customer_id: data.customer_id,
@@ -116,9 +127,11 @@ export function useTransactionMutations({
           transaction_date: data.transaction_date,
           branch: data.area || null,
         })
-        .eq('id', data.id);
+        .eq('id', data.id)
+        .select(`id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, branch, area, created_at, updated_at, customers (dealer_name, area, branch)`);
 
       if (salesError) throw salesError;
+      const updatedTransaction = (updatedRows?.[0] ?? null) as SalesTransaction | null;
 
       const selectedCustomer = findCustomerById(data.customer_id);
 
@@ -177,13 +190,30 @@ export function useTransactionMutations({
           console.warn('Failed to update transport transaction:', transportError);
         }
       }
+
+      return { updatedTransaction, customerId: data.customer_id };
     },
-    onSuccess: () => {
+    onSuccess: async ({ updatedTransaction, customerId }) => {
       toast({ title: 'Success', description: 'Transaction updated successfully!' });
       onUpdateSuccess();
       invalidateRelated('sales_transactions');
       invalidateRelated('factory_payables');
       invalidateRelated('transport_expenses');
+
+      // Regenerate invoice if auto-invoice is enabled and the transaction was a sale
+      if (generateInvoice && updatedTransaction?.transaction_type === 'sale') {
+        const autoEnabled = await isAutoInvoiceEnabled();
+        if (autoEnabled) {
+          let customer = customers?.find(c => c.id === customerId) as Customer | undefined;
+          if (!customer) {
+            const { data: fresh } = await supabase.from('customers').select('*').eq('id', customerId).single();
+            if (fresh) customer = fresh as Customer;
+          }
+          if (customer) {
+            generateInvoice.mutate({ transactionId: updatedTransaction.id, transaction: updatedTransaction, customer });
+          }
+        }
+      }
     },
     onError: (error) => {
       toast({

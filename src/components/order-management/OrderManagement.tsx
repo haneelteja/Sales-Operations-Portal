@@ -26,6 +26,7 @@ interface OrderRow {
   branch?: string;
   sku: string;
   number_of_cases: number;
+  expense_date?: string;
   tentative_delivery_date: string;
   status: "pending" | "dispatched";
   created_at: string;
@@ -66,8 +67,8 @@ const OrderManagement: React.FC = () => {
     area: "",
     sku: "",
     number_of_cases: "",
+    expense_date: "",
     tentative_delivery_date: "",
-    status: "",
   });
   const [ordersColumnSorts, setOrdersColumnSorts] = useState<{
     [key: string]: 'asc' | 'desc' | null;
@@ -76,8 +77,8 @@ const OrderManagement: React.FC = () => {
     area: null,
     sku: null,
     number_of_cases: null,
+    expense_date: null,
     tentative_delivery_date: null,
-    status: null,
   });
 
   // Filter and sort states for Orders Dispatched table
@@ -643,8 +644,8 @@ const OrderManagement: React.FC = () => {
           order.area?.toLowerCase().includes(searchLower) ||
           order.sku?.toLowerCase().includes(searchLower) ||
           order.number_of_cases?.toString().includes(searchLower) ||
-          order.tentative_delivery_date?.includes(searchLower) ||
-          order.status?.toLowerCase().includes(searchLower)
+          order.expense_date?.includes(searchLower) ||
+          order.tentative_delivery_date?.includes(searchLower)
         );
         if (!matchesGlobalSearch) return false;
       }
@@ -654,20 +655,17 @@ const OrderManagement: React.FC = () => {
       if (ordersColumnFilters.area && !order.area?.toLowerCase().includes(ordersColumnFilters.area.toLowerCase())) return false;
       if (ordersColumnFilters.sku && !order.sku?.toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
       if (ordersColumnFilters.number_of_cases && order.number_of_cases?.toString() !== ordersColumnFilters.number_of_cases) return false;
+      if (ordersColumnFilters.expense_date && !order.expense_date?.includes(ordersColumnFilters.expense_date)) return false;
       if (ordersColumnFilters.tentative_delivery_date && !order.tentative_delivery_date?.includes(ordersColumnFilters.tentative_delivery_date)) return false;
-      if (ordersColumnFilters.status && order.status !== ordersColumnFilters.status) return false;
 
       return true;
     }).sort((a, b) => {
       // Apply sorting
       const sortKey = Object.keys(ordersColumnSorts).find(key => ordersColumnSorts[key] !== null);
       if (!sortKey) {
-        // Default sort: status first, then date
-        const statusA = a.status === "pending" ? 1 : 2;
-        const statusB = b.status === "pending" ? 1 : 2;
-        if (statusA !== statusB) return statusA - statusB;
-        const dateA = new Date(a.tentative_delivery_date).getTime();
-        const dateB = new Date(b.tentative_delivery_date).getTime();
+        // Default sort: newest order date first
+        const dateA = new Date(a.expense_date || a.created_at).getTime();
+        const dateB = new Date(b.expense_date || b.created_at).getTime();
         return dateB - dateA;
       }
 
@@ -694,13 +692,13 @@ const OrderManagement: React.FC = () => {
           aValue = a.number_of_cases || 0;
           bValue = b.number_of_cases || 0;
           break;
+        case 'expense_date':
+          aValue = new Date(a.expense_date || a.created_at).getTime();
+          bValue = new Date(b.expense_date || b.created_at).getTime();
+          break;
         case 'tentative_delivery_date':
           aValue = new Date(a.tentative_delivery_date).getTime();
           bValue = new Date(b.tentative_delivery_date).getTime();
-          break;
-        case 'status':
-          aValue = a.status === "pending" ? 1 : 2;
-          bValue = b.status === "pending" ? 1 : 2;
           break;
         default:
           return 0;
@@ -794,8 +792,8 @@ const OrderManagement: React.FC = () => {
       Branch: order.area,
       SKU: order.sku,
       "Number of Cases": order.number_of_cases,
+      "Order Date": order.expense_date || "",
       "Tentative Delivery Date": order.tentative_delivery_date,
-      Status: order.status,
       "Created At": new Date(order.created_at).toLocaleString(),
     }));
 
@@ -867,7 +865,6 @@ const OrderManagement: React.FC = () => {
       if (key !== 'client' && ordersColumnFilters.client && !order.client?.toLowerCase().includes(ordersColumnFilters.client.toLowerCase())) return false;
       if (key !== 'area' && ordersColumnFilters.area && !order.area?.toLowerCase().includes(ordersColumnFilters.area.toLowerCase())) return false;
       if (key !== 'sku' && ordersColumnFilters.sku && !order.sku?.toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
-      if (key !== 'status' && ordersColumnFilters.status && order.status !== ordersColumnFilters.status) return false;
       return true;
     });
     const values = filtered.map(order => order[key]).filter(Boolean);
@@ -1179,6 +1176,22 @@ const OrderManagement: React.FC = () => {
                     </TableHead>
                     <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
                       <div className="flex items-center gap-2 text-gray-800">
+                        <span>Order Date</span>
+                        <ColumnFilter
+                          columnKey="expense_date"
+                          columnName="Order Date"
+                          filterValue={ordersColumnFilters.expense_date}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('expense_date', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('expense_date', '')}
+                          sortDirection={ordersColumnSorts.expense_date}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('expense_date', direction)}
+                          dataType="date"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
                         <span>Delivery</span>
                         <ColumnFilter
                           columnKey="tentative_delivery_date"
@@ -1193,23 +1206,6 @@ const OrderManagement: React.FC = () => {
                         />
                       </div>
                     </TableHead>
-                    <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
-                      <div className="flex items-center gap-2 text-gray-800">
-                        <span>Status</span>
-                        <ColumnFilter
-                          columnKey="status"
-                          columnName="Status"
-                          filterValue={ordersColumnFilters.status}
-                          onFilterChange={(value) => handleOrdersColumnFilterChange('status', value as string)}
-                          onClearFilter={() => handleOrdersColumnFilterChange('status', '')}
-                          sortDirection={ordersColumnSorts.status}
-                          onSortChange={(direction) => handleOrdersColumnSortChange('status', direction)}
-                          dataType="text"
-                          options={['pending', 'dispatched']}
-                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
-                        />
-                      </div>
-                    </TableHead>
                     <TableHead className="text-right text-gray-800 font-semibold border-b border-blue-200/50">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1220,8 +1216,8 @@ const OrderManagement: React.FC = () => {
                       <TableCell>{order.area || "-"}</TableCell>
                       <TableCell>{order.sku || "-"}</TableCell>
                       <TableCell className="text-right">{order.number_of_cases ?? "-"}</TableCell>
+                      <TableCell>{order.expense_date || "-"}</TableCell>
                       <TableCell>{order.tentative_delivery_date || "-"}</TableCell>
-                      <TableCell>{renderStatus(order.status)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -1254,7 +1250,7 @@ const OrderManagement: React.FC = () => {
                   ))}
                   {!filteredAndSortedOrders.length && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-sm text-gray-600 py-8">
+                      <TableCell colSpan={6} className="text-center text-sm text-gray-600 py-8">
                         No orders found.
                       </TableCell>
                     </TableRow>
