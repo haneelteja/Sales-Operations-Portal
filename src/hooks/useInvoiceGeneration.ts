@@ -57,7 +57,14 @@ function formatInvoiceGenerationError(error: Error): string {
 }
 
 async function loadDocumentGenerator() {
-  return await import('@/services/documentGenerator');
+  try {
+    return await import('@/services/documentGenerator');
+  } catch (e) {
+    if (e instanceof TypeError && String(e.message).toLowerCase().includes('failed to fetch')) {
+      throw new Error('Invoice module failed to load — please refresh the page and try again.');
+    }
+    throw e;
+  }
 }
 
 /**

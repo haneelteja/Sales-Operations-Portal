@@ -125,10 +125,11 @@ export function useTransactionMutations({
           sku: data.sku,
           description: data.description,
           transaction_date: data.transaction_date,
-          branch: data.area || null,
+          area: data.area || null,
+          branch: data.area || editingTransaction?.branch || null,
         })
         .eq('id', data.id)
-        .select(`id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, branch, area, created_at, updated_at, customers (dealer_name, area, branch)`);
+        .select(`id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, branch, area, created_at, updated_at`);
 
       if (salesError) throw salesError;
       const updatedTransaction = (updatedRows?.[0] ?? null) as SalesTransaction | null;
