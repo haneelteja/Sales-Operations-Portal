@@ -12,18 +12,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, UserX, UserCheck, Download, ArrowUpDown, MoreHorizontal } from "lucide-react";
+import { Trash2, Edit, UserX, UserCheck, Download, ArrowUpDown, MoreHorizontal, BookOpen } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { exportJsonToExcel } from '@/services/export/excelExport';
+import { exportLedger } from '@/lib/ledgerExport';
 
 const ConfigurationManagement = () => {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isEditCustomerOpen, setIsEditCustomerOpen] = useState(false);
   const [isAddDealerOpen, setIsAddDealerOpen] = useState(false);
+  const [exportingLedgerFor, setExportingLedgerFor] = useState<string | null>(null);
   
   // Additional state for advanced customer management
   const [editForm, setEditForm] = useState({
@@ -428,6 +430,48 @@ const ConfigurationManagement = () => {
     });
   };
 
+  // Export all transactions for a specific client as a ledger
+  const exportClientLedger = async (customer: Customer) => {
+    setExportingLedgerFor(customer.id);
+    try {
+      const { data, error } = await supabase
+        .from('sales_transactions')
+        .select('transaction_date, transaction_type, sku, quantity, amount, description, customers(dealer_name, area, branch)')
+        .eq('customer_id', customer.id)
+        .order('transaction_date', { ascending: true });
+
+      if (error) throw error;
+
+      const rows = (data || []).map((tx) => {
+        const c = tx.customers as { dealer_name?: string; area?: string; branch?: string } | null;
+        return {
+          date: tx.transaction_date,
+          clientName: c?.dealer_name || customer.dealer_name || 'Unknown',
+          branch: c?.branch || c?.area || customer.area || '',
+          type: tx.transaction_type || 'sale',
+          sku: tx.sku,
+          cases: tx.quantity,
+          amount: tx.amount || 0,
+          description: tx.description,
+        };
+      });
+
+      if (rows.length === 0) {
+        toast({ title: 'No transactions', description: `No transactions found for ${customer.dealer_name}.` });
+        return;
+      }
+
+      const clientLabel = customer.area ? `${customer.dealer_name} — ${customer.area}` : customer.dealer_name;
+      const dateStr = new Date().toISOString().split('T')[0];
+      const safeName = (customer.dealer_name || 'client').replace(/[^a-zA-Z0-9_-]/g, '_');
+      await exportLedger(rows, `Ledger_${safeName}_${dateStr}.xlsx`, `Client Ledger — ${clientLabel}`);
+    } catch (err) {
+      toast({ title: 'Export failed', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
+    } finally {
+      setExportingLedgerFor(null);
+    }
+  };
+
   // Export filtered data to Excel
   const exportCustomersToExcel = async () => {
     const exportData = filteredAndSortedCustomers?.map((customer) => ({
@@ -651,6 +695,13 @@ const ConfigurationManagement = () => {
                             <DropdownMenuItem onClick={() => handleEditClick(customer)}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => exportClientLedger(customer)}
+                              disabled={exportingLedgerFor === customer.id}
+                            >
+                              <BookOpen className="mr-2 h-4 w-4" />
+                              {exportingLedgerFor === customer.id ? 'Exporting…' : 'Export Ledger'}
                             </DropdownMenuItem>
                             {customer.is_active ? (
                               <DropdownMenuItem 

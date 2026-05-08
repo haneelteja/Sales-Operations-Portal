@@ -34,6 +34,7 @@ import { PaymentEntryCard } from "@/components/sales/PaymentEntryCard";
 import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGeneration";
 import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 import { exportJsonToExcel } from "@/services/export/excelExport";
+import { exportLedger } from "@/lib/ledgerExport";
 import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirectory";
 import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
 import { useSalesItemsManager } from "@/components/sales/hooks/useSalesItemsManager";
@@ -993,10 +994,36 @@ const SalesEntry = () => {
 
     const fileName = `Recent_Transactions_${new Date().toISOString().split('T')[0]}.xlsx`;
     await exportJsonToExcel(exportData, 'Recent Transactions', fileName);
-    
+
     toast({
       title: "Export Successful",
       description: `Exported ${exportData.length} recent transactions to ${fileName}`,
+    });
+  };
+
+  // Export filtered transactions as a ledger (Debit / Credit / Running Balance per client)
+  const exportTransactionsAsLedger = async () => {
+    const rows = filteredAndSortedRecentTransactions.map((tx) => ({
+      date: tx.transaction_date,
+      clientName: tx.customers?.dealer_name || 'Unknown',
+      branch: getTransactionBranch(tx) || '',
+      type: tx.transaction_type || 'sale',
+      sku: tx.sku,
+      cases: tx.quantity,
+      amount: tx.amount || 0,
+      description: tx.description,
+    }));
+
+    if (rows.length === 0) {
+      toast({ title: 'No data', description: 'There are no transactions to export.', variant: 'destructive' });
+      return;
+    }
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    await exportLedger(rows, `Client_Ledger_${dateStr}.xlsx`, 'Client Ledger Statement');
+    toast({
+      title: 'Ledger Exported',
+      description: `Exported ledger for ${rows.length} transactions.`,
     });
   };
 
@@ -1666,6 +1693,15 @@ const SalesEntry = () => {
             >
               <Download className="h-4 w-4" />
               <span>Export Excel</span>
+            </Button>
+            <Button
+              onClick={exportTransactionsAsLedger}
+              variant="outline"
+              size="sm"
+              className="flex items-center space-x-2 whitespace-nowrap"
+            >
+              <FileText className="h-4 w-4" />
+              <span>Export Ledger</span>
             </Button>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
