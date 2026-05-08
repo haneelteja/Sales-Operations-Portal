@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,13 +23,13 @@ export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenCh
   const [rows, setRows] = useState<ProductionOrderRecipient[]>([{ ...EMPTY_RECIPIENT }]);
 
   const { data: configRow } = useQuery({
-    queryKey: ['invoice-configurations'],
+    queryKey: ['invoice-configurations', 'production_order_recipients'],
     queryFn: async () => {
       const { data } = await supabase
         .from('invoice_configurations')
         .select('*')
         .eq('config_key', 'production_order_recipients')
-        .single();
+        .maybeSingle();
       return data;
     },
     enabled: open,
@@ -54,28 +54,22 @@ export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenCh
       const valid = recipients.filter((r) => r.label.trim() && r.identifier.trim());
       const { data: { user } } = await supabase.auth.getUser();
 
-      if (configRow?.id) {
-        const { error } = await supabase
-          .from('invoice_configurations')
-          .update({ config_value: JSON.stringify(valid), updated_by: user?.id || null })
-          .eq('id', configRow.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('invoice_configurations')
-          .insert({
-            config_key: 'production_order_recipients',
-            config_value: JSON.stringify(valid),
-            config_type: 'string',
-            description: 'WhatsApp recipients for new order notifications (individuals or groups)',
-            updated_by: user?.id || null,
-          });
-        if (error) throw error;
-      }
+      const { error } = await supabase
+        .from('invoice_configurations')
+        .upsert({
+          config_key: 'production_order_recipients',
+          config_value: JSON.stringify(valid),
+          config_type: 'string',
+          description: 'WhatsApp recipients for new order notifications (individuals or groups)',
+          updated_by: user?.id || null,
+        }, { onConflict: 'config_key' });
+
+      if (error) throw error;
     },
     onSuccess: () => {
       toast({ title: 'Saved', description: 'Production order recipients updated.' });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-configurations', 'production_order_recipients'] });
       onOpenChange(false);
     },
     onError: (err: Error) => {
@@ -98,6 +92,9 @@ export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenCh
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Production Orders — WhatsApp Recipients</DialogTitle>
+          <DialogDescription>
+            Configure who gets notified on WhatsApp when a new order is placed.
+          </DialogDescription>
         </DialogHeader>
 
         <p className="text-sm text-gray-500">
