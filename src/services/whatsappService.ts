@@ -442,6 +442,8 @@ export async function sendProductionOrderNotification(params: {
     });
 
     const result = await response.json().catch(() => ({}));
+    // Always log full results for debugging (visible in browser console)
+    logger.info('Production order notification results:', result);
     if (!response.ok || !result.success) {
       logger.warn('Production order notification partially failed:', result);
     }
