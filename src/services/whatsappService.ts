@@ -384,6 +384,72 @@ export async function retryWhatsAppMessage(messageLogId: string): Promise<{ succ
   }
 }
 
+export interface ProductionOrderItem {
+  sku: string;
+  cases: number;
+}
+
+/**
+ * Send a production order notification to all configured recipients via the whatsapp-notify edge function.
+ * Non-blocking — failures are logged but do not throw.
+ */
+export async function sendProductionOrderNotification(params: {
+  client: string;
+  branch: string;
+  items: ProductionOrderItem[];
+  orderDate: string;
+  deliveryDate?: string;
+}): Promise<void> {
+  try {
+    const { getProductionOrderRecipients } = await import('@/services/invoiceConfigService');
+    const recipients = await getProductionOrderRecipients();
+    if (!recipients.length) return;
+
+    const dateStr = params.orderDate
+      ? new Date(params.orderDate).toLocaleDateString('en-IN')
+      : new Date().toLocaleDateString('en-IN');
+
+    const itemLines = params.items
+      .map((it) => `• ${it.sku} — ${it.cases} case${it.cases !== 1 ? 's' : ''}`)
+      .join('\n');
+
+    const deliveryLine = params.deliveryDate
+      ? `\nDelivery Date: ${new Date(params.deliveryDate).toLocaleDateString('en-IN')}`
+      : '';
+
+    const message =
+      `*New Production Order* 🏭\n` +
+      `Client: ${params.client}\n` +
+      `Branch: ${params.branch}\n\n` +
+      `*Items:*\n${itemLines}\n` +
+      `\nOrder Date: ${dateStr}${deliveryLine}`;
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      logger.warn('sendProductionOrderNotification: Supabase env vars missing');
+      return;
+    }
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-notify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+      },
+      body: JSON.stringify({ message, recipients }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) {
+      logger.warn('Production order notification partially failed:', result);
+    }
+  } catch (err) {
+    logger.warn('sendProductionOrderNotification failed (non-fatal):', err);
+  }
+}
+
 /**
  * Validate WhatsApp number format
  */

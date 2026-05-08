@@ -206,6 +206,36 @@ export async function getListConfig(configKey: string): Promise<string[]> {
   }
 }
 
+export interface ProductionOrderRecipient {
+  label: string;
+  type: 'individual' | 'group';
+  identifier: string;
+}
+
+/**
+ * Get production order notification recipients from config
+ */
+export async function getProductionOrderRecipients(): Promise<ProductionOrderRecipient[]> {
+  try {
+    const { data, error } = await supabase
+      .from('invoice_configurations')
+      .select('config_value')
+      .eq('config_key', 'production_order_recipients')
+      .single();
+
+    if (error || !data) return [];
+
+    try {
+      const parsed = JSON.parse(data.config_value || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Get tentative delivery days from config (default 5)
  */

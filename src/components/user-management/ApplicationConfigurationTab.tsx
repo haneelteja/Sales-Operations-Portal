@@ -30,6 +30,7 @@ import { EditSkusAvailableDialog } from './EditSkusAvailableDialog';
 import { EditListConfigDialog } from './EditListConfigDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
 import { EditWhatsAppApiKeyDialog } from './EditWhatsAppApiKeyDialog';
+import { EditProductionRecipientsDialog } from './EditProductionRecipientsDialog';
 import { triggerManualBackup, getBackupConfig, type BackupConfig } from '@/services/backupService';
 import { Database, Play } from 'lucide-react';
 
@@ -50,6 +51,7 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isTentativeDeliveryDaysDialogOpen, setIsTentativeDeliveryDaysDialogOpen] = useState(false);
   const [isPurchaseItemsDialogOpen, setIsPurchaseItemsDialogOpen] = useState(false);
   const [isWhatsAppApiKeyDialogOpen, setIsWhatsAppApiKeyDialogOpen] = useState(false);
+  const [isProductionRecipientsDialogOpen, setIsProductionRecipientsDialogOpen] = useState(false);
   const [isRunningBackup, setIsRunningBackup] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -140,7 +142,21 @@ const ApplicationConfigurationTab: React.FC = () => {
       customKey: 'sku_configurations',
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
 
-    // Row 2: Item list (purchase_items)
+    // Row 2: Production order recipients (custom - stored as JSON)
+    result.push({
+      id: '',
+      config_key: 'production_order_recipients',
+      config_value: '',
+      config_type: 'string',
+      description: 'Production orders group — WhatsApp recipients notified when a new order is placed',
+      updated_by: null,
+      updated_at: '',
+      created_at: '',
+      isCustom: true,
+      customKey: 'production_order_recipients',
+    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
+
+    // Row 3: Item list (purchase_items)
     const purchaseItemsConfig = configMap.get('purchase_items');
     if (purchaseItemsConfig) {
       result.push(purchaseItemsConfig);
@@ -374,7 +390,17 @@ const ApplicationConfigurationTab: React.FC = () => {
                       </TableCell>
                       <TableCell>{config.description}</TableCell>
                       <TableCell className="text-center align-middle">
-                        {config.config_key === 'sku_configurations' ? (
+                        {config.config_key === 'production_order_recipients' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsProductionRecipientsDialogOpen(true)}
+                            className="flex items-center gap-2"
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit
+                          </Button>
+                        ) : config.config_key === 'sku_configurations' ? (
                           <Button
                             variant="outline"
                             size="sm"
@@ -653,6 +679,12 @@ const ApplicationConfigurationTab: React.FC = () => {
       <EditWhatsAppApiKeyDialog
         open={isWhatsAppApiKeyDialogOpen}
         onOpenChange={setIsWhatsAppApiKeyDialogOpen}
+      />
+
+      {/* Production Order Recipients Dialog */}
+      <EditProductionRecipientsDialog
+        open={isProductionRecipientsDialogOpen}
+        onOpenChange={setIsProductionRecipientsDialogOpen}
       />
     </div>
   );

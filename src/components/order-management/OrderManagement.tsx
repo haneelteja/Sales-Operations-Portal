@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Send, Plus } from "lucide-react";
-import { getWhatsAppConfig, sendWhatsAppMessage } from "@/services/whatsappService";
+import { getWhatsAppConfig, sendWhatsAppMessage, sendProductionOrderNotification } from "@/services/whatsappService";
 import { getTentativeDeliveryDays } from "@/services/invoiceConfigService";
 import { logger } from "@/lib/logger";
 import { exportJsonToExcel } from "@/services/export/excelExport";
@@ -187,6 +187,21 @@ const OrderManagement: React.FC = () => {
         description: count === 1 ? "Order created successfully!" : `${count} orders created successfully!`,
       });
       invalidateRelated('orders');
+
+      // Notify production WhatsApp recipients
+      try {
+        const client = String(variables[0]?.client ?? '');
+        const branch = String(variables[0]?.area ?? '');
+        const items = variables.map((o) => ({
+          sku: String(o.sku ?? ''),
+          cases: Number(o.number_of_cases ?? 0),
+        }));
+        const orderDate = String(variables[0]?.date ?? new Date().toISOString().split('T')[0]);
+        const deliveryDate = String(variables[0]?.tentative_delivery_date ?? '');
+        sendProductionOrderNotification({ client, branch, items, orderDate, deliveryDate }).catch(() => {});
+      } catch (err) {
+        logger.warn('Production order notification trigger failed (non-fatal):', err);
+      }
       // Reset form - use config for tentative delivery days
       const today = new Date().toISOString().split("T")[0];
       const defaultDeliveryDate = new Date();
