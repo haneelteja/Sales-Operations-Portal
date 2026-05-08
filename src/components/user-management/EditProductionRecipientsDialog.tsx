@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Trash2 } from 'lucide-react';
 import type { ProductionOrderRecipient } from '@/services/invoiceConfigService';
@@ -17,10 +16,13 @@ interface Props {
 
 const EMPTY_RECIPIENT: ProductionOrderRecipient = { label: '', type: 'individual', identifier: '' };
 
+const PHONE_REGEX = /^\+?[1-9]\d{6,14}$/;
+
 export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenChange }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<ProductionOrderRecipient[]>([{ ...EMPTY_RECIPIENT }]);
+  const [errors, setErrors] = useState<Record<number, string>>({});
 
   const { data: configRow } = useQuery({
     queryKey: ['invoice-configurations', 'production_order_recipients'],
@@ -40,14 +42,36 @@ export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenCh
     if (configRow?.config_value) {
       try {
         const parsed: ProductionOrderRecipient[] = JSON.parse(configRow.config_value);
-        setRows(Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ ...EMPTY_RECIPIENT }]);
+        // Migrate any legacy group entries to individual
+        const normalised = parsed.map((r) => ({ ...r, type: 'individual' as const }));
+        setRows(Array.isArray(normalised) && normalised.length > 0 ? normalised : [{ ...EMPTY_RECIPIENT }]);
       } catch {
         setRows([{ ...EMPTY_RECIPIENT }]);
       }
     } else {
       setRows([{ ...EMPTY_RECIPIENT }]);
     }
+    setErrors({});
   }, [open, configRow]);
+
+  const validate = (recipients: ProductionOrderRecipient[]): Record<number, string> => {
+    const errs: Record<number, string> = {};
+    recipients.forEach((r, i) => {
+      if (!r.label.trim()) {
+        errs[i] = 'Label is required';
+        return;
+      }
+      const cleaned = r.identifier.replace(/\s/g, '');
+      if (!cleaned) {
+        errs[i] = 'Phone number is required';
+        return;
+      }
+      if (!PHONE_REGEX.test(cleaned)) {
+        errs[i] = 'Invalid phone number — use format +919876543210';
+      }
+    });
+    return errs;
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (recipients: ProductionOrderRecipient[]) => {
@@ -60,7 +84,7 @@ export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenCh
           config_key: 'production_order_recipients',
           config_value: JSON.stringify(valid),
           config_type: 'string',
-          description: 'WhatsApp recipients for new order notifications (individuals or groups)',
+          description: 'WhatsApp recipients for new production order notifications',
           updated_by: user?.id || null,
         }, { onConflict: 'config_key' });
 
@@ -79,72 +103,76 @@ export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenCh
 
   const addRow = () => setRows((prev) => [...prev, { ...EMPTY_RECIPIENT }]);
 
-  const removeRow = (i: number) =>
+  const removeRow = (i: number) => {
     setRows((prev) => prev.length === 1 ? [{ ...EMPTY_RECIPIENT }] : prev.filter((_, idx) => idx !== i));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[i];
+      return next;
+    });
+  };
 
-  const updateRow = (i: number, field: keyof ProductionOrderRecipient, value: string) =>
+  const updateRow = (i: number, field: 'label' | 'identifier', value: string) =>
     setRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
 
-  const handleSave = () => saveMutation.mutate(rows);
+  const handleSave = () => {
+    const filled = rows.filter((r) => r.label.trim() || r.identifier.trim());
+    const toValidate = filled.length > 0 ? filled : rows;
+    const errs = validate(toValidate);
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    setErrors({});
+    saveMutation.mutate(filled);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Production Orders — WhatsApp Recipients</DialogTitle>
           <DialogDescription>
-            Configure who gets notified on WhatsApp when a new order is placed.
+            Configure who gets notified on WhatsApp when a new production order is placed.
           </DialogDescription>
         </DialogHeader>
 
         <p className="text-sm text-gray-500">
-          Add phone numbers (individuals) or group IDs (WhatsApp groups) to notify when a new order is placed.
-          For group IDs use the format <code className="bg-gray-100 px-1 rounded">120363XXXXXXXXXX@g.us</code>.
+          Add the phone numbers of individuals to notify. Use international format, e.g. <code className="bg-gray-100 px-1 rounded">+919876543210</code>.
         </p>
 
         <div className="space-y-3 mt-2 max-h-80 overflow-y-auto pr-1">
           {rows.map((row, i) => (
-            <div key={i} className="grid grid-cols-[1fr_140px_1fr_auto] gap-2 items-end">
-              <div>
-                {i === 0 && <Label className="text-xs mb-1 block">Label</Label>}
-                <Input
-                  placeholder="e.g. Factory Manager"
-                  value={row.label}
-                  onChange={(e) => updateRow(i, 'label', e.target.value)}
-                />
+            <div key={i} className="space-y-1">
+              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                <div>
+                  {i === 0 && <Label className="text-xs mb-1 block">Label</Label>}
+                  <Input
+                    placeholder="e.g. Factory Manager"
+                    value={row.label}
+                    onChange={(e) => updateRow(i, 'label', e.target.value)}
+                    className={errors[i] ? 'border-red-400' : ''}
+                  />
+                </div>
+                <div>
+                  {i === 0 && <Label className="text-xs mb-1 block">Phone Number</Label>}
+                  <Input
+                    placeholder="+919876543210"
+                    value={row.identifier}
+                    onChange={(e) => updateRow(i, 'identifier', e.target.value)}
+                    className={errors[i] ? 'border-red-400' : ''}
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeRow(i)}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
-              <div>
-                {i === 0 && <Label className="text-xs mb-1 block">Type</Label>}
-                <Select value={row.type} onValueChange={(v) => updateRow(i, 'type', v as 'individual' | 'group')}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="individual">Individual</SelectItem>
-                    <SelectItem value="group">Group</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                {i === 0 && (
-                  <Label className="text-xs mb-1 block">
-                    {row.type === 'group' ? 'Group ID' : 'Phone Number'}
-                  </Label>
-                )}
-                <Input
-                  placeholder={row.type === 'group' ? '120363XXXXXXXXXX@g.us' : '+919876543210'}
-                  value={row.identifier}
-                  onChange={(e) => updateRow(i, 'identifier', e.target.value)}
-                />
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => removeRow(i)}
-                className="text-red-500 hover:text-red-700 hover:bg-red-50"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {errors[i] && <p className="text-xs text-red-500 pl-1">{errors[i]}</p>}
             </div>
           ))}
         </div>
