@@ -9,7 +9,7 @@ export const queryConfigs = {
     staleTime: 10 * 60 * 1000, // 10 minutes - data considered fresh
     gcTime: 30 * 60 * 1000, // 30 minutes - cache retention
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Refetch on mount if stale (catches pricing updates from Configurations tab)
   },
   
   skuConfig: {

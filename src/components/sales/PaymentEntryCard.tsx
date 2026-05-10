@@ -42,6 +42,16 @@ export function PaymentEntryCard({
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
+              <Label htmlFor="payment-date">Date</Label>
+              <Input
+                id="payment-date"
+                type="date"
+                value={paymentForm.transaction_date}
+                onChange={(e) => onFormChange({ transaction_date: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="payment-customer">Client *</Label>
               <Select value={customerName} onValueChange={onCustomerChange}>
                 <SelectTrigger id="payment-customer">
@@ -76,7 +86,9 @@ export function PaymentEntryCard({
                 </SelectContent>
               </Select>
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="payment-amount">Amount (Rs) *</Label>
               <Input
@@ -86,18 +98,6 @@ export function PaymentEntryCard({
                 value={safeNumValue(paymentForm.amount)}
                 onChange={(e) => onFormChange({ amount: e.target.value })}
                 placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="payment-date">Date</Label>
-              <Input
-                id="payment-date"
-                type="date"
-                value={paymentForm.transaction_date}
-                onChange={(e) => onFormChange({ transaction_date: e.target.value })}
               />
             </div>
 
