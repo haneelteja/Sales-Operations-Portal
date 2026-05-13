@@ -14,7 +14,8 @@ import {
   Shield,
   Settings,
   MessageSquare,
-  Wallet
+  Wallet,
+  ClipboardList,
 } from "lucide-react";
 
 import {
@@ -47,7 +48,8 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { id: "dashboard", title: "Dashboard", icon: BarChart3 },
   { id: "order-management", title: "Orders Management", icon: ShoppingCart },
-  { id: "receivables-management", title: "Receivables Management", icon: Wallet },
+  { id: "receivables-tracking", title: "Receivables Management", icon: ClipboardList },
+  { id: "receivables-management", title: "Receivables Dashboard", icon: Wallet },
   { id: "client-transactions", title: "Client Transactions", icon: DollarSign },
   { id: "factory", title: "Factory Transactions", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
