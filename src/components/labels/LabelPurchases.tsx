@@ -86,13 +86,21 @@ const LabelPurchases = () => {
     },
   });
 
-  // Get all available SKUs from sku_configurations
-  const getAvailableSKUs = () => {
-    if (!skuConfigs) return [];
-    return skuConfigs
-      .filter((c: { sku?: string }) => c.sku && c.sku.trim() !== "")
-      .map((c: { sku: string }) => ({ sku: c.sku }));
-  };
+  // SKUs for the selected client in the add form
+  const addFormSkus = useMemo(() => {
+    if (!form.client_id || !customers) return skuConfigs?.map(c => c.sku).filter(Boolean) ?? [];
+    const customer = customers.find(c => c.id === form.client_id);
+    if (!customer?.sku) return [];
+    return [customer.sku];
+  }, [form.client_id, customers, skuConfigs]);
+
+  // SKUs for the selected client in the edit form
+  const editFormSkus = useMemo(() => {
+    if (!editForm.client_id || !customers) return skuConfigs?.map(c => c.sku).filter(Boolean) ?? [];
+    const customer = customers.find(c => c.id === editForm.client_id);
+    if (!customer?.sku) return [];
+    return [customer.sku];
+  }, [editForm.client_id, customers, skuConfigs]);
 
   const { data: labelVendors } = useQuery({
     queryKey: ["label-vendors-config"],
@@ -568,7 +576,7 @@ const LabelPurchases = () => {
 
           <div className="space-y-2">
             <Label htmlFor="client">Client *</Label>
-            <Select value={form.client_id} onValueChange={(value) => setForm({ ...form, client_id: value })}>
+            <Select value={form.client_id} onValueChange={(value) => setForm({ ...form, client_id: value, sku: "" })}>
               <SelectTrigger>
                 <SelectValue placeholder="Select client" />
               </SelectTrigger>
@@ -590,16 +598,18 @@ const LabelPurchases = () => {
 
           <div className="space-y-2">
             <Label htmlFor="sku">SKU</Label>
-            <Select value={form.sku} onValueChange={(value) => setForm({ ...form, sku: value })}>
+            <Select value={form.sku} onValueChange={(value) => setForm({ ...form, sku: value })} disabled={!form.client_id}>
               <SelectTrigger>
-                <SelectValue placeholder="Select SKU" />
+                <SelectValue placeholder={form.client_id ? "Select SKU" : "Select client first"} />
               </SelectTrigger>
               <SelectContent>
-                {getAvailableSKUs().map((item) => (
-                  <SelectItem key={item.sku} value={item.sku}>
-                    {item.sku}
-                  </SelectItem>
-                ))}
+                {addFormSkus.length > 0 ? (
+                  addFormSkus.map((sku) => (
+                    <SelectItem key={sku} value={sku}>{sku}</SelectItem>
+                  ))
+                ) : (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground">No SKU assigned to this client</div>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -889,7 +899,7 @@ const LabelPurchases = () => {
 
                                 <div className="space-y-2">
                                   <Label htmlFor="edit-client">Client *</Label>
-                                  <Select value={editForm.client_id} onValueChange={(value) => setEditForm({ ...editForm, client_id: value })}>
+                                  <Select value={editForm.client_id} onValueChange={(value) => setEditForm({ ...editForm, client_id: value, sku: "" })}>
                                     <SelectTrigger>
                                       <SelectValue placeholder="Select client" />
                                     </SelectTrigger>
@@ -911,16 +921,18 @@ const LabelPurchases = () => {
 
                                 <div className="space-y-2">
                                   <Label htmlFor="edit-sku">SKU</Label>
-                                  <Select value={editForm.sku} onValueChange={(value) => setEditForm({ ...editForm, sku: value })}>
+                                  <Select value={editForm.sku} onValueChange={(value) => setEditForm({ ...editForm, sku: value })} disabled={!editForm.client_id}>
                                     <SelectTrigger>
-                                      <SelectValue placeholder="Select SKU" />
+                                      <SelectValue placeholder={editForm.client_id ? "Select SKU" : "Select client first"} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {getAvailableSKUs().map((item) => (
-                                        <SelectItem key={item.sku} value={item.sku}>
-                                          {item.sku}
-                                        </SelectItem>
-                                      ))}
+                                      {editFormSkus.length > 0 ? (
+                                        editFormSkus.map((sku) => (
+                                          <SelectItem key={sku} value={sku}>{sku}</SelectItem>
+                                        ))
+                                      ) : (
+                                        <div className="px-2 py-1.5 text-sm text-muted-foreground">No SKU assigned to this client</div>
+                                      )}
                                     </SelectContent>
                                   </Select>
                                 </div>
