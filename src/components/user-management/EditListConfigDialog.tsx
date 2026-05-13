@@ -103,13 +103,18 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
     mutationFn: async (values: string[]) => {
       const trimmed = values.map((v) => v.trim()).filter(Boolean);
       const configValue = JSON.stringify(trimmed);
-      const { error } = await supabase
-        .from('invoice_configurations')
-        .upsert(
-          { config_key: configKey, config_value: configValue, config_type: 'json' },
-          { onConflict: 'config_key' }
-        );
-      if (error) throw error;
+      if (config?.id) {
+        const { error } = await supabase
+          .from('invoice_configurations')
+          .update({ config_value: configValue })
+          .eq('id', config.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('invoice_configurations')
+          .insert({ config_key: configKey, config_value: configValue, config_type: 'json' });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [queryKey] });
