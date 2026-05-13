@@ -133,7 +133,6 @@ interface RawFactory {
 interface RawTransport {
   id: string;
   client_id: string | null;
-  area: string | null;
   expense_date: string;
   amount: number | null;
   expense_group: string | null;
@@ -501,7 +500,7 @@ export default function ProfitReport() {
           .eq("transaction_type", "production"),
         supabase
           .from("transport_expenses")
-          .select("id, client_id, area, expense_date, amount, expense_group, description")
+          .select("id, client_id, expense_date, amount, expense_group, description")
           .gte("expense_date", start)
           .lte("expense_date", end),
         supabase
@@ -545,6 +544,11 @@ export default function ProfitReport() {
       yearData.customers,
     );
   }, [yearData, months]);
+
+  const activeMonths = useMemo(
+    () => monthData.filter(m => m.clientRows.length > 0 || m.miscExpenses.length > 0),
+    [monthData],
+  );
 
   // Year totals
   const yearTotals = useMemo(() => monthData.reduce(
@@ -688,11 +692,11 @@ export default function ProfitReport() {
         </div>
       )}
 
-      {!isLoading && monthData.length > 0 && (
+      {!isLoading && activeMonths.length > 0 && (
         <>
           {/* Month blocks */}
           <div className="space-y-3">
-            {monthData.map(m => (
+            {activeMonths.map(m => (
               <MonthBlock key={m.monthKey} data={m} />
             ))}
           </div>
