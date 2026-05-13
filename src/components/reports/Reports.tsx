@@ -207,7 +207,7 @@ const Reports = memo(() => {
     queryFn: async () => {
       const { data } = await supabase
         .from("transport_expenses")
-        .select("id, amount, expense_date, expense_group, description, client_id, area, transport_vendor")
+        .select("id, amount, expense_date, expense_group, description, client_id, transport_vendor")
         .order("expense_date", { ascending: false });
       
       const totalExpenses = data?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;

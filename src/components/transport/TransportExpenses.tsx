@@ -210,7 +210,6 @@ const TransportExpenses = () => {
           amount: parseFloat(data.amount),
           description: data.description || "",
           client_id: data.client_id || null,
-          area: data.area || null,
           transport_vendor: data.transport_vendor || null,
         });
 
@@ -252,7 +251,6 @@ const TransportExpenses = () => {
           amount: data.amount ? parseFloat(data.amount) : undefined,
           description: data.description || "",
           client_id: data.client_id || null,
-          area: data.area || null,
           transport_vendor: data.transport_vendor || null,
         })
         .eq("id", data.id);
@@ -900,12 +898,13 @@ const TransportExpenses = () => {
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Transport Expense</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEditSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleEditSubmit} className="space-y-5">
+            {/* Row 1: Date, Amount */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-expense-date">Date</Label>
                 <Input
@@ -915,7 +914,6 @@ const TransportExpenses = () => {
                   onChange={(e) => setEditForm({...editForm, expense_date: e.target.value})}
                 />
               </div>
-              
               <div className="space-y-2">
                 <Label htmlFor="edit-amount">Amount (₹) *</Label>
                 <Input
@@ -924,39 +922,26 @@ const TransportExpenses = () => {
                   step="0.01"
                   value={editForm.amount}
                   onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
-                  placeholder="Enter amount"
+                  placeholder="0.00"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Row 2: Transport Vendor, Expense Group */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-transport-vendor">Transport Vendor *</Label>
-                <Select value={editForm.transport_vendor || ""} onValueChange={(value) => setEditForm({ ...editForm, transport_vendor: value })} required>
+                <Select value={editForm.transport_vendor || ""} onValueChange={(value) => setEditForm({ ...editForm, transport_vendor: value })}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select transport vendor" />
                   </SelectTrigger>
                   <SelectContent>
                     {transportVendors.map((v) => (
-                      <SelectItem key={v} value={v}>
-                        {v}
-                      </SelectItem>
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-description">Description *</Label>
-                <Input
-                  id="edit-description"
-                  value={editForm.description}
-                  onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                  placeholder="Enter expense description"
-                  required
-                />
-              </div>
-              
               <div className="space-y-2">
                 <Label htmlFor="edit-expense-group">Expense Group</Label>
                 <Select value={editForm.expense_group || "_none"} onValueChange={(value) => setEditForm({ ...editForm, expense_group: value })}>
@@ -966,16 +951,26 @@ const TransportExpenses = () => {
                   <SelectContent>
                     <SelectItem value="_none">None</SelectItem>
                     {uniqueGroups.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
-                      </SelectItem>
+                      <SelectItem key={g} value={g}>{g}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Row 3: Description (full width) */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description *</Label>
+              <Input
+                id="edit-description"
+                value={editForm.description}
+                onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                placeholder="Enter expense description"
+              />
+            </div>
+
+            {/* Row 4: Client, Branch */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-client">Client</Label>
                 <Select value={editForm.client_id || ""} onValueChange={(value) => setEditForm({ ...editForm, client_id: value, area: "" })}>
@@ -991,7 +986,6 @@ const TransportExpenses = () => {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="edit-area">Branch</Label>
                 <Select value={editForm.area || ""} onValueChange={(value) => setEditForm({ ...editForm, area: value })} disabled={!editForm.client_id}>
@@ -1000,21 +994,15 @@ const TransportExpenses = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {getAvailableAreas(editForm.client_id).map((area, index) => (
-                      <SelectItem key={index} value={area}>
-                        {area}
-                      </SelectItem>
+                      <SelectItem key={index} value={area}>{area}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            
-            <div className="flex justify-end gap-2">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => setIsEditDialogOpen(false)}
-              >
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={updateMutation.isPending}>

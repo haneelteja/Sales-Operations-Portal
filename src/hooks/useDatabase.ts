@@ -108,7 +108,7 @@ export const useTransportExpenses = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("transport_expenses")
-        .select("id, client_id, area, expense_date, amount, expense_group, description, transport_vendor, created_at, updated_at")
+        .select("id, client_id, expense_date, amount, expense_group, description, transport_vendor, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
