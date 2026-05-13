@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { useState, memo, lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getQueryConfig } from "@/lib/query-configs";
@@ -7,9 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { useInvoice } from "@/hooks/useInvoiceGeneration";
 import { exportJsonToExcel } from "@/services/export/excelExport";
+
+const ProfitReport = lazy(() => import("./ProfitReport"));
 
 /** Cell that shows invoice number for a transaction (sales only). */
 const InvoiceNumberCell = memo(({ transactionId, transactionType }: { transactionId: string; transactionType: string }) => {
@@ -247,12 +249,13 @@ const Reports = memo(() => {
   return (
     <div className="w-full space-y-6">
       <Tabs defaultValue="factory" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="factory">Factory Report</TabsTrigger>
           <TabsTrigger value="clients">Client Report</TabsTrigger>
           <TabsTrigger value="receivables">Receivables</TabsTrigger>
           <TabsTrigger value="transport">Transport Report</TabsTrigger>
           <TabsTrigger value="labels">Labels Report</TabsTrigger>
+          <TabsTrigger value="profit">Profit</TabsTrigger>
         </TabsList>
 
         <TabsContent value="factory" className="space-y-4">
@@ -394,6 +397,7 @@ const Reports = memo(() => {
                     />
                     {searchTerm && (
                       <button
+                        type="button"
                         onClick={() => setSearchTerm("")}
                         className="px-3 py-2 text-sm border border-input rounded-md hover:bg-accent hover:text-accent-foreground"
                       >
@@ -542,6 +546,16 @@ const Reports = memo(() => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="profit" className="space-y-4">
+          <Suspense fallback={
+            <div className="flex justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            </div>
+          }>
+            <ProfitReport />
+          </Suspense>
         </TabsContent>
       </Tabs>
     </div>
