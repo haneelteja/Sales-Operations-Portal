@@ -86,21 +86,20 @@ const LabelPurchases = () => {
     },
   });
 
-  // SKUs for the selected client in the add form
-  const addFormSkus = useMemo(() => {
-    if (!form.client_id || !customers) return skuConfigs?.map(c => c.sku).filter(Boolean) ?? [];
-    const customer = customers.find(c => c.id === form.client_id);
-    if (!customer?.sku) return [];
-    return [customer.sku];
-  }, [form.client_id, customers, skuConfigs]);
+  // All distinct SKUs for a given customer id (matches across all branches of the same dealer)
+  const getSkusForCustomerId = useCallback((clientId: string) => {
+    if (!clientId || !customers) return skuConfigs?.map(c => c.sku).filter(Boolean) ?? [];
+    const selected = customers.find(c => c.id === clientId);
+    if (!selected) return [];
+    const dealerName = selected.dealer_name.trim().toLowerCase();
+    const skus = customers
+      .filter(c => c.dealer_name.trim().toLowerCase() === dealerName && c.sku)
+      .map(c => c.sku as string);
+    return [...new Set(skus)].sort();
+  }, [customers, skuConfigs]);
 
-  // SKUs for the selected client in the edit form
-  const editFormSkus = useMemo(() => {
-    if (!editForm.client_id || !customers) return skuConfigs?.map(c => c.sku).filter(Boolean) ?? [];
-    const customer = customers.find(c => c.id === editForm.client_id);
-    if (!customer?.sku) return [];
-    return [customer.sku];
-  }, [editForm.client_id, customers, skuConfigs]);
+  const addFormSkus = useMemo(() => getSkusForCustomerId(form.client_id), [form.client_id, getSkusForCustomerId]);
+  const editFormSkus = useMemo(() => getSkusForCustomerId(editForm.client_id), [editForm.client_id, getSkusForCustomerId]);
 
   const { data: labelVendors } = useQuery({
     queryKey: ["label-vendors-config"],
