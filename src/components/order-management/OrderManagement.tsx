@@ -1282,6 +1282,163 @@ const OrderManagement: React.FC = () => {
         </CardContent>
       </Card>
 
+      <Card className="relative">
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-4">
+            <CardTitle className="text-lg font-medium text-gray-800">Orders Dispatched</CardTitle>
+            <div className="flex-1 min-w-[200px] max-w-sm">
+              <Input
+                placeholder="Search dispatch records..."
+                value={dispatchSearchTerm}
+                onChange={(e) => setDispatchSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="hidden md:block ml-auto">
+              <Button
+                variant="outline"
+                onClick={exportDispatchToExcel}
+                disabled={!filteredAndSortedDispatch.length}
+                size="sm"
+                className="whitespace-nowrap"
+              >
+                Export Dispatch
+              </Button>
+            </div>
+          </div>
+          {/* Mobile export button */}
+          <div className="md:hidden mt-3 flex justify-end">
+            <Button
+              variant="outline"
+              onClick={exportDispatchToExcel}
+              disabled={!filteredAndSortedDispatch.length}
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              Export Dispatch
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {dispatchError && <p className="text-sm text-red-500">Failed to load dispatch data.</p>}
+          {dispatchLoading ? (
+            <p className="text-sm text-gray-600">Loading dispatch data...</p>
+          ) : (
+            <>
+              <div className="w-full overflow-x-auto">
+                <Table className="table-auto w-full border-collapse min-w-full">
+                <TableHeader>
+                  <TableRow className="bg-gradient-to-r from-green-100 via-green-50 to-green-100 hover:from-green-200 hover:via-green-100 hover:to-green-200 transition-all duration-200">
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Client</span>
+                        <ColumnFilter
+                          columnKey="client"
+                          columnName="Client"
+                          filterValue={dispatchColumnFilters.client}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('client', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('client', '')}
+                          sortDirection={dispatchColumnSorts.client}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('client', direction)}
+                          dataType="text"
+                          options={getUniqueDispatchValues('client') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Branch</span>
+                        <ColumnFilter
+                          columnKey="area"
+                          columnName="Branch"
+                          filterValue={dispatchColumnFilters.area}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('area', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('area', '')}
+                          sortDirection={dispatchColumnSorts.area}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('area', direction)}
+                          dataType="text"
+                          options={getUniqueDispatchValues('area') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>SKU</span>
+                        <ColumnFilter
+                          columnKey="sku"
+                          columnName="SKU"
+                          filterValue={dispatchColumnFilters.sku}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('sku', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('sku', '')}
+                          sortDirection={dispatchColumnSorts.sku}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('sku', direction)}
+                          dataType="text"
+                          options={getUniqueDispatchValues('sku') as string[]}
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold text-right">
+                      <div className="flex items-center justify-end gap-2 text-gray-800">
+                        <span>Cases</span>
+                        <ColumnFilter
+                          columnKey="cases"
+                          columnName="Cases"
+                          filterValue={dispatchColumnFilters.cases}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('cases', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('cases', '')}
+                          sortDirection={dispatchColumnSorts.cases}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('cases', direction)}
+                          dataType="number"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
+                        <span>Delivery Date</span>
+                        <ColumnFilter
+                          columnKey="delivery_date"
+                          columnName="Delivery Date"
+                          filterValue={dispatchColumnFilters.delivery_date}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('delivery_date', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('delivery_date', '')}
+                          sortDirection={dispatchColumnSorts.delivery_date}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('delivery_date', direction)}
+                          dataType="date"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredAndSortedDispatch.map((order) => (
+                    <TableRow key={order.id} className="hover:bg-gray-50">
+                      <TableCell>{order.client || "-"}</TableCell>
+                      <TableCell>{order.area || "-"}</TableCell>
+                      <TableCell>{order.sku || "-"}</TableCell>
+                      <TableCell className="text-right">{order.cases ?? "-"}</TableCell>
+                      <TableCell>{order.delivery_date || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                  {!filteredAndSortedDispatch.length && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-sm text-gray-600 py-8">
+                        No dispatch records found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
     </div>
   );
 };
