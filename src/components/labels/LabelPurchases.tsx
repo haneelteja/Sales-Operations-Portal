@@ -20,6 +20,7 @@ const LabelPurchases = () => {
   const [form, setForm] = useState({
     vendor_id: "",
     client_id: "",
+    sku: "",
     quantity: "",
     cost_per_label: "",
     total_amount: "",
@@ -31,6 +32,7 @@ const LabelPurchases = () => {
   const [editForm, setEditForm] = useState({
     vendor_id: "",
     client_id: "",
+    sku: "",
     quantity: "",
     cost_per_label: "",
     total_amount: "",
@@ -127,7 +129,7 @@ const LabelPurchases = () => {
       } = {
         vendor_id: data.vendor_id,
         client_id: data.client_id || null,
-        sku: null,
+        sku: data.sku || null,
         quantity: parseInt(data.quantity),
         cost_per_label: parseFloat(data.cost_per_label),
         total_amount: parseFloat(data.total_amount),
@@ -153,6 +155,7 @@ const LabelPurchases = () => {
       setForm({
         vendor_id: "",
         client_id: "",
+        sku: "",
         quantity: "",
         cost_per_label: "",
         total_amount: "",
@@ -189,7 +192,7 @@ const LabelPurchases = () => {
       } = {
         vendor_id: data.vendor_id,
         client_id: data.client_id || null,
-        sku: null,
+        sku: data.sku || null,
         quantity: parseInt(data.quantity),
         cost_per_label: parseFloat(data.cost_per_label),
         total_amount: parseFloat(data.total_amount),
@@ -216,6 +219,7 @@ const LabelPurchases = () => {
       setEditForm({
         vendor_id: "",
         client_id: "",
+        sku: "",
         quantity: "",
         cost_per_label: "",
         total_amount: "",
@@ -304,6 +308,7 @@ const LabelPurchases = () => {
     setEditForm({
       vendor_id: purchase.vendor_id || "",
       client_id: purchase.client_id || "",
+      sku: purchase.sku || "",
       quantity: purchase.quantity.toString(),
       cost_per_label: purchase.cost_per_label.toString(),
       total_amount: purchase.total_amount.toString(),
@@ -526,6 +531,7 @@ const LabelPurchases = () => {
         'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
         'Vendor': purchase.vendor_id || 'N/A',
         'Client': customer?.dealer_name || 'N/A',
+        'SKU': purchase.sku || '',
         'Quantity': purchase.quantity,
         'Cost per Label': purchase.cost_per_label,
         'Total Amount': purchase.total_amount,
@@ -540,8 +546,8 @@ const LabelPurchases = () => {
     <div className="space-y-6">
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* First Row: Purchase Date, SKU, Vendor */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* First Row: Purchase Date, Client, SKU, Vendor */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="space-y-2">
             <Label htmlFor="purchase-date">Purchase Date *</Label>
             <Input
@@ -570,6 +576,22 @@ const LabelPurchases = () => {
                     No clients found.
                   </div>
                 )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="sku">SKU</Label>
+            <Select value={form.sku} onValueChange={(value) => setForm({ ...form, sku: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select SKU" />
+              </SelectTrigger>
+              <SelectContent>
+                {getAvailableSKUs().map((item) => (
+                  <SelectItem key={item.sku} value={item.sku}>
+                    {item.sku}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -744,6 +766,7 @@ const LabelPurchases = () => {
                     />
                   </div>
                 </TableHead>
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">SKU</TableHead>
                 <TableHead className="text-right bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -820,6 +843,7 @@ const LabelPurchases = () => {
                     <TableCell>
                       {customers?.find(c => c.id === purchase.client_id)?.dealer_name || 'N/A'}
                     </TableCell>
+                    <TableCell>{purchase.sku || '—'}</TableCell>
               <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
               <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
               <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString()}</TableCell>
@@ -840,8 +864,8 @@ const LabelPurchases = () => {
                               <DialogTitle>Edit Label Purchase</DialogTitle>
                             </DialogHeader>
                             <form onSubmit={handleEditSubmit} className="space-y-4">
-                              {/* First Row: Purchase Date, SKU, Vendor */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              {/* First Row: Purchase Date, Client, SKU, Vendor */}
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div className="space-y-2">
                                   <Label htmlFor="edit-purchase-date">Purchase Date *</Label>
                                   <Input
@@ -870,6 +894,22 @@ const LabelPurchases = () => {
                                           No clients found
                                         </div>
                                       )}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-sku">SKU</Label>
+                                  <Select value={editForm.sku} onValueChange={(value) => setEditForm({ ...editForm, sku: value })}>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select SKU" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {getAvailableSKUs().map((item) => (
+                                        <SelectItem key={item.sku} value={item.sku}>
+                                          {item.sku}
+                                        </SelectItem>
+                                      ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
@@ -981,7 +1021,7 @@ const LabelPurchases = () => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No label purchases found
                   </TableCell>
             </TableRow>
