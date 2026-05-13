@@ -1211,10 +1211,10 @@ const OrderManagement: React.FC = () => {
                     </TableHead>
                     <TableHead className="border-b border-blue-200/50 text-gray-800 font-semibold">
                       <div className="flex items-center gap-2 text-gray-800">
-                        <span>Delivery</span>
+                        <span>Tentative Delivery Date</span>
                         <ColumnFilter
                           columnKey="tentative_delivery_date"
-                          columnName="Delivery Date"
+                          columnName="Tentative Delivery Date"
                           filterValue={ordersColumnFilters.tentative_delivery_date}
                           onFilterChange={(value) => handleOrdersColumnFilterChange('tentative_delivery_date', value as string)}
                           onClearFilter={() => handleOrdersColumnFilterChange('tentative_delivery_date', '')}
