@@ -128,11 +128,15 @@ const OrderManagement: React.FC = () => {
               ...o,
               area: o.area ?? o.branch,
               number_of_cases: o.number_of_cases ?? o.quantity,
+              expense_date: (o.expense_date ?? o.date) as string | undefined,
             }));
           }
           return [];
         }
-        return data || [];
+        return (data as Array<Record<string, unknown>>).map((o) => ({
+          ...o,
+          expense_date: (o.date ?? o.expense_date) as string | undefined,
+        }));
       } catch {
         return [];
       }
