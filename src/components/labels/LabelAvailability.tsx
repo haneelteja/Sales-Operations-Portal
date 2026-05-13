@@ -5,8 +5,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Pagination } from "@/components/ui/pagination";
 import { Download, Search, Filter } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
+
+const PAGE_SIZE = 20;
 
 interface ClientLabelSummary {
   client_id: string;
@@ -25,6 +28,7 @@ const LabelAvailability = () => {
   const [sortField, setSortField] = React.useState<keyof ClientLabelSummary>("dealer_name");
 
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc");
+  const [page, setPage] = React.useState(1);
 
   // Fetch all label purchases
   const { data: labelPurchases, isLoading: isLoadingPurchases } = useQuery({
@@ -247,7 +251,10 @@ const LabelAvailability = () => {
     return filtered;
   }, [clientSummaries, searchTerm, statusFilter, sortField, sortDirection]);
 
-  // Handle sort (dealer_name removed from table but still in data for grouping)
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedData.length / PAGE_SIZE));
+  const pageRows = filteredAndSortedData.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Handle sort — also resets to page 1
   const handleSort = (field: keyof ClientLabelSummary) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -255,6 +262,7 @@ const LabelAvailability = () => {
       setSortField(field);
       setSortDirection('asc');
     }
+    setPage(1);
   };
 
   // Export to Excel
@@ -278,7 +286,7 @@ const LabelAvailability = () => {
           <h3 className="text-lg font-semibold">Label Availability Summary</h3>
           {filteredAndSortedData.length > 0 && (
             <div className="text-sm text-muted-foreground">
-              Showing {filteredAndSortedData.length} of {clientSummaries.length} combinations
+              Showing {Math.min((page - 1) * PAGE_SIZE + 1, filteredAndSortedData.length)}–{Math.min(page * PAGE_SIZE, filteredAndSortedData.length)} of {filteredAndSortedData.length} clients
             </div>
           )}
         </div>
@@ -291,14 +299,14 @@ const LabelAvailability = () => {
               <Input
                 placeholder="Search by client..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                 className="pl-10"
               />
             </div>
           </div>
           
           <div className="flex gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1); }}>
               <SelectTrigger className="w-[180px]">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Filter by status" />
@@ -390,7 +398,7 @@ const LabelAvailability = () => {
             </TableHeader>
             <TableBody>
               {filteredAndSortedData.length > 0 ? (
-                filteredAndSortedData.map((summary, index) => (
+                pageRows.map((summary, index) => (
                     <TableRow key={`${summary.dealer_name}_${index}`}>
                       <TableCell className="font-medium">
                         {summary.dealer_name}
@@ -434,6 +442,23 @@ const LabelAvailability = () => {
               )}
             </TableBody>
           </Table>
+          {filteredAndSortedData.length > PAGE_SIZE && (
+            <div className="px-4 py-2 border-t">
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                total={filteredAndSortedData.length}
+                pageSize={PAGE_SIZE}
+                onNextPage={() => setPage(p => Math.min(p + 1, totalPages))}
+                onPreviousPage={() => setPage(p => Math.max(p - 1, 1))}
+                onFirstPage={() => setPage(1)}
+                onLastPage={() => setPage(totalPages)}
+                onPageChange={setPage}
+                hasNextPage={page < totalPages}
+                hasPreviousPage={page > 1}
+              />
+            </div>
+          )}
           </div>
         )}
       </div>
