@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pagination } from "@/components/ui/pagination";
-import { Download, Search, Filter } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Download, Search, Filter, Maximize2, Minimize2 } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 5;
 
 interface ClientLabelSummary {
   client_id: string;
@@ -29,6 +30,7 @@ const LabelAvailability = () => {
 
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc");
   const [page, setPage] = React.useState(1);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   // Fetch all label purchases
   const { data: labelPurchases, isLoading: isLoadingPurchases } = useQuery({
@@ -279,146 +281,149 @@ const LabelAvailability = () => {
     await exportJsonToExcel(exportData, 'Label Availability', `label-availability-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg font-semibold">Label Availability Summary</h3>
+  const tableContent = (
+    <div className="space-y-4 flex flex-col flex-1 min-h-0">
+      {/* Header row */}
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold">Label Availability Summary</h3>
+        <div className="flex items-center gap-3">
           {filteredAndSortedData.length > 0 && (
             <div className="text-sm text-muted-foreground">
               Showing {Math.min((page - 1) * PAGE_SIZE + 1, filteredAndSortedData.length)}–{Math.min(page * PAGE_SIZE, filteredAndSortedData.length)} of {filteredAndSortedData.length} clients
             </div>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsFullscreen(fs => !fs)}
+            title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </Button>
+        </div>
+      </div>
+
+      {/* Filter Controls */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="flex-1 min-w-0">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="Search by client..."
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+              className="pl-10"
+            />
+          </div>
         </div>
 
-        {/* Filter Controls */}
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-          <div className="flex-1 min-w-0">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="Search by client..."
-                value={searchTerm}
-                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-                className="pl-10"
-              />
-            </div>
-          </div>
-          
-          <div className="flex gap-2">
-            <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[180px]">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="available">Available</SelectItem>
-                <SelectItem value="low_stock">Low Stock</SelectItem>
-                <SelectItem value="out_of_stock">Out of Stock</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            <Button onClick={handleExport} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
+        <div className="flex gap-2">
+          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1); }}>
+            <SelectTrigger className="w-[180px]">
+              <Filter className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="available">Available</SelectItem>
+              <SelectItem value="low_stock">Low Stock</SelectItem>
+              <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Button onClick={handleExport} variant="outline" size="sm">
+            <Download className="h-4 w-4 mr-2" />
+            Export Excel
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading label availability data...</p>
           </div>
         </div>
-        
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading label availability data...</p>
-            </div>
-          </div>
-        ) : (
-          <div className="border rounded-lg">
+      ) : (
+        <div className={`border rounded-lg flex flex-col ${isFullscreen ? "flex-1 min-h-0 overflow-hidden" : ""}`}>
+          <div className={isFullscreen ? "overflow-y-auto flex-1" : ""}>
             <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('dealer_name')}
-                >
-                  <div className="flex items-center gap-2">
-                    Client
-                    {sortField === 'dealer_name' && (
-                      <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('total_labels_purchased')}
-                >
-                  <div className="flex items-center gap-2">
-                    Labels Purchased
-                    {sortField === 'total_labels_purchased' && (
-                      <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('labels_used')}
-                >
-                  <div className="flex items-center gap-2">
-                    Labels Used
-                    {sortField === 'labels_used' && (
-                      <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('labels_available')}
-                >
-                  <div className="flex items-center gap-2">
-                    Labels Available
-                    {sortField === 'labels_available' && (
-                      <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('last_purchase_date')}
-                >
-                  <div className="flex items-center gap-2">
-                    Last Purchase
-                    {sortField === 'last_purchase_date' && (
-                      <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </TableHead>
-                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredAndSortedData.length > 0 ? (
-                pageRows.map((summary, index) => (
+              <TableHeader>
+                <TableRow>
+                  <TableHead
+                    className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
+                    onClick={() => handleSort('dealer_name')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Client
+                      {sortField === 'dealer_name' && (
+                        <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
+                    onClick={() => handleSort('total_labels_purchased')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Labels Purchased
+                      {sortField === 'total_labels_purchased' && (
+                        <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
+                    onClick={() => handleSort('labels_used')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Labels Used
+                      {sortField === 'labels_used' && (
+                        <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
+                    onClick={() => handleSort('labels_available')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Labels Available
+                      {sortField === 'labels_available' && (
+                        <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
+                    onClick={() => handleSort('last_purchase_date')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Last Purchase
+                      {sortField === 'last_purchase_date' && (
+                        <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredAndSortedData.length > 0 ? (
+                  pageRows.map((summary, index) => (
                     <TableRow key={`${summary.dealer_name}_${index}`}>
-                      <TableCell className="font-medium">
-                        {summary.dealer_name}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {summary.total_labels_purchased.toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        {summary.labels_used.toLocaleString()}
-                      </TableCell>
+                      <TableCell className="font-medium">{summary.dealer_name}</TableCell>
+                      <TableCell className="font-medium">{summary.total_labels_purchased.toLocaleString()}</TableCell>
+                      <TableCell>{summary.labels_used.toLocaleString()}</TableCell>
                       <TableCell className={`font-medium ${summary.labels_available > 0 ? 'text-green-600' : summary.labels_available < 0 ? 'text-red-600' : 'text-gray-600'}`}>
                         {summary.labels_available.toLocaleString()}
                       </TableCell>
-                      <TableCell>
-                        {new Date(summary.last_purchase_date).toLocaleDateString()}
-                      </TableCell>
+                      <TableCell>{new Date(summary.last_purchase_date).toLocaleDateString()}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs ${
                           summary.labels_available > 2500
-                            ? 'bg-green-100 text-green-800' 
+                            ? 'bg-green-100 text-green-800'
                             : summary.labels_available > 0
                             ? 'bg-yellow-100 text-yellow-800'
                             : summary.labels_available < 0
@@ -429,19 +434,20 @@ const LabelAvailability = () => {
                         </span>
                       </TableCell>
                     </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                    {clientSummaries.length === 0 
-                      ? "No label data found. Start by recording some label purchases in the Labels Purchase tab."
-                      : "No results found matching your search criteria. Try adjusting your filters."
-                    }
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      {clientSummaries.length === 0
+                        ? "No label data found. Start by recording some label purchases in the Labels Purchase tab."
+                        : "No results found matching your search criteria. Try adjusting your filters."
+                      }
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
           {filteredAndSortedData.length > PAGE_SIZE && (
             <div className="px-4 py-2 border-t">
               <Pagination
@@ -459,9 +465,27 @@ const LabelAvailability = () => {
               />
             </div>
           )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if (isFullscreen) {
+    return (
+      <Dialog open={true} onOpenChange={() => setIsFullscreen(false)}>
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[92vh] flex flex-col p-6 gap-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Label Availability Summary</DialogTitle>
+          </DialogHeader>
+          {tableContent}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {tableContent}
     </div>
   );
 };

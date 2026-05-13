@@ -94,11 +94,19 @@ const LabelPurchases = () => {
       .map((c: { sku: string }) => ({ sku: c.sku }));
   };
 
-  const { data: vendors } = useQuery({
-    queryKey: ["label-vendors"],
+  const { data: labelVendors } = useQuery({
+    queryKey: ["label-vendors-config"],
     queryFn: async () => {
-      const { data } = await supabase.from("label_vendors").select("*").order("vendor_name", { ascending: true });
-      return data || [];
+      const { data } = await supabase
+        .from("invoice_configurations")
+        .select("config_value")
+        .eq("config_key", "label_vendors")
+        .maybeSingle();
+      if (!data) return [] as string[];
+      try {
+        const parsed = JSON.parse(data.config_value || "[]");
+        return (Array.isArray(parsed) ? parsed.filter(Boolean) : []) as string[];
+      } catch { return [] as string[]; }
     },
   });
 
@@ -598,13 +606,16 @@ const LabelPurchases = () => {
 
           <div className="space-y-2">
             <Label htmlFor="vendor">Vendor *</Label>
-            <Input
-              id="vendor"
-              type="text"
-              value={form.vendor_id}
-              onChange={(e) => setForm({ ...form, vendor_id: e.target.value })}
-              placeholder="Enter vendor name"
-            />
+            <Select value={form.vendor_id} onValueChange={(value) => setForm({ ...form, vendor_id: value })}>
+              <SelectTrigger id="vendor">
+                <SelectValue placeholder="Select vendor" />
+              </SelectTrigger>
+              <SelectContent>
+                {(labelVendors || []).map((vendor) => (
+                  <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -916,13 +927,16 @@ const LabelPurchases = () => {
 
                                 <div className="space-y-2">
                                   <Label htmlFor="edit-vendor">Vendor *</Label>
-                                  <Input
-                                    id="edit-vendor"
-                                    type="text"
-                                    value={editForm.vendor_id}
-                                    onChange={(e) => setEditForm({ ...editForm, vendor_id: e.target.value })}
-                                    placeholder="Enter vendor name"
-                                  />
+                                  <Select value={editForm.vendor_id} onValueChange={(value) => setEditForm({ ...editForm, vendor_id: value })}>
+                                    <SelectTrigger id="edit-vendor">
+                                      <SelectValue placeholder="Select vendor" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {(labelVendors || []).map((vendor) => (
+                                        <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               </div>
 

@@ -49,7 +49,7 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isTransportVendorsDialogOpen, setIsTransportVendorsDialogOpen] = useState(false);
   const [isExpenseGroupsDialogOpen, setIsExpenseGroupsDialogOpen] = useState(false);
   const [isTentativeDeliveryDaysDialogOpen, setIsTentativeDeliveryDaysDialogOpen] = useState(false);
-  const [isPurchaseItemsDialogOpen, setIsPurchaseItemsDialogOpen] = useState(false);
+  const [isLabelVendorsDialogOpen, setIsLabelVendorsDialogOpen] = useState(false);
   const [isWhatsAppApiKeyDialogOpen, setIsWhatsAppApiKeyDialogOpen] = useState(false);
   const [isProductionRecipientsDialogOpen, setIsProductionRecipientsDialogOpen] = useState(false);
   const [isRunningBackup, setIsRunningBackup] = useState(false);
@@ -156,25 +156,19 @@ const ApplicationConfigurationTab: React.FC = () => {
       customKey: 'production_order_recipients',
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
 
-    // Row 3: Item list (purchase_items)
-    const purchaseItemsConfig = configMap.get('purchase_items');
-    if (purchaseItemsConfig) {
-      result.push(purchaseItemsConfig);
-      seen.add('purchase_items');
-    } else {
-      result.push({
-        id: '',
-        config_key: 'purchase_items',
-        config_value: '[]',
-        config_type: 'string',
-        description: 'Item list for Purchase dropdown (preforms, caps, shrink)',
-        updated_by: null,
-        updated_at: '',
-        created_at: '',
-        isCustom: true,
-        customKey: 'purchase_items',
-      } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
-    }
+    // Row 3: Label vendors
+    result.push({
+      id: '',
+      config_key: 'label_vendors',
+      config_value: '[]',
+      config_type: 'json',
+      description: 'Labels vendor list — vendors available in Labels Purchase and Labels Payment dropdowns',
+      updated_by: null,
+      updated_at: '',
+      created_at: '',
+      isCustom: true,
+      customKey: 'label_vendors',
+    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
 
     // Row 3+: Ordered configs
     for (const key of order) {
@@ -410,11 +404,11 @@ const ApplicationConfigurationTab: React.FC = () => {
                             <Edit className="h-4 w-4" />
                             Edit
                           </Button>
-                        ) : config.config_key === 'purchase_items' ? (
+                        ) : config.config_key === 'label_vendors' ? (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setIsPurchaseItemsDialogOpen(true)}
+                            onClick={() => setIsLabelVendorsDialogOpen(true)}
                             className="flex items-center gap-2"
                           >
                             <Edit className="h-4 w-4" />
@@ -665,14 +659,14 @@ const ApplicationConfigurationTab: React.FC = () => {
         onOpenChange={setIsTentativeDeliveryDaysDialogOpen}
       />
 
-      {/* Purchase Items Dialog */}
+      {/* Label Vendors Dialog */}
       <EditListConfigDialog
-        open={isPurchaseItemsDialogOpen}
-        onOpenChange={setIsPurchaseItemsDialogOpen}
-        configKey="purchase_items"
-        title="Item List for Purchase"
-        description="Add or remove items for the Purchase page dropdown (e.g. Preforms, Caps, Shrink)."
-        placeholder="e.g. Preforms, Caps, Shrink"
+        open={isLabelVendorsDialogOpen}
+        onOpenChange={setIsLabelVendorsDialogOpen}
+        configKey="label_vendors"
+        title="Labels Vendor List"
+        description="Add or remove label vendors. These appear in the Labels Purchase and Labels Payment vendor dropdowns."
+        placeholder="e.g. GMG Labels"
       />
 
       {/* WhatsApp API Key Dialog */}

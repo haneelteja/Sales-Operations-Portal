@@ -58,23 +58,20 @@ const LabelPayments = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Get unique vendors from label_purchases only (actual vendors used in purchases)
-  const { data: purchaseVendors } = useQuery({
-    queryKey: ["purchase-vendors"],
+  // Fetch label vendors from configuration
+  const { data: labelVendors } = useQuery({
+    queryKey: ["label-vendors-config"],
     queryFn: async () => {
       const { data } = await supabase
-        .from("label_purchases")
-        .select("vendor_id")
-        .not("vendor_id", "is", null);
-      
-      if (!data) return [];
-      
-      // Get unique vendor names
-      const uniqueVendors = [...new Set(data.map(p => p.vendor_id).filter(Boolean))];
-      return uniqueVendors.map((vendorName, index) => ({
-        id: `vendor_${index}`,
-        vendor_name: vendorName
-      }));
+        .from("invoice_configurations")
+        .select("config_value")
+        .eq("config_key", "label_vendors")
+        .maybeSingle();
+      if (!data) return [] as string[];
+      try {
+        const parsed = JSON.parse(data.config_value || "[]");
+        return (Array.isArray(parsed) ? parsed.filter(Boolean) : []) as string[];
+      } catch { return [] as string[]; }
     },
   });
 
@@ -115,17 +112,13 @@ const LabelPayments = () => {
 
   const mutation = useMutation({
     mutationFn: async (data: LabelPaymentForm) => {
-      // Get vendor name from the selected vendor ID
-      const selectedVendor = getUniqueVendors().find(v => v.id === data.vendor_id);
-      const vendorName = selectedVendor?.vendor_name || data.vendor_id;
-      
       const { error } = await supabase
         .from("label_payments")
         .insert({
           payment_amount: parseFloat(data.payment_amount),
           payment_date: data.payment_date,
           payment_method: data.payment_method,
-          vendor_id: vendorName, // Store vendor name as text
+          vendor_id: data.vendor_id,
           description: data.description || null
         });
 
@@ -141,7 +134,6 @@ const LabelPayments = () => {
         description: ""
       });
       queryClient.invalidateQueries({ queryKey: ["label-payments"] });
-      queryClient.invalidateQueries({ queryKey: ["purchase-vendors"] });
     },
     onError: (error) => {
       toast({ 
@@ -154,17 +146,13 @@ const LabelPayments = () => {
 
   const updateMutation = useMutation({
     mutationFn: async (data: { id: string } & LabelPaymentForm) => {
-      // Get vendor name from the selected vendor ID
-      const selectedVendor = getUniqueVendors().find(v => v.id === data.vendor_id);
-      const vendorName = selectedVendor?.vendor_name || data.vendor_id;
-      
       const { error } = await supabase
         .from("label_payments")
         .update({
           payment_amount: parseFloat(data.payment_amount),
           payment_date: data.payment_date,
           payment_method: data.payment_method,
-          vendor_id: vendorName, // Store vendor name as text
+          vendor_id: data.vendor_id,
           description: data.description || null
         })
         .eq("id", data.id);
@@ -224,15 +212,11 @@ const LabelPayments = () => {
 
   const handleEditClick = (payment: LabelPayment) => {
     setEditingPayment(payment);
-    
-    // Find the vendor ID that matches the vendor name
-    const vendorId = getUniqueVendors().find(v => v.vendor_name === payment.vendor_id)?.id || payment.vendor_id;
-    
     setEditForm({
       payment_amount: payment.payment_amount.toString(),
       payment_date: payment.payment_date,
       payment_method: payment.payment_method,
-      vendor_id: vendorId,
+      vendor_id: payment.vendor_id,
       description: payment.description || ""
     });
   };
@@ -250,28 +234,6 @@ const LabelPayments = () => {
     }
   };
 
-
-  // Get unique vendors (case-insensitive) from purchases only
-  const getUniqueVendors = () => {
-    if (!purchaseVendors || purchaseVendors.length === 0) return [];
-    
-    const seenVendors = new Set<string>();
-    const uniqueVendors: typeof purchaseVendors = [];
-    
-    purchaseVendors.forEach(vendor => {
-      if (vendor.vendor_name && vendor.vendor_name.trim() !== '') {
-        const trimmedName = vendor.vendor_name.trim();
-        const lowerCaseName = trimmedName.toLowerCase();
-        
-        if (!seenVendors.has(lowerCaseName)) {
-          seenVendors.add(lowerCaseName);
-          uniqueVendors.push(vendor);
-        }
-      }
-    });
-    
-    return uniqueVendors.sort((a, b) => a.vendor_name.localeCompare(b.vendor_name));
-  };
 
   const totalPayments = payments?.reduce((sum, payment) => sum + payment.payment_amount, 0) || 0;
 
@@ -498,18 +460,16 @@ const LabelPayments = () => {
 
           <div className="space-y-2">
             <Label htmlFor="vendor">Vendor *</Label>
-            <Select 
-              value={form.vendor_id} 
+            <Select
+              value={form.vendor_id}
               onValueChange={(value) => setForm({...form, vendor_id: value})}
             >
               <SelectTrigger id="vendor">
                 <SelectValue placeholder="Select a vendor" />
               </SelectTrigger>
               <SelectContent>
-                {getUniqueVendors().map((vendor) => (
-                  <SelectItem key={vendor.id} value={vendor.id}>
-                    {vendor.vendor_name}
-                  </SelectItem>
+                {(labelVendors || []).map((vendor) => (
+                  <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -796,18 +756,16 @@ const LabelPayments = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-vendor">Vendor *</Label>
-                  <Select 
-                    value={editForm.vendor_id} 
+                  <Select
+                    value={editForm.vendor_id}
                     onValueChange={(value) => setEditForm({...editForm, vendor_id: value})}
                   >
                     <SelectTrigger id="edit-vendor">
                       <SelectValue placeholder="Select a vendor" />
                     </SelectTrigger>
                     <SelectContent>
-                      {getUniqueVendors().map((vendor) => (
-                        <SelectItem key={vendor.id} value={vendor.id}>
-                          {vendor.vendor_name}
-                        </SelectItem>
+                      {(labelVendors || []).map((vendor) => (
+                        <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

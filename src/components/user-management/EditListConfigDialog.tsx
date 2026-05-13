@@ -66,16 +66,16 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
         .from('invoice_configurations')
         .select('id, config_value')
         .eq('config_key', configKey)
-        .single();
+        .maybeSingle();
       if (error) throw error;
-      return data;
+      return data; // null if row doesn't exist yet
     },
     enabled: open,
   });
 
   useEffect(() => {
-    if (open && config) {
-      setRows(parseJsonArray(config.config_value || '[]'));
+    if (open) {
+      setRows(config ? parseJsonArray(config.config_value || '[]') : []);
       setHasLocalChanges(false);
     }
   }, [open, config]);
@@ -105,8 +105,10 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
       const configValue = JSON.stringify(trimmed);
       const { error } = await supabase
         .from('invoice_configurations')
-        .update({ config_value: configValue })
-        .eq('config_key', configKey);
+        .upsert(
+          { config_key: configKey, config_value: configValue, config_type: 'json' },
+          { onConflict: 'config_key' }
+        );
       if (error) throw error;
     },
     onSuccess: () => {
@@ -118,8 +120,8 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
       if (configKey === 'expense_groups') {
         queryClient.invalidateQueries({ queryKey: ['expense-groups-config'] });
       }
-      if (configKey === 'purchase_items') {
-        queryClient.invalidateQueries({ queryKey: ['purchase-items-config'] });
+      if (configKey === 'label_vendors') {
+        queryClient.invalidateQueries({ queryKey: ['label-vendors-config'] });
       }
       toast({ title: 'Success', description: 'Saved successfully.' });
       onOpenChange(false);
