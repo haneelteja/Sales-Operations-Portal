@@ -18,6 +18,7 @@ import { logger } from "@/lib/logger";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { Pagination } from "@/components/ui/pagination";
 
 interface OrderRow {
   id: string;
@@ -81,6 +82,10 @@ const OrderManagement: React.FC = () => {
     tentative_delivery_date: null,
   });
 
+  // Pagination state for Current Orders
+  const [ordersPage, setOrdersPage] = useState(1);
+  const ordersPageSize = 10;
+
   // Filter and sort states for Orders Dispatched table
   const [dispatchSearchTerm, setDispatchSearchTerm] = useState("");
   const debouncedDispatchSearchTerm = useDebouncedValue(dispatchSearchTerm, 300);
@@ -100,6 +105,10 @@ const OrderManagement: React.FC = () => {
     cases: null,
     delivery_date: null,
   });
+
+  // Pagination state for Orders Dispatched
+  const [dispatchPage, setDispatchPage] = useState(1);
+  const dispatchPageSize = 10;
 
   const { data: tentativeDeliveryDays = 5 } = useQuery({
     queryKey: ["tentative-delivery-days"],
@@ -837,10 +846,8 @@ const OrderManagement: React.FC = () => {
 
   // Handle column filter changes for Current Orders
   const handleOrdersColumnFilterChange = useCallback((columnKey: string, value: string) => {
-    setOrdersColumnFilters(prev => ({
-      ...prev,
-      [columnKey]: value
-    }));
+    setOrdersColumnFilters(prev => ({ ...prev, [columnKey]: value }));
+    setOrdersPage(1);
   }, []);
 
   const handleOrdersColumnSortChange = useCallback((columnKey: string, direction: "asc" | "desc" | null) => {
@@ -858,10 +865,8 @@ const OrderManagement: React.FC = () => {
 
   // Handle column filter changes for Orders Dispatched
   const handleDispatchColumnFilterChange = useCallback((columnKey: string, value: string) => {
-    setDispatchColumnFilters(prev => ({
-      ...prev,
-      [columnKey]: value
-    }));
+    setDispatchColumnFilters(prev => ({ ...prev, [columnKey]: value }));
+    setDispatchPage(1);
   }, []);
 
   const handleDispatchColumnSortChange = useCallback((columnKey: string, direction: "asc" | "desc" | null) => {
@@ -1087,14 +1092,14 @@ const OrderManagement: React.FC = () => {
               <Input
                 placeholder="Search orders..."
                 value={ordersSearchTerm}
-                onChange={(e) => setOrdersSearchTerm(e.target.value)}
+                onChange={(e) => { setOrdersSearchTerm(e.target.value); setOrdersPage(1); }}
                 className="w-full"
               />
             </div>
             <div className="hidden md:block ml-auto">
-              <Button 
-                variant="outline" 
-                onClick={exportOrdersToExcel} 
+              <Button
+                variant="outline"
+                onClick={exportOrdersToExcel}
                 disabled={!filteredAndSortedOrders.length}
                 size="sm"
                 className="whitespace-nowrap"
@@ -1229,7 +1234,7 @@ const OrderManagement: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAndSortedOrders.map((order) => (
+                  {filteredAndSortedOrders.slice((ordersPage - 1) * ordersPageSize, ordersPage * ordersPageSize).map((order) => (
                     <TableRow key={order.id} className="hover:bg-gray-50">
                       <TableCell>{order.client || "-"}</TableCell>
                       <TableCell>{order.area || "-"}</TableCell>
@@ -1277,6 +1282,19 @@ const OrderManagement: React.FC = () => {
                 </TableBody>
               </Table>
               </div>
+              <Pagination
+                page={ordersPage}
+                totalPages={Math.max(1, Math.ceil(filteredAndSortedOrders.length / ordersPageSize))}
+                total={filteredAndSortedOrders.length}
+                pageSize={ordersPageSize}
+                onNextPage={() => setOrdersPage(p => Math.min(p + 1, Math.ceil(filteredAndSortedOrders.length / ordersPageSize)))}
+                onPreviousPage={() => setOrdersPage(p => Math.max(p - 1, 1))}
+                onFirstPage={() => setOrdersPage(1)}
+                onLastPage={() => setOrdersPage(Math.ceil(filteredAndSortedOrders.length / ordersPageSize))}
+                onPageChange={setOrdersPage}
+                hasNextPage={ordersPage < Math.ceil(filteredAndSortedOrders.length / ordersPageSize)}
+                hasPreviousPage={ordersPage > 1}
+              />
             </>
           )}
         </CardContent>
@@ -1290,7 +1308,7 @@ const OrderManagement: React.FC = () => {
               <Input
                 placeholder="Search dispatch records..."
                 value={dispatchSearchTerm}
-                onChange={(e) => setDispatchSearchTerm(e.target.value)}
+                onChange={(e) => { setDispatchSearchTerm(e.target.value); setDispatchPage(1); }}
                 className="w-full"
               />
             </div>
@@ -1415,7 +1433,7 @@ const OrderManagement: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAndSortedDispatch.map((order) => (
+                  {filteredAndSortedDispatch.slice((dispatchPage - 1) * dispatchPageSize, dispatchPage * dispatchPageSize).map((order) => (
                     <TableRow key={order.id} className="hover:bg-gray-50">
                       <TableCell>{order.client || "-"}</TableCell>
                       <TableCell>{order.area || "-"}</TableCell>
@@ -1434,6 +1452,19 @@ const OrderManagement: React.FC = () => {
                 </TableBody>
               </Table>
               </div>
+              <Pagination
+                page={dispatchPage}
+                totalPages={Math.max(1, Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize))}
+                total={filteredAndSortedDispatch.length}
+                pageSize={dispatchPageSize}
+                onNextPage={() => setDispatchPage(p => Math.min(p + 1, Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize)))}
+                onPreviousPage={() => setDispatchPage(p => Math.max(p - 1, 1))}
+                onFirstPage={() => setDispatchPage(1)}
+                onLastPage={() => setDispatchPage(Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize))}
+                onPageChange={setDispatchPage}
+                hasNextPage={dispatchPage < Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize)}
+                hasPreviousPage={dispatchPage > 1}
+              />
             </>
           )}
         </CardContent>
