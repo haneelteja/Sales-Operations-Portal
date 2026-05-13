@@ -20,7 +20,6 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -28,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Pagination } from "@/components/ui/pagination";
 import {
-  Download, ChevronDown, ChevronRight, AlertTriangle, Loader2, TrendingUp, TrendingDown,
+  Download, ChevronDown, ChevronRight, Loader2, TrendingUp, TrendingDown,
 } from "lucide-react";
 import ExcelJS from "exceljs";
 
@@ -55,22 +54,11 @@ interface MiscExpense {
   date: string;
 }
 
-interface UnresolvedTx {
-  clientName: string;
-  branch: string;
-  sku?: string;
-  invoiceDate: string;
-  deliveryDate?: string;
-  amount: number;
-  mismatches: string[];
-}
-
 interface MonthData {
   monthKey: string;
   label: string;
   clientRows: ClientRow[];
   miscExpenses: MiscExpense[];
-  unresolvedTxs: UnresolvedTx[];
   totals: {
     productionCost: number;
     transportCost: number;
@@ -132,7 +120,6 @@ interface RawSale {
   amount: number | null;
   transaction_type: string;
   sku: string | null;
-  customers: { dealer_name: string; area: string } | null;
 }
 
 interface RawFactory {
@@ -162,51 +149,16 @@ interface RawLabel {
   description: string | null;
 }
 
-interface RawOrder {
-  id: string;
-  client: string;
-  area: string | null;
-  sku: string | null;
-  tentative_delivery_date: string | null;
-}
-
-interface RawDispatch {
-  id: string;
-  client: string;
-  area: string;
-  sku: string;
-  delivery_date: string;
-}
-
 function processData(
   sales: RawSale[],
   factory: RawFactory[],
   transport: RawTransport[],
   labels: RawLabel[],
-  orders: RawOrder[],
-  dispatches: RawDispatch[],
   months: Array<{ monthKey: string; label: string }>,
   customers: Array<{ id: string; dealer_name: string; area: string }>,
 ): MonthData[] {
   // Build customer lookup id → { dealer_name, area }
   const custById = new Map(customers.map(c => [c.id, c]));
-
-  // Build delivery date lookup: "clientName|area|sku" → Set of delivery dates (ISO strings)
-  const deliveryDates = new Map<string, Set<string>>();
-  const addDelivery = (client: string, area: string, sku: string | null, date: string) => {
-    const k = `${client.trim().toLowerCase()}|${(area ?? "").trim().toLowerCase()}|${(sku ?? "").trim().toLowerCase()}`;
-    if (!deliveryDates.has(k)) deliveryDates.set(k, new Set());
-    deliveryDates.get(k)!.add(date);
-  };
-  orders.forEach(o => {
-    if (o.tentative_delivery_date) addDelivery(o.client, o.area ?? "", o.sku, o.tentative_delivery_date);
-  });
-  dispatches.forEach(d => addDelivery(d.client, d.area, d.sku, d.delivery_date));
-
-  const hasMatchingDelivery = (clientName: string, area: string, sku: string | null, date: string) => {
-    const k = `${clientName.trim().toLowerCase()}|${area.trim().toLowerCase()}|${(sku ?? "").trim().toLowerCase()}`;
-    return deliveryDates.get(k)?.has(date) ?? false;
-  };
 
   // Only production-type factory records count as cost
   const factoryProd = factory.filter(f => f.transaction_type === "production");
@@ -216,50 +168,14 @@ function processData(
   const transportMisc = transport.filter(t => t.client_id == null);
 
   return months.map(({ monthKey, label }) => {
-    // ── Sales for this month ──────────────────────────────────────────────────
+    // ── Sales for this month (by transaction_date) ────────────────────────────
     const monthSales = sales.filter(
       s => s.transaction_type === "sale" && isoMonthKey(s.transaction_date) === monthKey
     );
 
-    // Split resolved vs unresolved based on delivery date matching
-    const resolvedSales: RawSale[] = [];
-    const unresolvedTxs: UnresolvedTx[] = [];
-
-    monthSales.forEach(sale => {
-      const cust = custById.get(sale.customer_id);
-      const name = cust?.dealer_name ?? "Unknown";
-      const area = cust?.area ?? "";
-      const matched = hasMatchingDelivery(name, area, sale.sku, sale.transaction_date);
-
-      if (matched) {
-        resolvedSales.push(sale);
-      } else {
-        // Find closest delivery date for UI display
-        const lookupKey = `${name.trim().toLowerCase()}|${area.trim().toLowerCase()}|${(sale.sku ?? "").trim().toLowerCase()}`;
-        const knownDates = deliveryDates.get(lookupKey);
-        const mismatches: string[] = [];
-        let deliveryDate: string | undefined;
-        if (knownDates && knownDates.size > 0) {
-          deliveryDate = [...knownDates].sort().at(-1);
-          mismatches.push("Invoice date ≠ Delivery date");
-        } else {
-          mismatches.push("No matching order/dispatch found");
-        }
-        unresolvedTxs.push({
-          clientName: name,
-          branch: area,
-          sku: sale.sku ?? undefined,
-          invoiceDate: sale.transaction_date,
-          deliveryDate,
-          amount: sale.amount ?? 0,
-          mismatches,
-        });
-      }
-    });
-
-    // ── Group resolved sales by customer key ──────────────────────────────────
+    // ── Group sales by customer key ───────────────────────────────────────────
     const clientMap = new Map<string, ClientRow>();
-    resolvedSales.forEach(sale => {
+    monthSales.forEach(sale => {
       const cust = custById.get(sale.customer_id);
       const name = cust?.dealer_name ?? "Unknown";
       const area = cust?.area ?? "";
@@ -355,7 +271,7 @@ function processData(
     );
     totals.netProfit = totals.invoiceAmount - totals.totalExpense - miscTotal;
 
-    return { monthKey, label, clientRows, miscExpenses, unresolvedTxs, totals };
+    return { monthKey, label, clientRows, miscExpenses, totals };
   });
 }
 
@@ -366,13 +282,13 @@ const PAGE_SIZE = 20;
 function MonthBlock({ data }: { data: MonthData }) {
   const [open, setOpen] = useState(true);
   const [miscOpen, setMiscOpen] = useState(false);
-  const [unresolvedOpen, setUnresolvedOpen] = useState(false);
   const [page, setPage] = useState(1);
 
   const totalPages = Math.max(1, Math.ceil(data.clientRows.length / PAGE_SIZE));
   const pageRows = data.clientRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const { totals } = data;
   const hasData = data.clientRows.length > 0 || data.miscExpenses.length > 0;
+
 
   const profitColor = totals.netProfit >= 0 ? "text-green-700" : "text-red-700";
   const profitSign = totals.netProfit >= 0 ? "+" : "-";
@@ -388,12 +304,6 @@ function MonthBlock({ data }: { data: MonthData }) {
           <div className="flex items-center gap-2">
             {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
             <CardTitle className="text-base">{data.label}</CardTitle>
-            {data.unresolvedTxs.length > 0 && (
-              <Badge variant="outline" className="text-amber-700 border-amber-400 gap-1 text-xs">
-                <AlertTriangle className="h-3 w-3" />
-                {data.unresolvedTxs.length} unresolved
-              </Badge>
-            )}
           </div>
           <div className="flex items-center gap-6 text-sm">
             <span className="text-muted-foreground">
@@ -504,48 +414,6 @@ function MonthBlock({ data }: { data: MonthData }) {
                 </div>
               )}
 
-              {/* Unresolved transactions */}
-              {data.unresolvedTxs.length > 0 && (
-                <div className="border-t">
-                  <button
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 w-full hover:bg-amber-100 transition-colors"
-                    onClick={() => setUnresolvedOpen(o => !o)}
-                  >
-                    {unresolvedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                    <AlertTriangle className="h-4 w-4" />
-                    Unresolved Transactions — {data.unresolvedTxs.length} records excluded from calculation
-                  </button>
-                  {unresolvedOpen && (
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-amber-50">
-                          <TableHead className="text-xs uppercase tracking-wide text-amber-800 px-4 py-2">Client</TableHead>
-                          <TableHead className="text-xs uppercase tracking-wide text-amber-800 px-4 py-2">Branch</TableHead>
-                          <TableHead className="text-xs uppercase tracking-wide text-amber-800 px-4 py-2">SKU</TableHead>
-                          <TableHead className="text-xs uppercase tracking-wide text-amber-800 px-4 py-2">Invoice Date</TableHead>
-                          <TableHead className="text-xs uppercase tracking-wide text-amber-800 px-4 py-2">Delivery Date</TableHead>
-                          <TableHead className="text-right text-xs uppercase tracking-wide text-amber-800 px-4 py-2">Amount</TableHead>
-                          <TableHead className="text-xs uppercase tracking-wide text-amber-800 px-4 py-2">Issue</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.unresolvedTxs.map((tx, i) => (
-                          <TableRow key={i} className="bg-amber-50/50">
-                            <TableCell className="px-4 py-2 text-sm font-medium">{tx.clientName}</TableCell>
-                            <TableCell className="px-4 py-2 text-sm">{tx.branch}</TableCell>
-                            <TableCell className="px-4 py-2 text-sm text-muted-foreground">{tx.sku ?? "—"}</TableCell>
-                            <TableCell className="px-4 py-2 text-sm">{tx.invoiceDate}</TableCell>
-                            <TableCell className="px-4 py-2 text-sm text-muted-foreground">{tx.deliveryDate ?? "—"}</TableCell>
-                            <TableCell className="text-right px-4 py-2 text-sm">{fmt(tx.amount)}</TableCell>
-                            <TableCell className="px-4 py-2 text-xs text-amber-700">{tx.mismatches.join(", ")}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </div>
-              )}
-
               {/* Month total row */}
               <div className="border-t bg-slate-50 px-4 py-3">
                 <div className="grid grid-cols-4 gap-4 text-sm">
@@ -613,23 +481,15 @@ export default function ProfitReport() {
   const { start, end } = getDateRange(effectiveYear, isFY);
 
   // Main data fetch for selected year
-  const { data: yearData, isLoading } = useQuery({
+  const { data: yearData, isLoading, isError, error } = useQuery({
     queryKey: ["profit-year-data", effectiveYear, isFY],
     enabled: yearOptions.length > 0,
     staleTime: 3 * 60 * 1000,
     queryFn: async () => {
-      const [
-        { data: sales },
-        { data: factory },
-        { data: transport },
-        { data: labels },
-        { data: customers },
-        { data: orders },
-        { data: dispatches },
-      ] = await Promise.all([
+      const [salesRes, factoryRes, transportRes, labelsRes, customersRes] = await Promise.all([
         supabase
           .from("sales_transactions")
-          .select("id, customer_id, transaction_date, amount, transaction_type, sku, customers(dealer_name, area)")
+          .select("id, customer_id, transaction_date, amount, transaction_type, sku")
           .gte("transaction_date", start)
           .lte("transaction_date", end)
           .eq("transaction_type", "sale"),
@@ -652,26 +512,22 @@ export default function ProfitReport() {
         supabase
           .from("customers")
           .select("id, dealer_name, area"),
-        supabase
-          .from("orders")
-          .select("id, client, area, sku, tentative_delivery_date")
-          .gte("tentative_delivery_date", start)
-          .lte("tentative_delivery_date", end),
-        supabase
-          .from("orders_dispatch")
-          .select("id, client, area, sku, delivery_date")
-          .gte("delivery_date", start)
-          .lte("delivery_date", end),
       ]);
 
+      // Surface any Supabase errors so they appear in the UI via isError
+      const errors = [salesRes, factoryRes, transportRes, labelsRes, customersRes]
+        .map(r => r.error)
+        .filter(Boolean);
+      if (errors.length > 0) {
+        throw new Error(errors.map(e => e!.message).join(" | "));
+      }
+
       return {
-        sales: (sales ?? []) as RawSale[],
-        factory: (factory ?? []) as RawFactory[],
-        transport: (transport ?? []) as RawTransport[],
-        labels: (labels ?? []) as RawLabel[],
-        customers: (customers ?? []) as Array<{ id: string; dealer_name: string; area: string }>,
-        orders: (orders ?? []) as RawOrder[],
-        dispatches: (dispatches ?? []) as RawDispatch[],
+        sales: (salesRes.data ?? []) as RawSale[],
+        factory: (factoryRes.data ?? []) as RawFactory[],
+        transport: (transportRes.data ?? []) as RawTransport[],
+        labels: (labelsRes.data ?? []) as RawLabel[],
+        customers: (customersRes.data ?? []) as Array<{ id: string; dealer_name: string; area: string }>,
       };
     },
   });
@@ -685,8 +541,6 @@ export default function ProfitReport() {
       yearData.factory,
       yearData.transport,
       yearData.labels,
-      yearData.orders,
-      yearData.dispatches,
       months,
       yearData.customers,
     );
@@ -766,33 +620,6 @@ export default function ProfitReport() {
       mainSheet.addRow({});
     });
 
-    // Sheet 2: Unresolved transactions
-    const unresolvedSheet = wb.addWorksheet("Unresolved Transactions");
-    unresolvedSheet.columns = [
-      { header: "Month", key: "month", width: 16 },
-      { header: "Client", key: "client", width: 22 },
-      { header: "Branch", key: "branch", width: 16 },
-      { header: "SKU", key: "sku", width: 14 },
-      { header: "Invoice Date", key: "invoiceDate", width: 14 },
-      { header: "Delivery Date", key: "deliveryDate", width: 14 },
-      { header: "Amount", key: "amount", width: 14 },
-      { header: "Issue", key: "issue", width: 40 },
-    ];
-    monthData.forEach(m => {
-      m.unresolvedTxs.forEach(tx => {
-        unresolvedSheet.addRow({
-          month: m.label,
-          client: tx.clientName,
-          branch: tx.branch,
-          sku: tx.sku ?? "",
-          invoiceDate: tx.invoiceDate,
-          deliveryDate: tx.deliveryDate ?? "",
-          amount: tx.amount,
-          issue: tx.mismatches.join("; "),
-        });
-      });
-    });
-
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
@@ -852,6 +679,12 @@ export default function ProfitReport() {
             <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             <p className="text-sm text-muted-foreground">Loading profit data for {yearLabel}…</p>
           </div>
+        </div>
+      )}
+
+      {isError && (
+        <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+          <strong>Query error:</strong> {(error as Error)?.message ?? "Unknown error"}
         </div>
       )}
 
