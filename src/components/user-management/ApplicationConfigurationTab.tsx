@@ -28,6 +28,7 @@ import { EditBackupTimeDialog } from './EditBackupTimeDialog';
 import { EditNotificationEmailDialog } from './EditNotificationEmailDialog';
 import { EditSkusAvailableDialog } from './EditSkusAvailableDialog';
 import { EditListConfigDialog } from './EditListConfigDialog';
+import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
 import { EditWhatsAppApiKeyDialog } from './EditWhatsAppApiKeyDialog';
 import { EditProductionRecipientsDialog } from './EditProductionRecipientsDialog';
@@ -660,13 +661,9 @@ const ApplicationConfigurationTab: React.FC = () => {
       />
 
       {/* Label Vendors Dialog */}
-      <EditListConfigDialog
+      <EditVendorPricingDialog
         open={isLabelVendorsDialogOpen}
         onOpenChange={setIsLabelVendorsDialogOpen}
-        configKey="label_vendors"
-        title="Labels Vendor List"
-        description="Add or remove label vendors. These appear in the Labels Purchase and Labels Payment vendor dropdowns."
-        placeholder="e.g. GMG Labels"
       />
 
       {/* WhatsApp API Key Dialog */}

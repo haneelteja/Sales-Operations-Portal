@@ -112,7 +112,12 @@ const LabelPurchases = () => {
       if (!data) return [] as string[];
       try {
         const parsed = JSON.parse(data.config_value || "[]");
-        return (Array.isArray(parsed) ? parsed.filter(Boolean) : []) as string[];
+        if (!Array.isArray(parsed)) return [] as string[];
+        // Support both old flat string[] and new object[] format
+        const vendors = parsed.map((e: unknown) =>
+          typeof e === 'string' ? e : (e as { vendor?: string })?.vendor
+        ).filter((v): v is string => !!v);
+        return [...new Set(vendors)].sort() as string[];
       } catch { return [] as string[]; }
     },
   });
