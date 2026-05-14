@@ -46,6 +46,7 @@ export function PaymentEntryCard({
               <Input
                 id="payment-date"
                 type="date"
+                max={new Date().toISOString().split('T')[0]}
                 value={paymentForm.transaction_date}
                 onChange={(e) => onFormChange({ transaction_date: e.target.value })}
               />

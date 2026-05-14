@@ -505,6 +505,7 @@ export default function ReceivablesTrackingView() {
                       <input
                         type="date"
                         className="text-sm bg-transparent border border-transparent rounded px-2 py-1.5 focus:border-input focus:bg-background focus:outline-none transition-colors w-full"
+                        min={(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0]; })()}
                         value={followupVal}
                         onChange={e => {
                           const val = e.target.value;

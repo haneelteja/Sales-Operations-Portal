@@ -1099,12 +1099,14 @@ const SalesEntry = () => {
 
   const handlePaymentCustomerChange = useCallback((customerName: string) => {
     const selectedCustomer = findCustomerRecord({ customerName });
+    const branches = selectedCustomer ? getBranchesForCustomer(selectedCustomer.id) : [];
+    const autoArea = branches.length === 1 ? branches[0] : "";
     setPaymentForm((prev) => ({
       ...prev,
       customer_id: selectedCustomer?.id || "",
-      area: "",
+      area: autoArea,
     }));
-  }, [findCustomerRecord]);
+  }, [findCustomerRecord, getBranchesForCustomer]);
 
   const paymentCustomerName = paymentForm.customer_id
     ? getCustomerName(findCustomerById(paymentForm.customer_id))

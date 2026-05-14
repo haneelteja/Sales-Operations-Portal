@@ -671,6 +671,17 @@ const FactoryPayables = () => {
             <form onSubmit={handlePaymentSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label htmlFor="payment-date">Payment Date</Label>
+                  <Input
+                    id="payment-date"
+                    type="date"
+                    max={new Date().toISOString().split('T')[0]}
+                    value={paymentForm.transaction_date}
+                    onChange={(e) => setPaymentForm({...paymentForm, transaction_date: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="payment-amount">Payment Amount (₹) *</Label>
                   <Input
                     id="payment-amount"
@@ -679,16 +690,6 @@ const FactoryPayables = () => {
                     value={paymentForm.amount}
                     onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
                     placeholder="0.00"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="payment-date">Payment Date</Label>
-                  <Input
-                    id="payment-date"
-                    type="date"
-                    value={paymentForm.transaction_date}
-                    onChange={(e) => setPaymentForm({...paymentForm, transaction_date: e.target.value})}
                   />
                 </div>
               </div>

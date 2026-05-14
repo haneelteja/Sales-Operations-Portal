@@ -94,6 +94,34 @@ const Dashboard = memo(() => {
     },
   });
 
+  // Fetch monthly sales KPIs
+  const { data: monthlySales } = useQuery({
+    queryKey: ["dashboard-monthly-sales"],
+    ...getQueryConfig("dashboard-monthly-sales"),
+    queryFn: async () => {
+      const now = new Date();
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
+      const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
+
+      const { data } = await supabase
+        .from("sales_transactions")
+        .select("amount, transaction_type, transaction_date")
+        .eq("transaction_type", "sale")
+        .gte("transaction_date", prevMonthStart);
+
+      const rows = data || [];
+      const saleThisMonth = rows
+        .filter(r => r.transaction_date >= thisMonthStart)
+        .reduce((s, r) => s + (r.amount || 0), 0);
+      const salePrevMonth = rows
+        .filter(r => r.transaction_date >= prevMonthStart && r.transaction_date <= prevMonthEnd)
+        .reduce((s, r) => s + (r.amount || 0), 0);
+
+      return { saleThisMonth, salePrevMonth };
+    },
+  });
+
   // Pagination state for receivables table
   const [receivablesPage, setReceivablesPage] = useState(1);
   const receivablesPageSize = 25;
@@ -494,6 +522,42 @@ const Dashboard = memo(() => {
               <div>
                 <h3 className="text-sm font-semibold text-amber-800 mb-1">Critical Alerts - Outstanding &gt; ₹1L</h3>
                 <p className="text-2xl font-bold text-amber-600">{receivables?.filter(r => r.outstanding > 100000).length || 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sale This Month */}
+        <Card className="bg-teal-50 border border-teal-200 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-teal-900 mb-1">Sale This Month</h3>
+                <p className="text-2xl font-bold text-teal-600">₹{monthlySales?.saleThisMonth.toLocaleString() ?? 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sale Previous Month */}
+        <Card className="bg-cyan-50 border border-cyan-200 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-cyan-900 mb-1">Sale Previous Month</h3>
+                <p className="text-2xl font-bold text-cyan-600">₹{monthlySales?.salePrevMonth.toLocaleString() ?? 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total Outstanding All Clients */}
+        <Card className="bg-rose-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-rose-900 mb-1">Total Outstanding (All Clients)</h3>
+                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString() ?? 0}</p>
               </div>
             </div>
           </CardContent>
