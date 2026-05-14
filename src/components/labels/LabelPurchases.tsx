@@ -175,13 +175,13 @@ const LabelPurchases = () => {
         .from("sku_configurations")
         .select("sku")
         .order("sku", { ascending: true });
-      return data || [];
+      return (data || []).map(d => d.sku).filter((s): s is string => Boolean(s));
     },
   });
 
   // All distinct SKUs for a given customer id (matches across all branches of the same dealer)
   const getSkusForCustomerId = useCallback((clientId: string) => {
-    if (!clientId || !customers) return skuConfigs?.map(c => c.sku).filter(Boolean) ?? [];
+    if (!clientId || !customers) return skuConfigs ?? [];
     const selected = customers.find(c => c.id === clientId);
     if (!selected) return [];
     const dealerName = selected.dealer_name.trim().toLowerCase();
