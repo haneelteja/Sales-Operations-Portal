@@ -153,6 +153,7 @@ const LabelPurchases = () => {
     total_amount: null as "asc" | "desc" | null
   });
 
+  const today = new Date().toISOString().split('T')[0];
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -242,7 +243,7 @@ const LabelPurchases = () => {
     const p = entry.price !== '' && entry.price !== undefined ? Number(entry.price) : null;
     if (p === null) return '';
     const gst = entry.gst !== '' && entry.gst !== undefined ? Number(entry.gst) : 0;
-    return String((p * (1 + gst / 100)).toFixed(4));
+    return String((p * (1 + gst / 100)).toFixed(2));
   }, [vendorPricingEntries]);
 
   const { data: purchases } = useQuery({
@@ -376,6 +377,10 @@ const LabelPurchases = () => {
       toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
       return;
     }
+    if (form.purchase_date < "2024-01-01" || form.purchase_date > today) {
+      toast({ title: "Error", description: "Purchase Date must be between 1 Jan 2024 and today", variant: "destructive" });
+      return;
+    }
     mutation.mutate(form);
   };
 
@@ -458,6 +463,10 @@ const LabelPurchases = () => {
     e.preventDefault();
     if (!editForm.vendor_id || !editForm.client_id || !editForm.quantity || !editForm.cost_per_label) {
       toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
+      return;
+    }
+    if (editForm.purchase_date < "2024-01-01" || editForm.purchase_date > today) {
+      toast({ title: "Error", description: "Purchase Date must be between 1 Jan 2024 and today", variant: "destructive" });
       return;
     }
     if (editingPurchase) {
@@ -603,6 +612,8 @@ const LabelPurchases = () => {
               id="purchase-date"
               type="date"
               value={form.purchase_date}
+              min="2024-01-01"
+              max={today}
               onChange={(e) => handleDateChange(e.target.value)}
             />
           </div>
@@ -668,7 +679,7 @@ const LabelPurchases = () => {
             <Input
               id="cost-per-label"
               type="number"
-              step="0.0001"
+              step="0.01"
               value={form.cost_per_label}
               onChange={(e) => handleQuantityOrCostChange("cost_per_label", e.target.value)}
               placeholder="Auto-filled from config"
@@ -838,6 +849,8 @@ const LabelPurchases = () => {
                                   <Input
                                     type="date"
                                     value={editForm.purchase_date}
+                                    min="2024-01-01"
+                                    max={today}
                                     onChange={(e) => setEditForm({ ...editForm, purchase_date: e.target.value })}
                                   />
                                 </div>
@@ -896,7 +909,7 @@ const LabelPurchases = () => {
                                   <Label>Cost per Label (₹) *</Label>
                                   <Input
                                     type="number"
-                                    step="0.0001"
+                                    step="0.01"
                                     value={editForm.cost_per_label}
                                     onChange={(e) => handleEditQuantityOrCostChange("cost_per_label", e.target.value)}
                                     placeholder="0.0000"

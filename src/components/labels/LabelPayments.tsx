@@ -55,6 +55,7 @@ const LabelPayments = () => {
   const [paymentsSortField, setPaymentsSortField] = useState<"payment_date" | "vendor_id" | "payment_amount" | "payment_method">("payment_date");
   const [paymentsSortDirection, setPaymentsSortDirection] = useState<"asc" | "desc">("desc");
 
+  const today = new Date().toISOString().split('T')[0];
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -202,16 +203,21 @@ const LabelPayments = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!form.payment_amount || !form.payment_method || !form.vendor_id) {
-      toast({ 
-        title: "Error", 
+      toast({
+        title: "Error",
         description: "Payment Amount, Payment Method, and Vendor are required",
         variant: "destructive"
       });
       return;
     }
-    
+
+    if (form.payment_date < "2024-01-01" || form.payment_date > today) {
+      toast({ title: "Error", description: "Payment Date must be between 1 Jan 2024 and today", variant: "destructive" });
+      return;
+    }
+
     mutation.mutate(form);
   };
 
@@ -228,6 +234,10 @@ const LabelPayments = () => {
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (editForm.payment_date < "2024-01-01" || editForm.payment_date > today) {
+      toast({ title: "Error", description: "Payment Date must be between 1 Jan 2024 and today", variant: "destructive" });
+      return;
+    }
     if (editingPayment) {
       updateMutation.mutate({ id: editingPayment.id, ...editForm });
     }
@@ -459,6 +469,8 @@ const LabelPayments = () => {
               id="payment-date"
               type="date"
               value={form.payment_date}
+              min="2024-01-01"
+              max={today}
               onChange={(e) => setForm({...form, payment_date: e.target.value})}
             />
           </div>
@@ -755,6 +767,8 @@ const LabelPayments = () => {
                     id="edit-payment-date"
                     type="date"
                     value={editForm.payment_date}
+                    min="2024-01-01"
+                    max={today}
                     onChange={(e) => setEditForm({...editForm, payment_date: e.target.value})}
                   />
                 </div>
