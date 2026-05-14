@@ -175,6 +175,8 @@ export interface FactoryProductionForm {
   quantity: string;
   description: string;
   transaction_date: string;
+  customer_id?: string;
+  area?: string;
 }
 
 export interface FactoryPaymentForm {

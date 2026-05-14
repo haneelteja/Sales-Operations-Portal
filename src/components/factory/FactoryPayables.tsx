@@ -41,7 +41,9 @@ const FactoryPayables = () => {
     sku: "",
     quantity: "",
     description: "",
-    transaction_date: new Date().toISOString().split('T')[0]
+    transaction_date: new Date().toISOString().split('T')[0],
+    customer_id: "",
+    area: "",
   });
 
   const [editingTransaction, setEditingTransaction] = useState<FactoryPayable | null>(null);
@@ -114,6 +116,45 @@ const FactoryPayables = () => {
       return uniqueSKUs;
     },
   });
+
+  // Fetch customers for client/branch dropdowns in production form
+  const { data: customers } = useQuery({
+    queryKey: ["customers-factory"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, dealer_name, area")
+        .eq("is_active", true)
+        .order("dealer_name", { ascending: true });
+      return data || [];
+    },
+  });
+
+  // Unique client names (deduped)
+  const uniqueClientNames = useMemo(() => {
+    if (!customers) return [];
+    return [...new Set(customers.map(c => c.dealer_name))].sort();
+  }, [customers]);
+
+  // Branches for selected client in production form
+  const productionBranches = useMemo(() => {
+    if (!customers || !productionForm.customer_id) return [];
+    const selected = customers.find(c => c.id === productionForm.customer_id);
+    if (!selected) return [];
+    return [...new Set(
+      customers.filter(c => c.dealer_name === selected.dealer_name).map(c => c.area).filter(Boolean)
+    )].sort() as string[];
+  }, [customers, productionForm.customer_id]);
+
+  // Handle production client change — auto-select branch if only one
+  const handleProductionClientChange = (clientId: string) => {
+    const selected = customers?.find(c => c.id === clientId);
+    if (!selected) { setProductionForm(f => ({ ...f, customer_id: "", area: "" })); return; }
+    const branches = [...new Set(
+      customers!.filter(c => c.dealer_name === selected.dealer_name).map(c => c.area).filter(Boolean)
+    )] as string[];
+    setProductionForm(f => ({ ...f, customer_id: clientId, area: branches.length === 1 ? branches[0] : "" }));
+  };
 
   // Fetch factory transactions
   const { data: transactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
@@ -454,10 +495,13 @@ const FactoryPayables = () => {
       const { error } = await supabase
         .from("factory_payables")
         .insert({
-          ...data,
-          transaction_type: "production",
+          sku: data.sku,
           quantity: parseInt(data.quantity),
-          amount: calculatedAmount
+          description: data.description || null,
+          transaction_date: data.transaction_date,
+          transaction_type: "production",
+          amount: calculatedAmount,
+          customer_id: data.customer_id || null,
         });
 
       if (error) throw error;
@@ -468,7 +512,9 @@ const FactoryPayables = () => {
         sku: "",
         quantity: "",
         description: "",
-        transaction_date: new Date().toISOString().split('T')[0]
+        transaction_date: new Date().toISOString().split('T')[0],
+        customer_id: "",
+        area: "",
       });
       invalidateRelated('factory_payables');
     },
@@ -570,10 +616,10 @@ const FactoryPayables = () => {
 
   const handleProductionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productionForm.sku || !productionForm.quantity) {
-      toast({ 
-        title: "Error", 
-        description: "Please select SKU and enter quantity",
+    if (!productionForm.customer_id || !productionForm.area || !productionForm.sku || !productionForm.quantity) {
+      toast({
+        title: "Error",
+        description: "Please fill in client, branch, SKU and quantity",
         variant: "destructive"
       });
       return;
@@ -718,11 +764,66 @@ const FactoryPayables = () => {
           <div className="border rounded-lg p-6">
             <h3 className="text-lg font-semibold mb-4">Record Production Transaction</h3>
             <form onSubmit={handleProductionSubmit} className="space-y-4">
+              {/* Row 1: Production Date, Client, Branch */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="production-date">Production Date</Label>
+                  <Input
+                    id="production-date"
+                    type="date"
+                    max={new Date().toISOString().split('T')[0]}
+                    value={productionForm.transaction_date}
+                    onChange={(e) => setProductionForm({...productionForm, transaction_date: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="production-client">Client *</Label>
+                  <Select
+                    value={productionForm.customer_id || ""}
+                    onValueChange={handleProductionClientChange}
+                  >
+                    <SelectTrigger id="production-client">
+                      <SelectValue placeholder="Select client" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      {uniqueClientNames.map((name) => {
+                        // Use the first record for this dealer_name as the representative ID
+                        const c = customers?.find(c => c.dealer_name === name);
+                        if (!c) return null;
+                        return (
+                          <SelectItem key={name} value={c.id}>{name}</SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="production-branch">Branch *</Label>
+                  <Select
+                    value={productionForm.area || ""}
+                    onValueChange={(v) => setProductionForm(f => ({ ...f, area: v }))}
+                    disabled={!productionForm.customer_id}
+                  >
+                    <SelectTrigger id="production-branch">
+                      <SelectValue placeholder={productionForm.customer_id ? "Select branch" : "Select client first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {productionBranches.map((branch) => (
+                        <SelectItem key={branch} value={branch}>{branch}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Row 2: SKU, Quantity, Calculated Amount */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="production-sku">SKU *</Label>
-                  <Select 
-                    value={productionForm.sku || ""} 
+                  <Select
+                    value={productionForm.sku || ""}
                     onValueChange={(value) => setProductionForm({...productionForm, sku: value})}
                   >
                     <SelectTrigger>
@@ -730,14 +831,12 @@ const FactoryPayables = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {availableSKUs?.map((sku) => (
-                        <SelectItem key={sku} value={sku}>
-                          {sku}
-                        </SelectItem>
+                        <SelectItem key={sku} value={sku}>{sku}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="production-quantity">Quantity (Cases) *</Label>
                   <Input
@@ -748,7 +847,7 @@ const FactoryPayables = () => {
                     placeholder="0"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="production-amount">Calculated Amount (₹)</Label>
                   <Input
@@ -762,30 +861,19 @@ const FactoryPayables = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="production-date">Production Date</Label>
-                  <Input
-                    id="production-date"
-                    type="date"
-                    value={productionForm.transaction_date}
-                    onChange={(e) => setProductionForm({...productionForm, transaction_date: e.target.value})}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="production-description">Description</Label>
-                  <Textarea
-                    id="production-description"
-                    value={productionForm.description}
-                    onChange={(e) => setProductionForm({...productionForm, description: e.target.value})}
-                    placeholder="Production details..."
-                  />
-                </div>
+              {/* Description */}
+              <div className="space-y-2">
+                <Label htmlFor="production-description">Description</Label>
+                <Textarea
+                  id="production-description"
+                  value={productionForm.description}
+                  onChange={(e) => setProductionForm({...productionForm, description: e.target.value})}
+                  placeholder="Production details..."
+                />
               </div>
-              
-              <Button 
-                type="submit" 
+
+              <Button
+                type="submit"
                 disabled={productionMutation.isPending}
               >
                 {productionMutation.isPending ? "Recording..." : "Record Production"}

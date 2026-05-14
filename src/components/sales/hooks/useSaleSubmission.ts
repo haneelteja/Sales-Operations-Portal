@@ -97,67 +97,73 @@ export function useSaleSubmission({
         throw new Error('Failed to retrieve inserted transaction');
       }
 
-      const { data: factoryPricing, error: pricingError } = await supabase
-        .from('factory_pricing')
-        .select('cost_per_case')
-        .eq('sku', data.sku)
-        .order('pricing_date', { ascending: false })
-        .limit(1);
-
-      if (pricingError) {
-        logger.warn(`Error fetching factory pricing for SKU ${data.sku}:`, pricingError);
-      }
-
-      const factoryCostPerCase = factoryPricing?.[0]?.cost_per_case || 0;
       const quantity = data.quantity ? parseInt(data.quantity) : 0;
-      const factoryAmount = quantity * factoryCostPerCase;
-      const customerAmount = parseFloat(data.amount) || 0;
-      const defaultCostPerCase = quantity > 0 ? (customerAmount / quantity) * 0.5 : 0;
-      const finalFactoryAmount =
-        factoryCostPerCase > 0 ? factoryAmount : quantity * defaultCostPerCase;
 
       if (!data.transaction_date) {
-        throw new Error('Transaction date is required for factory production entry');
+        throw new Error('Transaction date is required');
       }
 
-      if (isNaN(finalFactoryAmount)) {
-        throw new Error('Invalid factory amount calculated');
+      // --- Inventory-aware factory entry ---
+      // Current inventory = manually-recorded production qty - previous sales qty (pre-this-sale)
+      let currentInventory = 0;
+      if (quantity > 0 && data.customer_id && data.sku) {
+        const [{ data: prodRows }, { data: prevSalesRows }] = await Promise.all([
+          supabase
+            .from('factory_payables')
+            .select('quantity')
+            .eq('transaction_type', 'production')
+            .eq('customer_id', data.customer_id)
+            .eq('sku', data.sku),
+          supabase
+            .from('sales_transactions')
+            .select('quantity')
+            .eq('transaction_type', 'sale')
+            .eq('customer_id', data.customer_id)
+            .eq('sku', data.sku),
+        ]);
+        const prodQty = (prodRows ?? []).reduce((s, r) => s + (r.quantity ?? 0), 0);
+        // Exclude the just-inserted sale from the previous sales total (it was inserted above)
+        const prevSalesQty = (prevSalesRows ?? []).reduce((s, r) => s + (r.quantity ?? 0), 0) - quantity;
+        currentInventory = prodQty - prevSalesQty;
       }
 
-      const { data: customerData } = await supabase
-        .from('customers')
-        .select('dealer_name, area')
-        .eq('id', data.customer_id)
-        .single();
+      // Shortfall = cases that aren't covered by existing inventory
+      const shortfall = Math.max(0, quantity - Math.max(0, currentInventory));
 
-      const factoryPayableData: {
-        transaction_type: 'production';
-        sku: string | null;
-        amount: number;
-        quantity?: number | null;
-        description: string | null;
-        transaction_date: string;
-        customer_id: string | null;
-      } = {
-        transaction_type: 'production',
-        sku: data.sku || null,
-        amount: Math.max(0, finalFactoryAmount),
-        description: customerData?.dealer_name || 'Unknown Client',
-        transaction_date: data.transaction_date,
-        customer_id: data.customer_id,
-      };
+      if (shortfall > 0) {
+        const { data: factoryPricing } = await supabase
+          .from('factory_pricing')
+          .select('cost_per_case')
+          .eq('sku', data.sku)
+          .order('pricing_date', { ascending: false })
+          .limit(1);
 
-      if (quantity > 0) {
-        factoryPayableData.quantity = quantity;
-      }
+        const { data: customerData } = await supabase
+          .from('customers')
+          .select('dealer_name')
+          .eq('id', data.customer_id)
+          .single();
 
-      const { error: factoryError } = await supabase
-        .from('factory_payables')
-        .insert(factoryPayableData);
+        const costPerCase = factoryPricing?.[0]?.cost_per_case ?? 0;
+        const shortfallAmount = shortfall * costPerCase;
 
-      if (factoryError) {
-        logger.error('Factory production entry error:', factoryError);
-        throw new Error(`Factory production entry failed: ${factoryError.message}`);
+        const { error: factoryError } = await supabase
+          .from('factory_payables')
+          .insert({
+            transaction_type: 'production',
+            sku: data.sku || null,
+            quantity: shortfall,
+            amount: Math.max(0, shortfallAmount),
+            description: `Shortfall from sale — ${customerData?.dealer_name ?? 'Unknown Client'}`,
+            transaction_date: data.transaction_date,
+            customer_id: data.customer_id,
+          });
+
+        if (factoryError) {
+          logger.error('Factory shortfall entry error:', factoryError);
+          // Non-fatal: sale was already recorded; log and continue
+          logger.warn('Sale recorded but factory shortfall entry failed:', factoryError.message);
+        }
       }
 
       const selectedCustomer = findCustomerById(data.customer_id);

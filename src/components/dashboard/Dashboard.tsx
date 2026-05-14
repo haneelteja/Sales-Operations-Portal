@@ -122,6 +122,57 @@ const Dashboard = memo(() => {
     },
   });
 
+  // Fetch inventory: factory production qty minus sales qty per client (only where stock > 0)
+  const { data: inventoryRows } = useQuery({
+    queryKey: ["dashboard-inventory"],
+    ...getQueryConfig("dashboard-inventory"),
+    queryFn: async () => {
+      const [{ data: prodRows }, { data: salesRows }] = await Promise.all([
+        supabase
+          .from("factory_payables")
+          .select("customer_id, sku, quantity, customers(dealer_name, area)")
+          .eq("transaction_type", "production")
+          .not("customer_id", "is", null),
+        supabase
+          .from("sales_transactions")
+          .select("customer_id, sku, quantity, customers(dealer_name, area)")
+          .eq("transaction_type", "sale"),
+      ]);
+
+      // Sum production per (customer_id, sku)
+      const prodMap = new Map<string, { clientName: string; area: string; sku: string; qty: number }>();
+      for (const r of prodRows ?? []) {
+        const key = `${r.customer_id}|||${r.sku ?? ""}`;
+        const existing = prodMap.get(key);
+        const clientName = (r.customers as { dealer_name?: string } | null)?.dealer_name ?? "";
+        const area = (r.customers as { area?: string } | null)?.area ?? "";
+        if (existing) {
+          existing.qty += r.quantity ?? 0;
+        } else {
+          prodMap.set(key, { clientName, area, sku: r.sku ?? "", qty: r.quantity ?? 0 });
+        }
+      }
+
+      // Sum sales per (customer_id, sku)
+      const salesMap = new Map<string, number>();
+      for (const r of salesRows ?? []) {
+        const key = `${r.customer_id}|||${r.sku ?? ""}`;
+        salesMap.set(key, (salesMap.get(key) ?? 0) + (r.quantity ?? 0));
+      }
+
+      // Compute inventory; only return rows where stock > 0
+      const result: { clientName: string; area: string; sku: string; stock: number }[] = [];
+      for (const [key, prod] of prodMap.entries()) {
+        const sold = salesMap.get(key) ?? 0;
+        const stock = prod.qty - sold;
+        if (stock > 0) {
+          result.push({ clientName: prod.clientName, area: prod.area, sku: prod.sku, stock });
+        }
+      }
+      return result.sort((a, b) => a.clientName.localeCompare(b.clientName));
+    },
+  });
+
   // Pagination state for receivables table
   const [receivablesPage, setReceivablesPage] = useState(1);
   const receivablesPageSize = 25;
@@ -608,6 +659,36 @@ const Dashboard = memo(() => {
           </CardContent>
         </Card>
       </div>
+      {/* Inventory Table */}
+      {inventoryRows && inventoryRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Available Inventory</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead className="text-right">Stock (Cases)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inventoryRows.map((row, i) => (
+                  <TableRow key={i}>
+                    <TableCell>{row.clientName}</TableCell>
+                    <TableCell>{row.area}</TableCell>
+                    <TableCell>{row.sku}</TableCell>
+                    <TableCell className="text-right font-medium">{row.stock}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 });
