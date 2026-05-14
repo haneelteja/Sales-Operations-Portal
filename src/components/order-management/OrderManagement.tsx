@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useEffect } from "react";
+import React, { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getQueryConfig } from "@/lib/query-configs";
@@ -59,6 +59,11 @@ const OrderManagement: React.FC = () => {
   const [skuRows, setSkuRows] = useState<{ sku: string; number_of_cases: string }[]>([
     { sku: "", number_of_cases: "" },
   ]);
+
+  // Client autocomplete
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  const clientInputRef = useRef<HTMLDivElement>(null);
 
   // Filter and sort states for Current Orders table
   const [ordersSearchTerm, setOrdersSearchTerm] = useState("");
@@ -517,14 +522,14 @@ const OrderManagement: React.FC = () => {
       return;
     }
 
-    // Validation: Tentative delivery date must be greater than order date
-    const orderDate = new Date(orderForm.expense_date);
+    // Validation: Tentative delivery date must not be in the past
     const deliveryDate = new Date(orderForm.tentative_delivery_date);
-    
-    if (deliveryDate <= orderDate) {
+    const todayCheck = new Date();
+    todayCheck.setHours(0, 0, 0, 0);
+    if (deliveryDate < todayCheck) {
       toast({
         title: "Validation Error",
-        description: "Tentative delivery date must be greater than order date",
+        description: "Tentative delivery date cannot be in the past",
         variant: "destructive",
       });
       return;
@@ -558,12 +563,20 @@ const OrderManagement: React.FC = () => {
     if (!clientId || clientId === "") {
       setOrderForm({ ...orderForm, client_id: "", area: "" });
       setSkuRows([{ sku: "", number_of_cases: "" }]);
+      setClientSearch("");
       return;
     }
     const availableAreas = getAvailableAreas(clientId);
     const autoArea = availableAreas.length === 1 ? availableAreas[0] : "";
     setOrderForm({ ...orderForm, client_id: clientId, area: autoArea });
     setSkuRows([{ sku: "", number_of_cases: "" }]);
+  };
+
+  // Handle client selection from autocomplete dropdown
+  const handleClientSelect = (clientId: string, clientName: string) => {
+    setClientSearch(clientName);
+    setClientDropdownOpen(false);
+    handleClientChange(clientId);
   };
 
   // Handle area change - reset SKU rows
@@ -596,12 +609,22 @@ const OrderManagement: React.FC = () => {
     const selectedDate = new Date(date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    // Validation: Cannot select future date
+    const minAllowed = new Date();
+    minAllowed.setDate(minAllowed.getDate() - 7);
+    minAllowed.setHours(0, 0, 0, 0);
+
     if (selectedDate > today) {
       toast({
         title: "Validation Error",
         description: "Cannot select a future date",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (selectedDate < minAllowed) {
+      toast({
+        title: "Validation Error",
+        description: "Date cannot be more than 7 days in the past",
         variant: "destructive",
       });
       return;
@@ -658,6 +681,26 @@ const OrderManagement: React.FC = () => {
     
     return unique.sort((a, b) => a.dealer_name.localeCompare(b.dealer_name));
   }, [customers]);
+
+  // Close client dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (clientInputRef.current && !clientInputRef.current.contains(e.target as Node)) {
+        setClientDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Filtered client list for autocomplete
+  const filteredCustomers = useMemo(() => {
+    const unique = getUniqueCustomers();
+    if (!clientSearch.trim()) return unique;
+    return unique.filter(c =>
+      c.dealer_name.toLowerCase().includes(clientSearch.toLowerCase())
+    );
+  }, [getUniqueCustomers, clientSearch]);
 
   // Filtered and sorted Current Orders
   const filteredAndSortedOrders = useMemo(() => {
@@ -907,8 +950,14 @@ const OrderManagement: React.FC = () => {
     return Array.from(new Set(values)).sort();
   }, [dispatchData, dispatchColumnFilters]);
 
-  // Get max date (today) for date input
+  // Get max date (today) and min date (today - 7) for date input
   const maxDate = new Date().toISOString().split("T")[0];
+  const minOrderDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split("T")[0];
+  }, []);
+  const todayDate = maxDate;
 
   return (
     <div className="space-y-6 p-6 w-full max-w-full overflow-x-hidden">
@@ -932,26 +981,54 @@ const OrderManagement: React.FC = () => {
                 <Input
                   id="order-date"
                   type="date"
+                  min={minOrderDate}
                   max={maxDate}
                   value={orderForm.expense_date}
                   onChange={(e) => handleDateChange(e.target.value)}
                   required
                 />
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="order-client" className="text-xs">Client *</Label>
-                <Select value={orderForm.client_id || ""} onValueChange={handleClientChange}>
-                  <SelectTrigger id="order-client">
-                    <SelectValue placeholder="Select client" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
-                    {getUniqueCustomers().map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.dealer_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-1" ref={clientInputRef}>
+                <Label htmlFor="order-client-search" className="text-xs">Client *</Label>
+                <div className="relative">
+                  <Input
+                    id="order-client-search"
+                    placeholder="Search client..."
+                    value={clientSearch}
+                    autoComplete="off"
+                    onChange={(e) => {
+                      setClientSearch(e.target.value);
+                      setClientDropdownOpen(true);
+                      if (!e.target.value) handleClientChange("");
+                    }}
+                    onFocus={() => setClientDropdownOpen(true)}
+                  />
+                  {clientDropdownOpen && filteredCustomers.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg max-h-60 overflow-y-auto">
+                      {filteredCustomers.map((customer) => (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          className={[
+                            "w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground",
+                            orderForm.client_id === customer.id ? "bg-accent/50 font-medium" : "",
+                          ].join(" ")}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleClientSelect(customer.id, customer.dealer_name);
+                          }}
+                        >
+                          {customer.dealer_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {clientDropdownOpen && clientSearch.trim() && filteredCustomers.length === 0 && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg px-3 py-2 text-sm text-muted-foreground">
+                      No clients found
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="order-area" className="text-xs">Branch *</Label>
@@ -977,15 +1054,16 @@ const OrderManagement: React.FC = () => {
                 <Input
                   id="order-delivery"
                   type="date"
-                  min={orderForm.expense_date ? new Date(new Date(orderForm.expense_date).getTime() + 86400000).toISOString().split("T")[0] : undefined}
+                  min={todayDate}
                   value={orderForm.tentative_delivery_date}
                   onChange={(e) => {
                     const selectedDate = new Date(e.target.value);
-                    const orderDate = new Date(orderForm.expense_date);
-                    if (selectedDate <= orderDate) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    if (selectedDate < today) {
                       toast({
                         title: "Validation Error",
-                        description: "Tentative delivery date must be greater than order date",
+                        description: "Tentative delivery date cannot be in the past",
                         variant: "destructive",
                       });
                       return;
@@ -997,8 +1075,8 @@ const OrderManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* SKU Rows - compact */}
-            <div className="space-y-1.5">
+            {/* SKU Rows - only shown after client and branch are selected */}
+            {orderForm.client_id && orderForm.area && <div className="space-y-1.5">
               <Label className="text-xs">SKUs *</Label>
               {singleSkuMode && (
                 <p className="text-xs text-muted-foreground">
@@ -1073,7 +1151,7 @@ const OrderManagement: React.FC = () => {
                   All available SKUs for this client branch have been added.
                 </p>
               )}
-            </div>
+            </div>}
 
             <div className="flex justify-end pt-1">
               <Button type="submit" size="sm" disabled={createOrderMutation.isPending}>
