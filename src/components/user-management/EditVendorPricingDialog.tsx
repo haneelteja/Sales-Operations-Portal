@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, ArrowUpDown, Search } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -26,6 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 export interface VendorPricingEntry {
   vendor: string;
   sku: string;
+  date: string;
   price: number | '';
   gst: number | '';
 }
@@ -42,13 +43,15 @@ function parseEntries(val: string): VendorPricingEntry[] {
     return parsed.filter(
       (e): e is VendorPricingEntry =>
         e && typeof e.vendor === 'string' && typeof e.sku === 'string'
-    );
+    ).map(e => ({ ...e, date: e.date || '' }));
   } catch {
     return [];
   }
 }
 
-const emptyRow = (): VendorPricingEntry => ({ vendor: '', sku: '', price: '', gst: '' });
+const emptyRow = (): VendorPricingEntry => ({ vendor: '', sku: '', date: '', price: '', gst: '' });
+
+type SortField = 'vendor' | 'sku' | 'date' | 'price' | 'gst' | null;
 
 export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = ({
   open,
@@ -58,6 +61,10 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<VendorPricingEntry[]>([]);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const { data: config, isLoading: configLoading } = useQuery({
     queryKey: ['invoice-configurations', 'label_vendors'],
@@ -89,16 +96,18 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
     if (open) {
       setRows(config ? parseEntries(config.config_value || '[]') : []);
       setHasLocalChanges(false);
+      setSearchQuery('');
+      setSortField(null);
     }
   }, [open, config]);
 
-  const updateRow = (index: number, field: keyof VendorPricingEntry, value: string) => {
+  const updateRow = (originalIndex: number, field: keyof VendorPricingEntry, value: string) => {
     setRows(prev => {
       const next = [...prev];
       if (field === 'price' || field === 'gst') {
-        next[index] = { ...next[index], [field]: value === '' ? '' : Number(value) };
+        next[originalIndex] = { ...next[originalIndex], [field]: value === '' ? '' : Number(value) };
       } else {
-        next[index] = { ...next[index], [field]: value };
+        next[originalIndex] = { ...next[originalIndex], [field]: value };
       }
       return next;
     });
@@ -110,10 +119,49 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
     setHasLocalChanges(true);
   };
 
-  const removeRow = (index: number) => {
-    setRows(prev => prev.filter((_, i) => i !== index));
+  const removeRow = (originalIndex: number) => {
+    setRows(prev => prev.filter((_, i) => i !== originalIndex));
     setHasLocalChanges(true);
   };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const displayRows = useMemo(() => {
+    const withIndex = rows.map((row, originalIndex) => ({ row, originalIndex }));
+
+    const filtered = searchQuery.trim()
+      ? withIndex.filter(({ row }) => {
+          const q = searchQuery.toLowerCase();
+          return (
+            row.vendor.toLowerCase().includes(q) ||
+            row.sku.toLowerCase().includes(q)
+          );
+        })
+      : withIndex;
+
+    if (!sortField) return filtered;
+
+    return [...filtered].sort(({ row: a }, { row: b }) => {
+      const aVal = a[sortField];
+      const bVal = b[sortField];
+      if (aVal === '' || aVal === undefined) return 1;
+      if (bVal === '' || bVal === undefined) return -1;
+      let cmp = 0;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        cmp = aVal - bVal;
+      } else {
+        cmp = String(aVal).localeCompare(String(bVal));
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [rows, searchQuery, sortField, sortDir]);
 
   const saveMutation = useMutation({
     mutationFn: async (entries: VendorPricingEntry[]) => {
@@ -122,6 +170,7 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
         valid.map(e => ({
           vendor: e.vendor.trim(),
           sku: e.sku,
+          date: e.date || '',
           price: e.price === '' ? 0 : Number(e.price),
           gst: e.gst === '' ? 0 : Number(e.gst),
         }))
@@ -137,6 +186,7 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations'] });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations', 'label_vendors'] });
       queryClient.invalidateQueries({ queryKey: ['label-vendors-config'] });
+      queryClient.invalidateQueries({ queryKey: ['label-vendors-pricing-entries'] });
       toast({ title: 'Success', description: 'Vendor pricing saved.' });
       onOpenChange(false);
     },
@@ -147,13 +197,25 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
 
   const isLoading = configLoading || skusLoading;
 
+  const SortButton = ({ field }: { field: SortField }) => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-5 w-5 p-0 ml-1"
+      onClick={() => handleSort(field)}
+    >
+      <ArrowUpDown className={`h-3 w-3 ${sortField === field ? 'text-primary' : 'text-muted-foreground'}`} />
+    </Button>
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Labels Vendor Pricing</DialogTitle>
           <DialogDescription>
-            Add vendors with their SKU, price per label, and GST%. These appear in Labels Purchase and Labels Payment dropdowns.
+            Add vendors with their SKU, effective date, price per label, and GST%. These appear in Labels Purchase and Labels Payment dropdowns.
           </DialogDescription>
         </DialogHeader>
 
@@ -163,86 +225,128 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
           </div>
         ) : (
           <>
+            {/* Search bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by vendor or SKU..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
             <div className="overflow-auto flex-1 min-h-0 border rounded-md">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[30%]">Vendor Name</TableHead>
-                    <TableHead className="w-[25%]">SKU</TableHead>
-                    <TableHead className="w-[20%]">Price per Label (₹)</TableHead>
-                    <TableHead className="w-[15%]">GST %</TableHead>
-                    <TableHead className="w-[10%] text-right">Action</TableHead>
+                    <TableHead className="w-[22%]">
+                      Vendor Name <SortButton field="vendor" />
+                    </TableHead>
+                    <TableHead className="w-[18%]">
+                      SKU <SortButton field="sku" />
+                    </TableHead>
+                    <TableHead className="w-[14%]">
+                      Effective Date <SortButton field="date" />
+                    </TableHead>
+                    <TableHead className="w-[16%]">
+                      Price/Label (₹) <SortButton field="price" />
+                    </TableHead>
+                    <TableHead className="w-[10%]">
+                      GST % <SortButton field="gst" />
+                    </TableHead>
+                    <TableHead className="w-[12%] text-right">Total/Label (₹)</TableHead>
+                    <TableHead className="w-[8%] text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.length === 0 ? (
+                  {displayRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                        No vendors added yet. Click "Add row" to get started.
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        {rows.length === 0
+                          ? 'No vendors added yet. Click "Add row" to get started.'
+                          : 'No results match your search.'}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    rows.map((row, index) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          <Input
-                            value={row.vendor}
-                            onChange={e => updateRow(index, 'vendor', e.target.value)}
-                            placeholder="e.g. GMG Labels"
-                            className="h-9"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={row.sku}
-                            onValueChange={val => updateRow(index, 'sku', val)}
-                          >
-                            <SelectTrigger className="h-9">
-                              <SelectValue placeholder="Select SKU" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(skuConfigs || []).map(sku => (
-                                <SelectItem key={sku} value={sku}>{sku}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            step="0.0001"
-                            min="0"
-                            value={row.price}
-                            onChange={e => updateRow(index, 'price', e.target.value)}
-                            placeholder="0.0000"
-                            className="h-9"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="100"
-                            value={row.gst}
-                            onChange={e => updateRow(index, 'gst', e.target.value)}
-                            placeholder="18"
-                            className="h-9"
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => removeRow(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    displayRows.map(({ row, originalIndex }) => {
+                      const price = row.price === '' ? 0 : Number(row.price);
+                      const gst = row.gst === '' ? 0 : Number(row.gst);
+                      const total = price * (1 + gst / 100);
+
+                      return (
+                        <TableRow key={originalIndex}>
+                          <TableCell>
+                            <Input
+                              value={row.vendor}
+                              onChange={e => updateRow(originalIndex, 'vendor', e.target.value)}
+                              placeholder="e.g. GMG Labels"
+                              className="h-9"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={row.sku}
+                              onValueChange={val => updateRow(originalIndex, 'sku', val)}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Select SKU" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(skuConfigs || []).map(sku => (
+                                  <SelectItem key={sku} value={sku}>{sku}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="date"
+                              value={row.date}
+                              onChange={e => updateRow(originalIndex, 'date', e.target.value)}
+                              className="h-9"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              step="0.0001"
+                              min="0"
+                              value={row.price}
+                              onChange={e => updateRow(originalIndex, 'price', e.target.value)}
+                              placeholder="0.0000"
+                              className="h-9"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              value={row.gst}
+                              onChange={e => updateRow(originalIndex, 'gst', e.target.value)}
+                              placeholder="18"
+                              className="h-9"
+                            />
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {price > 0 ? `₹${total.toFixed(4)}` : '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => removeRow(originalIndex)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, memo, useRef, useEffect } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,7 +15,99 @@ import { useToast } from "@/hooks/use-toast";
 import { Edit, Trash2, ArrowUpDown, Search, X, Download } from "lucide-react";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { exportJsonToExcel } from '@/services/export/excelExport';
+import { cn } from "@/lib/utils";
 
+// ─── Client Autocomplete ──────────────────────────────────────────────────────
+interface ComboboxOption { id: string; label: string; }
+
+const ClientCombobox = ({
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: {
+  options: ComboboxOption[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) => {
+  const [inputValue, setInputValue] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedLabel = useMemo(() => options.find(o => o.id === value)?.label || '', [options, value]);
+
+  useEffect(() => {
+    setInputValue(selectedLabel);
+  }, [selectedLabel]);
+
+  const filtered = useMemo(() => {
+    if (!inputValue.trim()) return options;
+    const q = inputValue.toLowerCase();
+    return options.filter(o => o.label.toLowerCase().includes(q));
+  }, [options, inputValue]);
+
+  const handleSelect = (option: ComboboxOption) => {
+    onChange(option.id);
+    setInputValue(option.label);
+    setOpen(false);
+  };
+
+  const handleBlur = () => {
+    // Restore label of currently selected value if input doesn't match any option
+    setTimeout(() => {
+      setOpen(false);
+      setInputValue(selectedLabel);
+    }, 150);
+  };
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <Input
+        value={inputValue}
+        disabled={disabled}
+        onChange={e => { setInputValue(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={handleBlur}
+        placeholder={placeholder}
+      />
+      {open && !disabled && filtered.length > 0 && (
+        <div className="absolute z-50 w-full bg-white border rounded-md shadow-md max-h-48 overflow-y-auto mt-1">
+          {filtered.map(option => (
+            <div
+              key={option.id}
+              className={cn(
+                "px-3 py-2 cursor-pointer hover:bg-slate-100 text-sm",
+                option.id === value && "bg-slate-50 font-medium"
+              )}
+              onMouseDown={() => handleSelect(option)}
+            >
+              {option.label}
+            </div>
+          ))}
+        </div>
+      )}
+      {open && !disabled && filtered.length === 0 && inputValue.trim() && (
+        <div className="absolute z-50 w-full bg-white border rounded-md shadow-md mt-1 px-3 py-2 text-sm text-muted-foreground">
+          No clients found
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Vendor pricing entry type (mirrors EditVendorPricingDialog) ──────────────
+interface VendorPricingEntry {
+  vendor: string;
+  sku: string;
+  date?: string;
+  price: number | '';
+  gst: number | '';
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 const LabelPurchases = () => {
   const [form, setForm] = useState({
     vendor_id: "",
@@ -46,6 +138,7 @@ const LabelPurchases = () => {
   const [columnFilters, setColumnFilters] = useState({
     vendor: "",
     client: "",
+    sku: "",
     quantity: "",
     cost_per_label: "",
     total_amount: "",
@@ -53,11 +146,11 @@ const LabelPurchases = () => {
   });
   const [columnSorts, setColumnSorts] = useState({
     purchase_date: "desc" as "asc" | "desc" | null,
-    vendor: "asc" as "asc" | "desc" | null,
-    client: "asc" as "asc" | "desc" | null,
-    quantity: "asc" as "asc" | "desc" | null,
-    cost_per_label: "asc" as "asc" | "desc" | null,
-    total_amount: "asc" as "asc" | "desc" | null
+    vendor: null as "asc" | "desc" | null,
+    client: null as "asc" | "desc" | null,
+    quantity: null as "asc" | "desc" | null,
+    cost_per_label: null as "asc" | "desc" | null,
+    total_amount: null as "asc" | "desc" | null
   });
 
   const { toast } = useToast();
@@ -113,7 +206,6 @@ const LabelPurchases = () => {
       try {
         const parsed = JSON.parse(data.config_value || "[]");
         if (!Array.isArray(parsed)) return [] as string[];
-        // Support both old flat string[] and new object[] format
         const vendors = parsed.map((e: unknown) =>
           typeof e === 'string' ? e : (e as { vendor?: string })?.vendor
         ).filter((v): v is string => !!v);
@@ -122,6 +214,33 @@ const LabelPurchases = () => {
     },
   });
 
+  // Full vendor pricing entries for price auto-fill
+  const { data: vendorPricingEntries } = useQuery({
+    queryKey: ["label-vendors-pricing-entries"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("invoice_configurations")
+        .select("config_value")
+        .eq("config_key", "label_vendors")
+        .maybeSingle();
+      if (!data) return [] as VendorPricingEntry[];
+      try {
+        const parsed = JSON.parse(data.config_value || "[]");
+        return Array.isArray(parsed) ? (parsed as VendorPricingEntry[]) : [];
+      } catch { return [] as VendorPricingEntry[]; }
+    },
+  });
+
+  // Lookup the most recent price ≤ purchaseDate for a given vendor+SKU combination
+  const lookupPrice = useCallback((vendor: string, sku: string, purchaseDate: string): string => {
+    if (!vendor || !sku || !purchaseDate || !vendorPricingEntries?.length) return '';
+    const matching = vendorPricingEntries
+      .filter(e => e.vendor === vendor && e.sku === sku && e.date && e.date <= purchaseDate)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (!matching.length) return '';
+    const p = matching[0].price;
+    return p !== '' && p !== undefined ? String(p) : '';
+  }, [vendorPricingEntries]);
 
   const { data: purchases } = useQuery({
     queryKey: ["label-purchases"],
@@ -136,7 +255,6 @@ const LabelPurchases = () => {
 
   const mutation = useMutation({
     mutationFn: async (data: LabelPurchaseForm) => {
-      // Build insert data object
       const insertData: {
         vendor_id: string;
         client_id: string | null;
@@ -155,18 +273,12 @@ const LabelPurchases = () => {
         total_amount: parseFloat(data.total_amount),
         purchase_date: data.purchase_date
       };
-      
       if (data.description && data.description.trim() !== "") {
         insertData.description = data.description.trim();
       }
-      
-      const { error } = await supabase
-        .from("label_purchases")
-        .insert(insertData);
-
+      const { error } = await supabase.from("label_purchases").insert(insertData);
       if (error) {
         console.error("Database error:", JSON.stringify(error, null, 2));
-        console.error("Insert data:", JSON.stringify(insertData, null, 2));
         throw error;
       }
     },
@@ -189,17 +301,12 @@ const LabelPurchases = () => {
       queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to record purchase: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to record purchase: " + error.message, variant: "destructive" });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async (data: LabelPurchaseForm & { id: string }) => {
-      // Build update data object
       const updateData: {
         vendor_id: string;
         client_id: string | null;
@@ -218,16 +325,10 @@ const LabelPurchases = () => {
         total_amount: parseFloat(data.total_amount),
         purchase_date: data.purchase_date
       };
-      
       if (data.description && data.description.trim() !== "") {
         updateData.description = data.description.trim();
       }
-      
-      const { error } = await supabase
-        .from("label_purchases")
-        .update(updateData)
-        .eq("id", data.id);
-
+      const { error } = await supabase.from("label_purchases").update(updateData).eq("id", data.id);
       if (error) {
         console.error("Database error:", error);
         throw error;
@@ -236,16 +337,7 @@ const LabelPurchases = () => {
     onSuccess: () => {
       toast({ title: "Success", description: "Label purchase updated!" });
       setEditingPurchase(null);
-      setEditForm({
-        vendor_id: "",
-        client_id: "",
-        sku: "",
-        quantity: "",
-        cost_per_label: "",
-        total_amount: "",
-        purchase_date: "",
-        description: ""
-      });
+      setEditForm({ vendor_id: "", client_id: "", sku: "", quantity: "", cost_per_label: "", total_amount: "", purchase_date: "", description: "" });
       queryClient.invalidateQueries({ queryKey: ["label-purchases"] });
       queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
       queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
@@ -253,25 +345,14 @@ const LabelPurchases = () => {
       queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to update purchase: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to update purchase: " + error.message, variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("label_purchases")
-        .delete()
-        .eq("id", id);
-
-      if (error) {
-        console.error("Database error:", error);
-        throw error;
-      }
+      const { error } = await supabase.from("label_purchases").delete().eq("id", id);
+      if (error) { console.error("Database error:", error); throw error; }
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Label purchase deleted!" });
@@ -282,29 +363,20 @@ const LabelPurchases = () => {
       queryClient.invalidateQueries({ queryKey: ["sku-configurations-for-availability"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to delete purchase: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to delete purchase: " + error.message, variant: "destructive" });
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!form.vendor_id || !form.client_id || !form.quantity || !form.cost_per_label) {
-      toast({
-        title: "Error",
-        description: "Vendor, Client, Quantity, and Cost per Label are required",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
       return;
     }
     mutation.mutate(form);
   };
 
-  // Auto-calculate total amount
+  // Auto-calculate total
   const handleQuantityOrCostChange = (field: string, value: string) => {
     const newForm = { ...form, [field]: value };
     if (newForm.quantity && newForm.cost_per_label) {
@@ -313,7 +385,34 @@ const LabelPurchases = () => {
     setForm(newForm);
   };
 
-  // Auto-calculate total amount for edit form
+  // Vendor change in add form: auto-fill price from config
+  const handleVendorChange = (vendor: string) => {
+    const cost = lookupPrice(vendor, form.sku, form.purchase_date);
+    const total = cost && form.quantity
+      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(2)
+      : form.total_amount;
+    setForm(prev => ({ ...prev, vendor_id: vendor, cost_per_label: cost, total_amount: cost ? total : prev.total_amount }));
+  };
+
+  // SKU change in add form: auto-fill price from config
+  const handleSkuChange = (sku: string) => {
+    const cost = lookupPrice(form.vendor_id, sku, form.purchase_date);
+    const total = cost && form.quantity
+      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(2)
+      : form.total_amount;
+    setForm(prev => ({ ...prev, sku, cost_per_label: cost, total_amount: cost ? total : prev.total_amount }));
+  };
+
+  // Purchase date change in add form: re-lookup price if vendor+SKU set
+  const handleDateChange = (date: string) => {
+    const cost = form.vendor_id && form.sku ? lookupPrice(form.vendor_id, form.sku, date) : form.cost_per_label;
+    const total = cost && form.quantity
+      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(2)
+      : form.total_amount;
+    setForm(prev => ({ ...prev, purchase_date: date, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
+  };
+
+  // Edit form handlers
   const handleEditQuantityOrCostChange = (field: string, value: string) => {
     const newForm = { ...editForm, [field]: value };
     if (newForm.quantity && newForm.cost_per_label) {
@@ -322,7 +421,22 @@ const LabelPurchases = () => {
     setEditForm(newForm);
   };
 
-  // Handle edit click
+  const handleEditVendorChange = (vendor: string) => {
+    const cost = lookupPrice(vendor, editForm.sku, editForm.purchase_date);
+    const total = cost && editForm.quantity
+      ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(2)
+      : editForm.total_amount;
+    setEditForm(prev => ({ ...prev, vendor_id: vendor, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
+  };
+
+  const handleEditSkuChange = (sku: string) => {
+    const cost = lookupPrice(editForm.vendor_id, sku, editForm.purchase_date);
+    const total = cost && editForm.quantity
+      ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(2)
+      : editForm.total_amount;
+    setEditForm(prev => ({ ...prev, sku, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
+  };
+
   const handleEditClick = (purchase: LabelPurchase) => {
     setEditingPurchase(purchase);
     setEditForm({
@@ -337,102 +451,64 @@ const LabelPurchases = () => {
     });
   };
 
-  // Handle edit submit
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!editForm.vendor_id || !editForm.client_id || !editForm.quantity || !editForm.cost_per_label) {
-      toast({
-        title: "Error",
-        description: "Vendor, Client, Quantity, and Cost per Label are required",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
       return;
     }
-    
     if (editingPurchase) {
       updateMutation.mutate({ ...editForm, id: editingPurchase.id });
     }
   };
 
-  // Handle delete
-  const handleDelete = (id: string) => {
-    deleteMutation.mutate(id);
-  };
+  const handleDelete = (id: string) => deleteMutation.mutate(id);
 
-  // Calculate total purchases - will be updated after filteredAndSortedPurchases is defined
-
-  // Get unique customers (case-insensitive)
-  const getUniqueCustomers = () => {
+  // Unique customers list for combobox
+  const uniqueCustomerOptions = useMemo((): ComboboxOption[] => {
     if (!customers) return [];
-    
-    const seenCustomers = new Set<string>();
-    const uniqueCustomers: typeof customers = [];
-    
-    customers.forEach(customer => {
-      if (customer.dealer_name && customer.dealer_name.trim() !== '') {
-        const trimmedName = customer.dealer_name.trim();
-        const lowerCaseName = trimmedName.toLowerCase();
-        
-        // Only add if we haven't seen this customer name (case-insensitive) before
-        if (!seenCustomers.has(lowerCaseName)) {
-          seenCustomers.add(lowerCaseName);
-          uniqueCustomers.push(customer);
+    const seen = new Set<string>();
+    const result: ComboboxOption[] = [];
+    [...customers]
+      .sort((a, b) => a.dealer_name.localeCompare(b.dealer_name))
+      .forEach(c => {
+        if (c.dealer_name?.trim()) {
+          const key = c.dealer_name.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            result.push({ id: c.id, label: c.dealer_name.trim() });
+          }
         }
-      }
-    });
-    
-    const result = uniqueCustomers.sort((a, b) => a.dealer_name.localeCompare(b.dealer_name));
+      });
     return result;
-  };
+  }, [customers]);
 
-
-
-  // Filter and sort purchases (memoized for performance)
+  // Filter and sort purchases
   const filteredAndSortedPurchases = useMemo(() => {
     if (!purchases) return [];
 
     const filtered = purchases.filter((purchase) => {
-      // Global search (using debounced value)
       if (debouncedSearchTerm) {
         const searchLower = debouncedSearchTerm.toLowerCase();
         const vendorName = purchase.vendor_id?.toLowerCase() || '';
         const customer = customers?.find(c => c.id === purchase.client_id);
         const clientName = customer?.dealer_name?.toLowerCase() || '';
         const description = purchase.description?.toLowerCase() || '';
-
-        if (!vendorName.includes(searchLower) &&
-            !clientName.includes(searchLower) &&
-            !description.includes(searchLower)) {
+        if (!vendorName.includes(searchLower) && !clientName.includes(searchLower) && !description.includes(searchLower)) {
           return false;
         }
       }
 
-      // Column filters
-
       if (columnFilters.vendor) {
-        const vendorName = purchase.vendor_id?.toLowerCase() || '';
-        if (!vendorName.includes(columnFilters.vendor.toLowerCase())) return false;
+        if (!(purchase.vendor_id?.toLowerCase() || '').includes(columnFilters.vendor.toLowerCase())) return false;
       }
-
       if (columnFilters.client) {
         const customer = customers?.find(c => c.id === purchase.client_id);
-        const clientName = customer?.dealer_name?.toLowerCase() || '';
-        if (!clientName.includes(columnFilters.client.toLowerCase())) return false;
+        if (!(customer?.dealer_name?.toLowerCase() || '').includes(columnFilters.client.toLowerCase())) return false;
       }
-
-      if (columnFilters.quantity) {
-        if (purchase.quantity.toString() !== columnFilters.quantity) return false;
-      }
-
-      if (columnFilters.cost_per_label) {
-        if (purchase.cost_per_label.toString() !== columnFilters.cost_per_label) return false;
-      }
-
-      if (columnFilters.total_amount) {
-        if (purchase.total_amount.toString() !== columnFilters.total_amount) return false;
-      }
-
+      if (columnFilters.quantity && purchase.quantity.toString() !== columnFilters.quantity) return false;
+      if (columnFilters.cost_per_label && purchase.cost_per_label.toString() !== columnFilters.cost_per_label) return false;
+      if (columnFilters.total_amount && purchase.total_amount.toString() !== columnFilters.total_amount) return false;
       if (columnFilters.purchase_date) {
         const purchaseDate = new Date(purchase.purchase_date).toLocaleDateString();
         if (!purchaseDate.includes(columnFilters.purchase_date)) return false;
@@ -441,46 +517,24 @@ const LabelPurchases = () => {
       return true;
     });
 
-    // Sort
     filtered.sort((a, b) => {
       for (const [column, direction] of Object.entries(columnSorts)) {
         if (!direction) continue;
-
         let aValue: string | number | Date;
         let bValue: string | number | Date;
-
         switch (column) {
-          case 'purchase_date':
-            aValue = new Date(a.purchase_date);
-            bValue = new Date(b.purchase_date);
-            break;
-          case 'vendor':
-            aValue = a.vendor_id || '';
-            bValue = b.vendor_id || '';
-            break;
+          case 'purchase_date': aValue = new Date(a.purchase_date); bValue = new Date(b.purchase_date); break;
+          case 'vendor': aValue = a.vendor_id || ''; bValue = b.vendor_id || ''; break;
           case 'client': {
             const ca = customers?.find(c => c.id === a.client_id);
             const cb = customers?.find(c => c.id === b.client_id);
-            aValue = ca?.dealer_name || '';
-            bValue = cb?.dealer_name || '';
-            break;
+            aValue = ca?.dealer_name || ''; bValue = cb?.dealer_name || ''; break;
           }
-          case 'quantity':
-            aValue = a.quantity || 0;
-            bValue = b.quantity || 0;
-            break;
-          case 'cost_per_label':
-            aValue = a.cost_per_label || 0;
-            bValue = b.cost_per_label || 0;
-            break;
-          case 'total_amount':
-            aValue = a.total_amount || 0;
-            bValue = b.total_amount || 0;
-            break;
-          default:
-            continue;
+          case 'quantity': aValue = a.quantity || 0; bValue = b.quantity || 0; break;
+          case 'cost_per_label': aValue = a.cost_per_label || 0; bValue = b.cost_per_label || 0; break;
+          case 'total_amount': aValue = a.total_amount || 0; bValue = b.total_amount || 0; break;
+          default: continue;
         }
-
         if (aValue < bValue) return direction === 'asc' ? -1 : 1;
         if (aValue > bValue) return direction === 'asc' ? 1 : -1;
       }
@@ -488,85 +542,57 @@ const LabelPurchases = () => {
     });
 
     return filtered;
-  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts]);
+  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts, customers]);
 
-  // Calculate total purchases (memoized)
-  const totalPurchases = useMemo(() => {
-    return filteredAndSortedPurchases.reduce((sum, purchase) => sum + (purchase.total_amount || 0), 0);
-  }, [filteredAndSortedPurchases]);
+  const totalPurchases = useMemo(
+    () => filteredAndSortedPurchases.reduce((sum, p) => sum + (p.total_amount || 0), 0),
+    [filteredAndSortedPurchases]
+  );
 
-  // Handle column filter change (memoized)
   const handleColumnFilterChange = useCallback((column: string, value: string) => {
     setColumnFilters(prev => ({ ...prev, [column]: value }));
   }, []);
 
-  // Handle column sort change (memoized)
   const handleColumnSortChange = useCallback((column: string) => {
     setColumnSorts(prev => {
-      const currentSort = prev[column as keyof typeof prev];
-      let newSort: "asc" | "desc" | null = "asc";
-      
-      if (currentSort === "asc") {
-        newSort = "desc";
-      } else if (currentSort === "desc") {
-        newSort = null;
-      }
-
-      // Reset other sorts
-      const newSorts = Object.keys(prev).reduce((acc, key) => {
-        acc[key as keyof typeof prev] = key === column ? newSort : null;
+      const current = prev[column as keyof typeof prev];
+      const next: "asc" | "desc" | null = current === "asc" ? "desc" : current === "desc" ? null : "asc";
+      const reset = Object.keys(prev).reduce((acc, key) => {
+        acc[key as keyof typeof prev] = key === column ? next : null;
         return acc;
       }, {} as typeof prev);
-
-      return newSorts;
+      return reset;
     });
   }, []);
 
-  // Clear all filters (memoized)
   const clearAllFilters = useCallback(() => {
     setSearchTerm("");
-    setColumnFilters({
-      client: "",
-      vendor: "",
-      quantity: "",
-      cost_per_label: "",
-      total_amount: "",
-      purchase_date: ""
-    });
-    setColumnSorts({
-      purchase_date: "desc",
-      client: null,
-      vendor: null,
-      quantity: null,
-      cost_per_label: null,
-      total_amount: null
-    });
+    setColumnFilters({ client: "", vendor: "", sku: "", quantity: "", cost_per_label: "", total_amount: "", purchase_date: "" });
+    setColumnSorts({ purchase_date: "desc", client: null, vendor: null, quantity: null, cost_per_label: null, total_amount: null });
   }, []);
 
-  // Export to Excel (memoized)
   const handleExport = useCallback(async () => {
     const exportData = filteredAndSortedPurchases.map(purchase => {
       const customer = customers?.find(c => c.id === purchase.client_id);
       return {
         'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
-        'Vendor': purchase.vendor_id || 'N/A',
         'Client': customer?.dealer_name || 'N/A',
         'SKU': purchase.sku || '',
         'Quantity': purchase.quantity,
         'Cost per Label': purchase.cost_per_label,
         'Total Amount': purchase.total_amount,
+        'Vendor': purchase.vendor_id || 'N/A',
         'Description': purchase.description || ''
       };
     });
-
     await exportJsonToExcel(exportData, 'Label Purchases', `label-purchases-${new Date().toISOString().split('T')[0]}.xlsx`);
-  }, [filteredAndSortedPurchases]);
+  }, [filteredAndSortedPurchases, customers]);
 
   return (
     <div className="space-y-6">
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* First Row: Purchase Date, Client, SKU, Vendor */}
+        {/* Row 1: Purchase Date, Client, SKU, Vendor */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="space-y-2">
             <Label htmlFor="purchase-date">Purchase Date *</Label>
@@ -574,35 +600,23 @@ const LabelPurchases = () => {
               id="purchase-date"
               type="date"
               value={form.purchase_date}
-              onChange={(e) => setForm({...form, purchase_date: e.target.value})}
+              onChange={(e) => handleDateChange(e.target.value)}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="client">Client *</Label>
-            <Select value={form.client_id} onValueChange={(value) => setForm({ ...form, client_id: value, sku: "" })}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select client" />
-              </SelectTrigger>
-              <SelectContent>
-                {getUniqueCustomers().length > 0 ? (
-                  getUniqueCustomers().map((customer) => (
-                    <SelectItem key={customer.id} value={customer.id}>
-                      {customer.dealer_name}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                    No clients found.
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
+            <ClientCombobox
+              options={uniqueCustomerOptions}
+              value={form.client_id}
+              onChange={(id) => setForm(prev => ({ ...prev, client_id: id, sku: "" }))}
+              placeholder="Search client..."
+            />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="sku">SKU</Label>
-            <Select value={form.sku} onValueChange={(value) => setForm({ ...form, sku: value })} disabled={!form.client_id}>
+            <Select value={form.sku} onValueChange={handleSkuChange} disabled={!form.client_id}>
               <SelectTrigger>
                 <SelectValue placeholder={form.client_id ? "Select SKU" : "Select client first"} />
               </SelectTrigger>
@@ -620,7 +634,7 @@ const LabelPurchases = () => {
 
           <div className="space-y-2">
             <Label htmlFor="vendor">Vendor *</Label>
-            <Select value={form.vendor_id} onValueChange={(value) => setForm({ ...form, vendor_id: value })}>
+            <Select value={form.vendor_id} onValueChange={handleVendorChange}>
               <SelectTrigger id="vendor">
                 <SelectValue placeholder="Select vendor" />
               </SelectTrigger>
@@ -633,7 +647,7 @@ const LabelPurchases = () => {
           </div>
         </div>
 
-        {/* Second Row: Quantity, Cost per Label, Total Amount */}
+        {/* Row 2: Quantity, Cost per Label, Total Amount */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-2">
             <Label htmlFor="quantity">Quantity *</Label>
@@ -645,7 +659,7 @@ const LabelPurchases = () => {
               placeholder="Number of labels"
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="cost-per-label">Cost per Label (₹) *</Label>
             <Input
@@ -654,10 +668,10 @@ const LabelPurchases = () => {
               step="0.0001"
               value={form.cost_per_label}
               onChange={(e) => handleQuantityOrCostChange("cost_per_label", e.target.value)}
-              placeholder="0.0000"
+              placeholder="Auto-filled from config"
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="total-amount">Total Amount (₹)</Label>
             <Input
@@ -665,25 +679,25 @@ const LabelPurchases = () => {
               type="number"
               step="0.01"
               value={form.total_amount}
-              onChange={(e) => setForm({...form, total_amount: e.target.value})}
+              onChange={(e) => setForm({ ...form, total_amount: e.target.value })}
               placeholder="Auto-calculated"
             />
           </div>
         </div>
 
-        {/* Third Row: Description (textarea, 2-3 lines visible) */}
+        {/* Row 3: Description */}
         <div className="space-y-2">
           <Label htmlFor="description">Description</Label>
           <Textarea
             id="description"
             value={form.description}
-            onChange={(e) => setForm({...form, description: e.target.value})}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder="Purchase details (multiple lines allowed)..."
             className="min-h-[4.5rem] resize-y"
             rows={3}
           />
         </div>
-        
+
         <div className="flex justify-end">
           <Button type="submit" disabled={mutation.isPending} className="px-8">
             {mutation.isPending ? "Recording..." : "Record Purchase"}
@@ -691,6 +705,7 @@ const LabelPurchases = () => {
         </div>
       </form>
 
+      {/* Table section */}
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -709,178 +724,103 @@ const LabelPurchases = () => {
                 className="pl-10 w-full sm:w-64"
               />
             </div>
-            <Button
-              variant="outline"
-              onClick={clearAllFilters}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" onClick={clearAllFilters} className="flex items-center gap-2">
               <X className="h-4 w-4" />
               Clear Filters
             </Button>
-            <Button
-              variant="outline"
-              onClick={handleExport}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" onClick={handleExport} className="flex items-center gap-2">
               <Download className="h-4 w-4" />
               Export Excel
             </Button>
           </div>
         </div>
+
         <div className="border rounded-lg">
-      <Table>
-        <TableHeader>
-          <TableRow>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {/* Date */}
                 <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleColumnSortChange('purchase_date')}
-                      className="h-6 w-6 p-0"
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('purchase_date')} className="h-6 w-6 p-0">
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Date
-                    <ColumnFilter
-                      columnKey="purchase_date"
-                      columnName="Date"
-                      filterValue={columnFilters.purchase_date}
-                      onFilterChange={(value) => handleColumnFilterChange('purchase_date', value)}
-                      dataType="date"
-                    />
+                    <ColumnFilter columnKey="purchase_date" columnName="Date" filterValue={columnFilters.purchase_date} onFilterChange={(v) => handleColumnFilterChange('purchase_date', v)} dataType="date" />
                   </div>
                 </TableHead>
+                {/* Client */}
                 <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleColumnSortChange('vendor')}
-                      className="h-6 w-6 p-0"
-                    >
-                      <ArrowUpDown className="h-4 w-4" />
-                    </Button>
-                    Vendor
-                    <ColumnFilter
-                      columnKey="vendor"
-                      columnName="Vendor"
-                      filterValue={columnFilters.vendor}
-                      onFilterChange={(value) => handleColumnFilterChange('vendor', value)}
-                      dataType="text"
-                    />
-                  </div>
-                </TableHead>
-                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleColumnSortChange('client')}
-                      className="h-6 w-6 p-0"
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('client')} className="h-6 w-6 p-0">
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Client
-                    <ColumnFilter
-                      columnKey="client"
-                      columnName="Client"
-                      filterValue={columnFilters.client}
-                      onFilterChange={(value) => handleColumnFilterChange('client', value)}
-                      dataType="text"
-                    />
+                    <ColumnFilter columnKey="client" columnName="Client" filterValue={columnFilters.client} onFilterChange={(v) => handleColumnFilterChange('client', v)} dataType="text" />
                   </div>
                 </TableHead>
+                {/* SKU */}
                 <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">SKU</TableHead>
+                {/* Quantity */}
                 <TableHead className="text-right bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleColumnSortChange('quantity')}
-                      className="h-6 w-6 p-0"
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('quantity')} className="h-6 w-6 p-0">
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Quantity
-                    <ColumnFilter
-                      columnKey="quantity"
-                      columnName="Quantity"
-                      filterValue={columnFilters.quantity}
-                      onFilterChange={(value) => handleColumnFilterChange('quantity', value)}
-                      dataType="number"
-                    />
+                    <ColumnFilter columnKey="quantity" columnName="Quantity" filterValue={columnFilters.quantity} onFilterChange={(v) => handleColumnFilterChange('quantity', v)} dataType="number" />
                   </div>
                 </TableHead>
+                {/* Cost */}
                 <TableHead className="text-right bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleColumnSortChange('cost_per_label')}
-                      className="h-6 w-6 p-0"
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('cost_per_label')} className="h-6 w-6 p-0">
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Cost/Label
-                    <ColumnFilter
-                      columnKey="cost_per_label"
-                      columnName="Cost per Label"
-                      filterValue={columnFilters.cost_per_label}
-                      onFilterChange={(value) => handleColumnFilterChange('cost_per_label', value)}
-                      dataType="number"
-                    />
+                    <ColumnFilter columnKey="cost_per_label" columnName="Cost per Label" filterValue={columnFilters.cost_per_label} onFilterChange={(v) => handleColumnFilterChange('cost_per_label', v)} dataType="number" />
                   </div>
                 </TableHead>
+                {/* Total */}
                 <TableHead className="text-right bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleColumnSortChange('total_amount')}
-                      className="h-6 w-6 p-0"
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('total_amount')} className="h-6 w-6 p-0">
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Total
-                    <ColumnFilter
-                      columnKey="total_amount"
-                      columnName="Total Amount"
-                      filterValue={columnFilters.total_amount}
-                      onFilterChange={(value) => handleColumnFilterChange('total_amount', value)}
-                      dataType="number"
-                    />
+                    <ColumnFilter columnKey="total_amount" columnName="Total Amount" filterValue={columnFilters.total_amount} onFilterChange={(v) => handleColumnFilterChange('total_amount', v)} dataType="number" />
                   </div>
                 </TableHead>
-                <TableHead className="text-center bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
-                  Actions
+                {/* Vendor */}
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('vendor')} className="h-6 w-6 p-0">
+                      <ArrowUpDown className="h-4 w-4" />
+                    </Button>
+                    Vendor
+                    <ColumnFilter columnKey="vendor" columnName="Vendor" filterValue={columnFilters.vendor} onFilterChange={(v) => handleColumnFilterChange('vendor', v)} dataType="text" />
+                  </div>
                 </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+                {/* Actions */}
+                <TableHead className="text-center bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filteredAndSortedPurchases.length > 0 ? (
                 filteredAndSortedPurchases.map((purchase) => (
-            <TableRow key={purchase.id}>
-              <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      {purchase.vendor_id || 'N/A'}
-                    </TableCell>
-                    <TableCell>
-                      {customers?.find(c => c.id === purchase.client_id)?.dealer_name || 'N/A'}
-                    </TableCell>
+                  <TableRow key={purchase.id}>
+                    <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
+                    <TableCell>{customers?.find(c => c.id === purchase.client_id)?.dealer_name || 'N/A'}</TableCell>
                     <TableCell>{purchase.sku || '—'}</TableCell>
-              <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
-              <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
-              <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
+                    <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString()}</TableCell>
+                    <TableCell>{purchase.vendor_id || 'N/A'}</TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center gap-2">
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditClick(purchase)}
-                            >
+                            <Button variant="outline" size="sm" onClick={() => handleEditClick(purchase)}>
                               <Edit className="h-4 w-4" />
                             </Button>
                           </DialogTrigger>
@@ -889,43 +829,27 @@ const LabelPurchases = () => {
                               <DialogTitle>Edit Label Purchase</DialogTitle>
                             </DialogHeader>
                             <form onSubmit={handleEditSubmit} className="space-y-4">
-                              {/* First Row: Purchase Date, Client, SKU, Vendor */}
                               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-purchase-date">Purchase Date *</Label>
+                                  <Label>Purchase Date *</Label>
                                   <Input
-                                    id="edit-purchase-date"
                                     type="date"
                                     value={editForm.purchase_date}
-                                    onChange={(e) => setEditForm({...editForm, purchase_date: e.target.value})}
+                                    onChange={(e) => setEditForm({ ...editForm, purchase_date: e.target.value })}
                                   />
                                 </div>
-
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-client">Client *</Label>
-                                  <Select value={editForm.client_id} onValueChange={(value) => setEditForm({ ...editForm, client_id: value, sku: "" })}>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select client" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {getUniqueCustomers().length > 0 ? (
-                                        getUniqueCustomers().map((customer) => (
-                                          <SelectItem key={customer.id} value={customer.id}>
-                                            {customer.dealer_name}
-                                          </SelectItem>
-                                        ))
-                                      ) : (
-                                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                          No clients found
-                                        </div>
-                                      )}
-                                    </SelectContent>
-                                  </Select>
+                                  <Label>Client *</Label>
+                                  <ClientCombobox
+                                    options={uniqueCustomerOptions}
+                                    value={editForm.client_id}
+                                    onChange={(id) => setEditForm(prev => ({ ...prev, client_id: id, sku: "" }))}
+                                    placeholder="Search client..."
+                                  />
                                 </div>
-
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-sku">SKU</Label>
-                                  <Select value={editForm.sku} onValueChange={(value) => setEditForm({ ...editForm, sku: value })} disabled={!editForm.client_id}>
+                                  <Label>SKU</Label>
+                                  <Select value={editForm.sku} onValueChange={handleEditSkuChange} disabled={!editForm.client_id}>
                                     <SelectTrigger>
                                       <SelectValue placeholder={editForm.client_id ? "Select SKU" : "Select client first"} />
                                     </SelectTrigger>
@@ -940,11 +864,10 @@ const LabelPurchases = () => {
                                     </SelectContent>
                                   </Select>
                                 </div>
-
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-vendor">Vendor *</Label>
-                                  <Select value={editForm.vendor_id} onValueChange={(value) => setEditForm({ ...editForm, vendor_id: value })}>
-                                    <SelectTrigger id="edit-vendor">
+                                  <Label>Vendor *</Label>
+                                  <Select value={editForm.vendor_id} onValueChange={handleEditVendorChange}>
+                                    <SelectTrigger>
                                       <SelectValue placeholder="Select vendor" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -956,23 +879,19 @@ const LabelPurchases = () => {
                                 </div>
                               </div>
 
-                              {/* Second Row: Quantity, Cost per Label, Total Amount */}
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-quantity">Quantity *</Label>
+                                  <Label>Quantity *</Label>
                                   <Input
-                                    id="edit-quantity"
                                     type="number"
                                     value={editForm.quantity}
                                     onChange={(e) => handleEditQuantityOrCostChange("quantity", e.target.value)}
                                     placeholder="Number of labels"
                                   />
                                 </div>
-                                
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-cost-per-label">Cost per Label (₹) *</Label>
+                                  <Label>Cost per Label (₹) *</Label>
                                   <Input
-                                    id="edit-cost-per-label"
                                     type="number"
                                     step="0.0001"
                                     value={editForm.cost_per_label}
@@ -980,39 +899,30 @@ const LabelPurchases = () => {
                                     placeholder="0.0000"
                                   />
                                 </div>
-                                
                                 <div className="space-y-2">
-                                  <Label htmlFor="edit-total-amount">Total Amount (₹)</Label>
+                                  <Label>Total Amount (₹)</Label>
                                   <Input
-                                    id="edit-total-amount"
                                     type="number"
                                     step="0.01"
                                     value={editForm.total_amount}
-                                    onChange={(e) => setEditForm({...editForm, total_amount: e.target.value})}
+                                    onChange={(e) => setEditForm({ ...editForm, total_amount: e.target.value })}
                                     placeholder="Auto-calculated"
                                   />
                                 </div>
                               </div>
 
                               <div className="space-y-2">
-                                <Label htmlFor="edit-description">Description</Label>
+                                <Label>Description</Label>
                                 <Textarea
-                                  id="edit-description"
                                   value={editForm.description}
-                                  onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                                  placeholder="Purchase details (multiple lines allowed)..."
+                                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                                  placeholder="Purchase details..."
                                   className="min-h-[4.5rem] resize-y"
                                   rows={3}
                                 />
                               </div>
                               <div className="flex justify-end gap-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => setEditingPurchase(null)}
-                                >
-                                  Cancel
-                                </Button>
+                                <Button type="button" variant="outline" onClick={() => setEditingPurchase(null)}>Cancel</Button>
                                 <Button type="submit" disabled={updateMutation.isPending}>
                                   {updateMutation.isPending ? "Updating..." : "Update Purchase"}
                                 </Button>
@@ -1020,7 +930,7 @@ const LabelPurchases = () => {
                             </form>
                           </DialogContent>
                         </Dialog>
-                        
+
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="outline" size="sm">
@@ -1036,10 +946,7 @@ const LabelPurchases = () => {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDelete(purchase.id)}
-                                className="bg-red-600 hover:bg-red-700"
-                              >
+                              <AlertDialogAction onClick={() => handleDelete(purchase.id)} className="bg-red-600 hover:bg-red-700">
                                 Delete
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -1054,10 +961,10 @@ const LabelPurchases = () => {
                   <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No label purchases found
                   </TableCell>
-            </TableRow>
+                </TableRow>
               )}
-        </TableBody>
-      </Table>
+            </TableBody>
+          </Table>
         </div>
       </div>
     </div>
