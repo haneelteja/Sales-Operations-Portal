@@ -123,7 +123,7 @@ const FactoryPayables = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("id, dealer_name, area")
+        .select("id, dealer_name, area, sku")
         .eq("is_active", true)
         .order("dealer_name", { ascending: true });
       return data || [];
@@ -146,14 +146,48 @@ const FactoryPayables = () => {
     )].sort() as string[];
   }, [customers, productionForm.customer_id]);
 
-  // Handle production client change — auto-select branch if only one
+  // SKUs filtered by selected client+branch
+  const productionSKUs = useMemo(() => {
+    if (!customers || !productionForm.customer_id || !productionForm.area) return availableSKUs ?? [];
+    const selected = customers.find(c => c.id === productionForm.customer_id);
+    if (!selected) return availableSKUs ?? [];
+    const skus = [...new Set(
+      customers
+        .filter(c => c.dealer_name === selected.dealer_name && c.area === productionForm.area && c.sku)
+        .map(c => c.sku as string)
+    )].sort();
+    return skus.length > 0 ? skus : (availableSKUs ?? []);
+  }, [customers, productionForm.customer_id, productionForm.area, availableSKUs]);
+
+  // Handle production client change — auto-select branch and SKU when only one option
   const handleProductionClientChange = (clientId: string) => {
     const selected = customers?.find(c => c.id === clientId);
-    if (!selected) { setProductionForm(f => ({ ...f, customer_id: "", area: "" })); return; }
+    if (!selected) { setProductionForm(f => ({ ...f, customer_id: "", area: "", sku: "" })); return; }
     const branches = [...new Set(
       customers!.filter(c => c.dealer_name === selected.dealer_name).map(c => c.area).filter(Boolean)
     )] as string[];
-    setProductionForm(f => ({ ...f, customer_id: clientId, area: branches.length === 1 ? branches[0] : "" }));
+    const autoArea = branches.length === 1 ? branches[0] : "";
+    let autoSku = "";
+    if (autoArea) {
+      const skus = [...new Set(
+        customers!.filter(c => c.dealer_name === selected.dealer_name && c.area === autoArea && c.sku).map(c => c.sku as string)
+      )];
+      autoSku = skus.length === 1 ? skus[0] : "";
+    }
+    setProductionForm(f => ({ ...f, customer_id: clientId, area: autoArea, sku: autoSku }));
+  };
+
+  // Handle production branch change — auto-select SKU if only one
+  const handleProductionBranchChange = (area: string) => {
+    const selected = customers?.find(c => c.id === productionForm.customer_id);
+    let autoSku = "";
+    if (selected) {
+      const skus = [...new Set(
+        customers!.filter(c => c.dealer_name === selected.dealer_name && c.area === area && c.sku).map(c => c.sku as string)
+      )];
+      autoSku = skus.length === 1 ? skus[0] : "";
+    }
+    setProductionForm(f => ({ ...f, area, sku: autoSku }));
   };
 
   // Fetch factory transactions
@@ -803,7 +837,7 @@ const FactoryPayables = () => {
                   <Label htmlFor="production-branch">Branch *</Label>
                   <Select
                     value={productionForm.area || ""}
-                    onValueChange={(v) => setProductionForm(f => ({ ...f, area: v }))}
+                    onValueChange={handleProductionBranchChange}
                     disabled={!productionForm.customer_id}
                   >
                     <SelectTrigger id="production-branch">
@@ -830,7 +864,7 @@ const FactoryPayables = () => {
                       <SelectValue placeholder="Select SKU" />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableSKUs?.map((sku) => (
+                      {productionSKUs.map((sku) => (
                         <SelectItem key={sku} value={sku}>{sku}</SelectItem>
                       ))}
                     </SelectContent>

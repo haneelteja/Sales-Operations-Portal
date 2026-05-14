@@ -266,6 +266,14 @@ function SummaryStrip({ data }: { data: CustomerRow[] }) {
   const totalRevenue = data.reduce((s, c) => s + c.total_revenue, 0);
   const totalPendingBills = data.reduce((s, c) => s + c.pending_bills, 0);
 
+  const now = new Date();
+  const thisMonthYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthYM = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+  const saleThisMonth = data.reduce((s, c) => s + (c.monthly.find(m => m.month === thisMonthYM)?.revenue ?? 0), 0);
+  const salePrevMonth = data.reduce((s, c) => s + (c.monthly.find(m => m.month === prevMonthYM)?.revenue ?? 0), 0);
+
   const stats = [
     {
       label: 'Active Customers',
@@ -312,10 +320,28 @@ function SummaryStrip({ data }: { data: CustomerRow[] }) {
       iconColor: 'text-red-600 dark:text-red-400',
       valueColor: highRisk > 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground',
     },
+    {
+      label: 'Sale This Month',
+      value: fmt(saleThisMonth),
+      sub: new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' }),
+      icon: TrendingUp,
+      iconBg: 'bg-teal-100 dark:bg-teal-900/40',
+      iconColor: 'text-teal-600 dark:text-teal-400',
+      valueColor: 'text-teal-600 dark:text-teal-400',
+    },
+    {
+      label: 'Sale Previous Month',
+      value: fmt(salePrevMonth),
+      sub: prevDate.toLocaleString('en-IN', { month: 'long', year: 'numeric' }),
+      icon: TrendingUp,
+      iconBg: 'bg-cyan-100 dark:bg-cyan-900/40',
+      iconColor: 'text-cyan-600 dark:text-cyan-400',
+      valueColor: 'text-cyan-600 dark:text-cyan-400',
+    },
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-0 border-b bg-card">
+    <div className="grid grid-cols-2 lg:grid-cols-7 gap-0 border-b bg-card">
       {stats.map((s, i) => (
         <div
           key={i}

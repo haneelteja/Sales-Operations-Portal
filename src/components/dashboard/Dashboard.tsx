@@ -48,6 +48,11 @@ const Dashboard = memo(() => {
     priority: null,
   });
 
+  // Inventory table state
+  const [inventorySearch, setInventorySearch] = useState("");
+  const debouncedInventorySearch = useDebouncedValue(inventorySearch, 200);
+  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'area' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
+
   // Fetch profit data for Profitability Summary
   const { data: profitData } = useQuery({
     queryKey: ["dashboard-profit"],
@@ -660,35 +665,87 @@ const Dashboard = memo(() => {
         </Card>
       </div>
       {/* Inventory Table */}
-      {inventoryRows && inventoryRows.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Available Inventory</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Stock (Cases)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inventoryRows.map((row, i) => (
-                  <TableRow key={i}>
-                    <TableCell>{row.clientName}</TableCell>
-                    <TableCell>{row.area}</TableCell>
-                    <TableCell>{row.sku}</TableCell>
-                    <TableCell className="text-right font-medium">{row.stock}</TableCell>
+      {inventoryRows && inventoryRows.length > 0 && (() => {
+        const q = debouncedInventorySearch.toLowerCase();
+        const filtered = inventoryRows.filter(r =>
+          !q ||
+          r.clientName.toLowerCase().includes(q) ||
+          r.area.toLowerCase().includes(q) ||
+          r.sku.toLowerCase().includes(q) ||
+          r.stock.toString().includes(q)
+        );
+        const sorted = inventorySort
+          ? [...filtered].sort((a, b) => {
+              const av = a[inventorySort.col];
+              const bv = b[inventorySort.col];
+              const cmp = typeof av === 'number' && typeof bv === 'number'
+                ? av - bv
+                : String(av).localeCompare(String(bv));
+              return inventorySort.dir === 'asc' ? cmp : -cmp;
+            })
+          : filtered;
+
+        const toggleSort = (col: typeof inventorySort extends { col: infer C } | null ? C : never) => {
+          setInventorySort(prev =>
+            prev?.col === col
+              ? prev.dir === 'asc' ? { col, dir: 'desc' } : null
+              : { col, dir: 'asc' }
+          );
+        };
+
+        const SortIcon = ({ col }: { col: string }) => {
+          if (inventorySort?.col !== col) return <span className="ml-1 text-gray-300">↕</span>;
+          return <span className="ml-1">{inventorySort.dir === 'asc' ? '↑' : '↓'}</span>;
+        };
+
+        return (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <CardTitle className="text-base">Available Inventory</CardTitle>
+                <Input
+                  placeholder="Search inventory..."
+                  value={inventorySearch}
+                  onChange={e => setInventorySearch(e.target.value)}
+                  className="w-56 h-8 text-sm"
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {(['clientName', 'area', 'sku', 'stock'] as const).map(col => (
+                      <TableHead
+                        key={col}
+                        className={`cursor-pointer select-none hover:bg-muted/50 ${col === 'stock' ? 'text-right' : ''}`}
+                        onClick={() => toggleSort(col)}
+                      >
+                        {col === 'clientName' ? 'Client' : col === 'area' ? 'Branch' : col === 'sku' ? 'SKU' : 'Stock (Cases)'}
+                        <SortIcon col={col} />
+                      </TableHead>
+                    ))}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {sorted.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-4">No results</TableCell>
+                    </TableRow>
+                  ) : sorted.map((row, i) => (
+                    <TableRow key={i}>
+                      <TableCell>{row.clientName}</TableCell>
+                      <TableCell>{row.area}</TableCell>
+                      <TableCell>{row.sku}</TableCell>
+                      <TableCell className="text-right font-medium">{row.stock}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        );
+      })()}
     </div>
   );
 });
