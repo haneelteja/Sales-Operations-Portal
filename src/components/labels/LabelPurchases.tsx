@@ -238,8 +238,11 @@ const LabelPurchases = () => {
       .filter(e => e.vendor === vendor && e.sku === sku && e.date && e.date <= purchaseDate)
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (!matching.length) return '';
-    const p = matching[0].price;
-    return p !== '' && p !== undefined ? String(p) : '';
+    const entry = matching[0];
+    const p = entry.price !== '' && entry.price !== undefined ? Number(entry.price) : null;
+    if (p === null) return '';
+    const gst = entry.gst !== '' && entry.gst !== undefined ? Number(entry.gst) : 0;
+    return String((p * (1 + gst / 100)).toFixed(4));
   }, [vendorPricingEntries]);
 
   const { data: purchases } = useQuery({
