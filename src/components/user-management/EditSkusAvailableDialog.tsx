@@ -1,7 +1,8 @@
 /**
  * Edit SKUs Available in the Plant Dialog
- * Table with SKU, description, and bottles per case.
+ * Table with SKU, description, bottles per case, and price per case.
  * Supports search, sortable columns, and manual row reordering (persisted via display_order).
+ * Price per case is read from / written to the factory_pricing table.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -35,6 +36,9 @@ export interface SkuRow {
   description?: string;
   display_order: number;
   isNew?: boolean;
+  // factory_pricing fields
+  cost_per_case?: number | null;
+  pricing_id?: string | null;
 }
 
 interface EditSkusAvailableDialogProps {
@@ -43,7 +47,7 @@ interface EditSkusAvailableDialogProps {
   onSuccess?: () => void;
 }
 
-type SortField = 'sku' | 'description' | 'bottles_per_case' | null;
+type SortField = 'sku' | 'description' | 'bottles_per_case' | 'cost_per_case' | null;
 
 async function fetchSkuConfigurations(): Promise<SkuRow[]> {
   const { data, error } = await supabase
@@ -62,6 +66,23 @@ async function fetchSkuConfigurations(): Promise<SkuRow[]> {
   }));
 }
 
+async function fetchLatestPricingPerSku(): Promise<Map<string, { id: string; cost_per_case: number | null }>> {
+  const { data, error } = await supabase
+    .from('factory_pricing')
+    .select('id, sku, cost_per_case, pricing_date')
+    .order('pricing_date', { ascending: false });
+
+  if (error) throw new Error(handleSupabaseError(error));
+
+  const map = new Map<string, { id: string; cost_per_case: number | null }>();
+  for (const row of data || []) {
+    if (!map.has(row.sku)) {
+      map.set(row.sku, { id: row.id, cost_per_case: row.cost_per_case });
+    }
+  }
+  return map;
+}
+
 export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = ({
   open,
   onOpenChange,
@@ -70,11 +91,9 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Master ordered list — source of truth for saves and reordering
   const [rows, setRows] = useState<SkuRow[]>([]);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
 
-  // Search / sort state
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -85,16 +104,30 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     enabled: open,
   });
 
+  const { data: pricingMap, isLoading: isLoadingPricing } = useQuery({
+    queryKey: ['factory-pricing-map'],
+    queryFn: fetchLatestPricingPerSku,
+    enabled: open,
+  });
+
+  const isLoading = isLoadingRows || isLoadingPricing;
+
   useEffect(() => {
     if (open && initialRows) {
-      setRows(initialRows.map((r) => ({ ...r })));
+      setRows(initialRows.map((r) => {
+        const pricing = pricingMap?.get(r.sku);
+        return {
+          ...r,
+          cost_per_case: pricing?.cost_per_case ?? null,
+          pricing_id: pricing?.id ?? null,
+        };
+      }));
       setHasLocalChanges(false);
       setSearchQuery('');
       setSortField(null);
     }
-  }, [open, initialRows]);
+  }, [open, initialRows, pricingMap]);
 
-  // ── Search / sort produces a view; editing still targets original index ──────
   const isFiltering = searchQuery.trim() !== '' || sortField !== null;
 
   const displayRows = useMemo(() => {
@@ -113,8 +146,18 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     if (!sortField) return filtered;
 
     return [...filtered].sort(({ row: a }, { row: b }) => {
-      let aVal: string | number = sortField === 'bottles_per_case' ? a.bottles_per_case : (a[sortField] ?? '');
-      let bVal: string | number = sortField === 'bottles_per_case' ? b.bottles_per_case : (b[sortField] ?? '');
+      let aVal: string | number;
+      let bVal: string | number;
+      if (sortField === 'bottles_per_case') {
+        aVal = a.bottles_per_case;
+        bVal = b.bottles_per_case;
+      } else if (sortField === 'cost_per_case') {
+        aVal = a.cost_per_case ?? 0;
+        bVal = b.cost_per_case ?? 0;
+      } else {
+        aVal = a[sortField] ?? '';
+        bVal = b[sortField] ?? '';
+      }
       let cmp = 0;
       if (typeof aVal === 'number' && typeof bVal === 'number') {
         cmp = aVal - bVal;
@@ -125,7 +168,6 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     });
   }, [rows, searchQuery, sortField, sortDir]);
 
-  // ── Mutators ─────────────────────────────────────────────────────────────────
   const addRow = () => {
     setRows((prev) => [
       ...prev,
@@ -136,6 +178,8 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
         description: '',
         display_order: prev.length,
         isNew: true,
+        cost_per_case: null,
+        pricing_id: null,
       },
     ]);
     setHasLocalChanges(true);
@@ -148,13 +192,15 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
 
   const updateRow = (
     originalIndex: number,
-    field: 'sku' | 'bottles_per_case' | 'description',
+    field: 'sku' | 'bottles_per_case' | 'description' | 'cost_per_case',
     value: string | number
   ) => {
     setRows((prev) => {
       const next = [...prev];
       if (field === 'bottles_per_case') {
         next[originalIndex] = { ...next[originalIndex], bottles_per_case: Number(value) || 0 };
+      } else if (field === 'cost_per_case') {
+        next[originalIndex] = { ...next[originalIndex], cost_per_case: value === '' ? null : Number(value) };
       } else if (field === 'description') {
         next[originalIndex] = { ...next[originalIndex], description: String(value) };
       } else {
@@ -165,7 +211,6 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     setHasLocalChanges(true);
   };
 
-  // Move a row up or down in the master list
   const moveRow = (originalIndex: number, direction: 'up' | 'down') => {
     setRows((prev) => {
       const next = [...prev];
@@ -193,7 +238,6 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     setSortDir('asc');
   };
 
-  // ── Save ─────────────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async (rowsToSave: SkuRow[]) => {
       const toInsert: { sku: string; bottles_per_case: number; description: string | null; display_order: number }[] = [];
@@ -244,10 +288,40 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
         if (error) errors.push(error.message);
       }
 
+      // Save factory_pricing: update existing record or insert new one per SKU
+      const today = new Date().toISOString().split('T')[0];
+      for (const row of rowsToSave) {
+        const sku = row.sku.trim();
+        if (!sku) continue;
+        if (row.cost_per_case == null) continue;
+
+        if (row.pricing_id) {
+          // Update the existing most-recent pricing record
+          const { error } = await supabase
+            .from('factory_pricing')
+            .update({ cost_per_case: row.cost_per_case, updated_at: new Date().toISOString() })
+            .eq('id', row.pricing_id);
+          if (error) errors.push(`Pricing ${sku}: ${error.message}`);
+        } else {
+          // No pricing record yet — insert one
+          const { error } = await supabase
+            .from('factory_pricing')
+            .insert({
+              sku,
+              cost_per_case: row.cost_per_case,
+              bottles_per_case: row.bottles_per_case,
+              pricing_date: today,
+            });
+          if (error) errors.push(`Pricing insert ${sku}: ${error.message}`);
+        }
+      }
+
       if (errors.length) throw new Error(errors.join('; '));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sku-configurations'] });
+      queryClient.invalidateQueries({ queryKey: ['factory-pricing-map'] });
+      queryClient.invalidateQueries({ queryKey: ['factory-pricing'] });
       toast({ title: 'Success', description: 'SKU configurations saved.' });
       onSuccess?.();
       onOpenChange(false);
@@ -274,7 +348,6 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     saveMutation.mutate(rows);
   };
 
-  // ── Sort button helper ────────────────────────────────────────────────────────
   const SortBtn = ({ field }: { field: SortField }) => (
     <Button
       type="button"
@@ -289,15 +362,15 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col" aria-describedby="skus-plant-desc">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col" aria-describedby="skus-plant-desc">
         <DialogHeader>
           <DialogTitle>SKU&apos;s available in the plant</DialogTitle>
           <DialogDescription id="skus-plant-desc">
-            Add, edit, or remove SKUs. Use the ↑ ↓ buttons to reorder (visible when not searching/sorting). Order is saved.
+            Add, edit, or remove SKUs. Price per Case is shared with Elma transaction history. Use the ↑ ↓ buttons to reorder (visible when not searching/sorting).
           </DialogDescription>
         </DialogHeader>
 
-        {isLoadingRows ? (
+        {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
@@ -332,14 +405,17 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
                 <TableHeader>
                   <TableRow>
                     {!isFiltering && <TableHead className="w-[72px]">Order</TableHead>}
-                    <TableHead className="w-[22%]">
+                    <TableHead className="w-[18%]">
                       SKU <SortBtn field="sku" />
                     </TableHead>
                     <TableHead>
                       Invoice Description <SortBtn field="description" />
                     </TableHead>
-                    <TableHead className="w-[18%]">
+                    <TableHead className="w-[14%]">
                       Bottles/case <SortBtn field="bottles_per_case" />
+                    </TableHead>
+                    <TableHead className="w-[16%]">
+                      Price/Case (₹) <SortBtn field="cost_per_case" />
                     </TableHead>
                     <TableHead className="w-[8%] text-right">Action</TableHead>
                   </TableRow>
@@ -347,14 +423,13 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
                 <TableBody>
                   {displayRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={isFiltering ? 4 : 5} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={isFiltering ? 5 : 6} className="text-center text-muted-foreground py-8">
                         {rows.length === 0 ? 'No SKUs yet. Click "Add row" to start.' : 'No results match your search.'}
                       </TableCell>
                     </TableRow>
                   ) : (
                     displayRows.map(({ row, originalIndex }) => (
                       <TableRow key={row.id ?? `new-${originalIndex}`}>
-                        {/* Up / Down buttons — only when not filtering */}
                         {!isFiltering && (
                           <TableCell>
                             <div className="flex flex-col gap-0.5">
@@ -409,6 +484,17 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
                             className="h-9"
                           />
                         </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.0001"
+                            value={row.cost_per_case ?? ''}
+                            onChange={(e) => updateRow(originalIndex, 'cost_per_case', e.target.value)}
+                            placeholder="0.0000"
+                            className="h-9"
+                          />
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button
                             type="button"
@@ -447,7 +533,7 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!hasLocalChanges || saveMutation.isPending || isLoadingRows}
+            disabled={!hasLocalChanges || saveMutation.isPending || isLoading}
           >
             {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Save
