@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, lazy, Suspense } from "react";
+const FactoryPricingTab = lazy(() => import("./FactoryPricingTab"));
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -103,17 +104,15 @@ const FactoryPayables = () => {
     },
   });
 
-  // Get unique SKUs for dropdown
+  // Get unique SKUs for dropdown (from sku_configurations — the canonical SKU list)
   const { data: availableSKUs } = useQuery({
     queryKey: ["available-skus"],
     queryFn: async () => {
       const { data } = await supabase
-        .from("factory_pricing")
+        .from("sku_configurations")
         .select("sku")
         .order("sku", { ascending: true });
-      
-      const uniqueSKUs = [...new Set(data?.map(item => item.sku) || [])];
-      return uniqueSKUs;
+      return (data || []).map(item => item.sku as string);
     },
   });
 
@@ -216,11 +215,14 @@ const FactoryPayables = () => {
     },
   });
 
-  // Helper function to get price per case for a SKU
-  const getPricePerCase = (sku: string | null): number | null => {
+  // Get price per case for a SKU as of a given date (latest record on or before that date)
+  const getPricePerCase = (sku: string | null, transactionDate?: string): number | null => {
     if (!sku) return null;
-    const pricing = factoryPricing?.find(p => p.sku === sku);
-    return pricing?.cost_per_case || null;
+    // factoryPricing is ordered by pricing_date DESC — find first eligible record
+    const eligible = transactionDate
+      ? factoryPricing?.filter(p => p.sku === sku && p.pricing_date <= transactionDate)
+      : factoryPricing?.filter(p => p.sku === sku);
+    return eligible?.[0]?.cost_per_case || null;
   };
 
   // Filter and sort transactions (memoized for performance)
@@ -238,7 +240,7 @@ const FactoryPayables = () => {
       : (transaction.customers?.dealer_name || '');
     const area = transaction.customers?.area || '';
     const quantity = transaction.quantity?.toString() || '';
-    const pricePerCase = getPricePerCase(transaction.sku);
+    const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
     const pricePerCaseStr = pricePerCase?.toString() || '';
     
     // Global search filter (using debounced value)
@@ -350,8 +352,8 @@ const FactoryPayables = () => {
         valueB = b.quantity || 0;
         break;
       case 'price_per_case':
-        valueA = getPricePerCase(a.sku) || 0;
-        valueB = getPricePerCase(b.sku) || 0;
+        valueA = getPricePerCase(a.sku, a.transaction_date) || 0;
+        valueB = getPricePerCase(b.sku, b.transaction_date) || 0;
         break;
       case 'type':
         valueA = a.transaction_type || '';
@@ -469,8 +471,8 @@ const FactoryPayables = () => {
       const clientName = transaction.transaction_type === 'payment' 
         ? (transaction.description || 'Elma Payment')
         : (transaction.customers?.dealer_name || '');
-      const pricePerCase = getPricePerCase(transaction.sku);
-      
+      const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
+
       return {
         'Date': new Date(transaction.transaction_date).toLocaleDateString(),
         'Client': clientName,
@@ -498,11 +500,11 @@ const FactoryPayables = () => {
     (acc, transaction) => {
       let amount = transaction.amount || 0;
       
-      // For production transactions, calculate amount based on factory pricing
+      // For production transactions, calculate amount based on date-aware factory pricing
       if (transaction.transaction_type === 'production' && transaction.quantity && transaction.sku) {
-        const pricing = factoryPricing?.find(p => p.sku === transaction.sku);
-        if (pricing && pricing.cost_per_case) {
-          amount = transaction.quantity * pricing.cost_per_case;
+        const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
+        if (pricePerCase) {
+          amount = transaction.quantity * pricePerCase;
         }
       }
       
@@ -521,10 +523,8 @@ const FactoryPayables = () => {
   // Production mutation
   const productionMutation = useMutation({
     mutationFn: async (data: FactoryProductionForm) => {
-      // Calculate amount based on factory pricing
-      const pricing = factoryPricing?.find(p => p.sku === data.sku);
-      const calculatedAmount = pricing?.cost_per_case ? 
-        parseInt(data.quantity) * pricing.cost_per_case : 0;
+      const pricePerCase = getPricePerCase(data.sku, data.transaction_date);
+      const calculatedAmount = pricePerCase ? parseInt(data.quantity) * pricePerCase : 0;
 
       const { error } = await supabase
         .from("factory_payables")
@@ -597,11 +597,10 @@ const FactoryPayables = () => {
     mutationFn: async (data: { id: string; transaction_type: string } & Partial<FactoryProductionForm & FactoryPaymentForm>) => {
       const updateData = { ...data };
       
-      // For production transactions, recalculate amount based on factory pricing
+      // For production transactions, recalculate amount based on date-aware factory pricing
       if (data.transaction_type === 'production' && data.quantity && data.sku) {
-        const pricing = factoryPricing?.find(p => p.sku === data.sku);
-        updateData.amount = pricing?.cost_per_case ? 
-          parseInt(data.quantity) * pricing.cost_per_case : data.amount;
+        const pricePerCase = getPricePerCase(data.sku, data.transaction_date as string | undefined);
+        updateData.amount = pricePerCase ? parseInt(data.quantity) * pricePerCase : data.amount;
       }
 
       const { error } = await supabase
@@ -709,9 +708,8 @@ const FactoryPayables = () => {
   // Get calculated amount for production form
   const getCalculatedAmount = () => {
     if (!productionForm.sku || !productionForm.quantity) return 0;
-    const pricing = factoryPricing?.find(p => p.sku === productionForm.sku);
-    return pricing?.cost_per_case ? 
-      parseInt(productionForm.quantity || "0") * pricing.cost_per_case : 0;
+    const pricePerCase = getPricePerCase(productionForm.sku, productionForm.transaction_date);
+    return pricePerCase ? parseInt(productionForm.quantity || "0") * pricePerCase : 0;
   };
 
   return (
@@ -740,9 +738,10 @@ const FactoryPayables = () => {
 
       {/* Tabs for Production and Payment Forms */}
       <Tabs defaultValue="payment" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="payment">Record Payment to Elma Industries</TabsTrigger>
           <TabsTrigger value="production">Record Production Transaction</TabsTrigger>
+          <TabsTrigger value="pricing">Factory Pricing</TabsTrigger>
         </TabsList>
 
         <TabsContent value="payment">
@@ -914,6 +913,12 @@ const FactoryPayables = () => {
               </Button>
             </form>
           </div>
+        </TabsContent>
+
+        <TabsContent value="pricing">
+          <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
+            <FactoryPricingTab />
+          </Suspense>
         </TabsContent>
       </Tabs>
 
@@ -1130,8 +1135,8 @@ const FactoryPayables = () => {
                 const clientName = transaction.transaction_type === 'payment' 
                   ? (transaction.description || 'Elma Payment')
                   : (transaction.customers?.dealer_name || '-');
-                const pricePerCase = getPricePerCase(transaction.sku);
-                
+                const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
+
                 return (
               <TableRow key={transaction.id}>
                 <TableCell>
