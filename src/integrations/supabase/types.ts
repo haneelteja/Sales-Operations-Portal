@@ -175,7 +175,6 @@ export type Database = {
         }
         Insert: {
           bottles_per_case?: number
-          cost_per_case?: number | null
           created_at?: string | null
           description?: string | null
           id?: string
@@ -187,7 +186,6 @@ export type Database = {
         }
         Update: {
           bottles_per_case?: number
-          cost_per_case?: number | null
           created_at?: string | null
           description?: string | null
           id?: string

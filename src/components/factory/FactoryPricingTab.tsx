@@ -207,7 +207,6 @@ const FactoryPricingTab: React.FC = () => {
         sku: form.sku,
         price_per_bottle: ppb,
         tax: gst,
-        cost_per_case: calcCostPerCase(ppb, gst, bpc),
         bottles_per_case: bpc,
         pricing_date: form.pricing_date,
         description: form.description.trim() || null,
@@ -232,7 +231,6 @@ const FactoryPricingTab: React.FC = () => {
         .update({
           price_per_bottle: ppb,
           tax: gst,
-          cost_per_case: calcCostPerCase(ppb, gst, editingRecord.bottles_per_case),
           pricing_date: editForm.pricing_date,
           description: editForm.description.trim() || null,
           updated_at: new Date().toISOString(),
