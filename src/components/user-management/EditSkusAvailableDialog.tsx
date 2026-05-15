@@ -71,20 +71,25 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  const { data: initialRows, isLoading } = useQuery({
+  const { data: initialRows, isLoading, isFetching } = useQuery({
     queryKey: ['sku-configurations'],
     queryFn: fetchSkuConfigurations,
     enabled: open,
   });
 
   useEffect(() => {
-    if (open && initialRows) {
+    if (!open) {
+      setRows([]);
+      setHasLocalChanges(false);
+      return;
+    }
+    if (initialRows && !isFetching) {
       setRows(initialRows);
       setHasLocalChanges(false);
       setSearchQuery('');
       setSortField(null);
     }
-  }, [open, initialRows]);
+  }, [open, initialRows, isFetching]);
 
   const isFiltering = searchQuery.trim() !== '' || sortField !== null;
 
@@ -291,7 +296,7 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
           </DialogDescription>
         </DialogHeader>
 
-        {isLoading ? (
+        {isLoading || isFetching ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
