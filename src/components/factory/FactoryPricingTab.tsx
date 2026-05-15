@@ -19,12 +19,23 @@ interface PricingRecord {
   cost_per_case: number | null;
   bottles_per_case: number;
   pricing_date: string;
+  tax: number | null;
+  description: string | null;
 }
 
 interface SkuConfig {
   sku: string;
   bottles_per_case: number;
 }
+
+const fmt = (n: number | null | undefined, digits = 4) =>
+  n != null ? `₹${n.toLocaleString('en-IN', { maximumFractionDigits: digits })}` : '—';
+
+const calcTotalCostPerBottle = (price: number, gstPct: number) =>
+  price * (1 + gstPct / 100);
+
+const calcCostPerCase = (price: number, gstPct: number, bottles: number) =>
+  calcTotalCostPerBottle(price, gstPct) * bottles;
 
 const FactoryPricingTab: React.FC = () => {
   const { profile } = useAuth();
@@ -36,16 +47,24 @@ const FactoryPricingTab: React.FC = () => {
     pricing_date: new Date().toISOString().split('T')[0],
     sku: '',
     price_per_bottle: '',
+    gst: '',
+    description: '',
   });
+
   const [editingRecord, setEditingRecord] = useState<PricingRecord | null>(null);
-  const [editForm, setEditForm] = useState({ pricing_date: '', price_per_bottle: '' });
+  const [editForm, setEditForm] = useState({
+    pricing_date: '',
+    price_per_bottle: '',
+    gst: '',
+    description: '',
+  });
 
   const [expandedSkus, setExpandedSkus] = useState<Set<string>>(new Set());
   const [columnFilters, setColumnFilters] = useState<Record<string, string | string[]>>({
-    sku: '', price_per_bottle: '', cost_per_case: '', pricing_date: '',
+    sku: '', pricing_date: '', price_per_bottle: '', cost_per_case: '',
   });
   const [columnSorts, setColumnSorts] = useState<Record<string, 'asc' | 'desc' | null>>({
-    sku: null, price_per_bottle: null, cost_per_case: null, pricing_date: null,
+    sku: null, pricing_date: null, price_per_bottle: null, cost_per_case: null,
   });
 
   const { data: skuConfigs } = useQuery({
@@ -64,7 +83,7 @@ const FactoryPricingTab: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from('factory_pricing')
-        .select('id, sku, price_per_bottle, cost_per_case, bottles_per_case, pricing_date')
+        .select('id, sku, price_per_bottle, cost_per_case, bottles_per_case, pricing_date, tax, description')
         .order('pricing_date', { ascending: false });
       return (data || []) as PricingRecord[];
     },
@@ -75,30 +94,29 @@ const FactoryPricingTab: React.FC = () => {
     [skuConfigs, form.sku]
   );
 
-  const calculatedCostPerCase = useMemo(() => {
-    const ppb = parseFloat(form.price_per_bottle);
-    const bpc = selectedSkuConfig?.bottles_per_case;
-    if (!ppb || !bpc) return null;
-    return ppb * bpc;
-  }, [form.price_per_bottle, selectedSkuConfig]);
+  const formPpb = parseFloat(form.price_per_bottle) || 0;
+  const formGst = parseFloat(form.gst) || 0;
+  const formBpc = selectedSkuConfig?.bottles_per_case || 0;
 
-  const editCalculatedCost = useMemo(() => {
-    if (!editingRecord) return null;
-    const ppb = parseFloat(editForm.price_per_bottle);
-    if (!ppb) return null;
-    return ppb * editingRecord.bottles_per_case;
-  }, [editForm.price_per_bottle, editingRecord]);
+  const calcFormTotalBottle = formPpb > 0 ? calcTotalCostPerBottle(formPpb, formGst) : null;
+  const calcFormCostCase = formPpb > 0 && formBpc > 0 ? calcCostPerCase(formPpb, formGst, formBpc) : null;
+
+  const editPpb = parseFloat(editForm.price_per_bottle) || 0;
+  const editGst = parseFloat(editForm.gst) || 0;
+  const editBpc = editingRecord?.bottles_per_case || 0;
+  const editTotalBottle = editPpb > 0 ? calcTotalCostPerBottle(editPpb, editGst) : null;
+  const editCostCase = editTotalBottle != null && editBpc > 0 ? editTotalBottle * editBpc : null;
 
   const handleSkuChange = (sku: string) => {
-    const latestPricing = pricingData?.find(p => p.sku === sku);
+    const latest = pricingData?.find(p => p.sku === sku);
     setForm(f => ({
       ...f,
       sku,
-      price_per_bottle: latestPricing?.price_per_bottle?.toString() ?? '',
+      price_per_bottle: latest?.price_per_bottle?.toString() ?? '',
+      gst: latest?.tax?.toString() ?? '',
     }));
   };
 
-  // Group pricing records by SKU (already ordered by pricing_date DESC)
   const groupedPricing = useMemo(() => {
     if (!pricingData) return [];
     const groups = new Map<string, PricingRecord[]>();
@@ -183,19 +201,22 @@ const FactoryPricingTab: React.FC = () => {
   const addMutation = useMutation({
     mutationFn: async () => {
       const ppb = parseFloat(form.price_per_bottle);
+      const gst = parseFloat(form.gst) || 0;
       const bpc = selectedSkuConfig?.bottles_per_case || 0;
       const { error } = await supabase.from('factory_pricing').insert({
         sku: form.sku,
         price_per_bottle: ppb,
-        cost_per_case: ppb * bpc,
+        tax: gst,
+        cost_per_case: calcCostPerCase(ppb, gst, bpc),
         bottles_per_case: bpc,
         pricing_date: form.pricing_date,
+        description: form.description.trim() || null,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       toast({ title: 'Saved', description: 'Pricing record added.' });
-      setForm({ pricing_date: new Date().toISOString().split('T')[0], sku: '', price_per_bottle: '' });
+      setForm({ pricing_date: new Date().toISOString().split('T')[0], sku: '', price_per_bottle: '', gst: '', description: '' });
       queryClient.invalidateQueries({ queryKey: ['factory-pricing'] });
     },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
@@ -205,12 +226,15 @@ const FactoryPricingTab: React.FC = () => {
     mutationFn: async () => {
       if (!editingRecord) return;
       const ppb = parseFloat(editForm.price_per_bottle);
+      const gst = parseFloat(editForm.gst) || 0;
       const { error } = await supabase
         .from('factory_pricing')
         .update({
           price_per_bottle: ppb,
-          cost_per_case: ppb * editingRecord.bottles_per_case,
+          tax: gst,
+          cost_per_case: calcCostPerCase(ppb, gst, editingRecord.bottles_per_case),
           pricing_date: editForm.pricing_date,
+          description: editForm.description.trim() || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', editingRecord.id);
@@ -247,7 +271,12 @@ const FactoryPricingTab: React.FC = () => {
 
   const handleEditClick = (record: PricingRecord) => {
     setEditingRecord(record);
-    setEditForm({ pricing_date: record.pricing_date, price_per_bottle: record.price_per_bottle?.toString() ?? '' });
+    setEditForm({
+      pricing_date: record.pricing_date,
+      price_per_bottle: record.price_per_bottle?.toString() ?? '',
+      gst: record.tax?.toString() ?? '',
+      description: record.description ?? '',
+    });
   };
 
   const handleDeleteClick = (id: string) => {
@@ -255,13 +284,20 @@ const FactoryPricingTab: React.FC = () => {
   };
 
   const exportToExcel = () => {
-    const rows = filteredAndSortedRows.map(r => ({
-      SKU: r.sku,
-      'Bottles/Case': r.latest.bottles_per_case,
-      'Price/Bottle (₹)': r.latest.price_per_bottle,
-      'Cost/Case (₹)': r.latest.cost_per_case,
-      'Pricing Date': r.latest.pricing_date,
-    }));
+    const rows = filteredAndSortedRows.map(r => {
+      const gst = r.latest.tax || 0;
+      const totalBottle = calcTotalCostPerBottle(r.latest.price_per_bottle, gst);
+      return {
+        'Pricing Date': r.latest.pricing_date,
+        SKU: r.sku,
+        'Bottles/Case': r.latest.bottles_per_case,
+        'Price/Bottle (₹)': r.latest.price_per_bottle,
+        'GST (%)': gst,
+        'Total Cost/Bottle (₹)': +totalBottle.toFixed(4),
+        'Total Cost/Case (₹)': r.latest.cost_per_case,
+        Description: r.latest.description ?? '',
+      };
+    });
     exportJsonToExcel(rows, 'factory-pricing');
   };
 
@@ -274,33 +310,61 @@ const FactoryPricingTab: React.FC = () => {
     });
   };
 
-  const colCount = isManager ? 7 : 6;
+  // chevron + pricing_date + sku + bottles + price + gst + total_bottle + cost_case + description + actions(mgr)
+  const colCount = isManager ? 10 : 9;
 
   const EditInlineForm = ({ record }: { record: PricingRecord }) => (
-    <div className="flex items-center gap-1 justify-end flex-wrap">
-      <Input
-        type="date"
-        value={editForm.pricing_date}
-        onChange={e => setEditForm(f => ({ ...f, pricing_date: e.target.value }))}
-        className="h-7 w-32 text-xs"
-      />
-      <Input
-        type="number"
-        step="0.0001"
-        value={editForm.price_per_bottle}
-        onChange={e => setEditForm(f => ({ ...f, price_per_bottle: e.target.value }))}
-        className="h-7 w-24 text-xs"
-        placeholder="₹/bottle"
-      />
-      {editForm.price_per_bottle && (
-        <span className="text-xs text-muted-foreground whitespace-nowrap">
-          = ₹{(parseFloat(editForm.price_per_bottle) * record.bottles_per_case).toFixed(4)}/case
+    <div className="flex items-end gap-1 justify-end flex-wrap">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-muted-foreground">Date</span>
+        <Input
+          type="date"
+          value={editForm.pricing_date}
+          onChange={e => setEditForm(f => ({ ...f, pricing_date: e.target.value }))}
+          className="h-7 w-32 text-xs"
+        />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-muted-foreground">Price/Bottle (₹)</span>
+        <Input
+          type="number"
+          step="0.0001"
+          value={editForm.price_per_bottle}
+          onChange={e => setEditForm(f => ({ ...f, price_per_bottle: e.target.value }))}
+          className="h-7 w-24 text-xs"
+          placeholder="₹/bottle"
+        />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-muted-foreground">GST (%)</span>
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          value={editForm.gst}
+          onChange={e => setEditForm(f => ({ ...f, gst: e.target.value }))}
+          className="h-7 w-16 text-xs"
+          placeholder="%"
+        />
+      </div>
+      {editCostCase != null && (
+        <span className="text-xs text-muted-foreground whitespace-nowrap self-end pb-1">
+          = {fmt(editCostCase)}/case
         </span>
       )}
-      <Button size="sm" className="h-7 text-xs px-2" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-muted-foreground">Description</span>
+        <Input
+          value={editForm.description}
+          onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+          className="h-7 w-36 text-xs"
+          placeholder="Optional"
+        />
+      </div>
+      <Button size="sm" className="h-7 text-xs px-2 self-end" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
         Save
       </Button>
-      <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => setEditingRecord(null)}>
+      <Button size="sm" variant="outline" className="h-7 text-xs px-2 self-end" onClick={() => setEditingRecord(null)}>
         Cancel
       </Button>
     </div>
@@ -363,20 +427,53 @@ const FactoryPricingTab: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label>Cost per Case (₹)</Label>
+              <Label>GST (%)</Label>
               <Input
                 type="number"
-                value={calculatedCostPerCase?.toFixed(4) ?? ''}
+                step="0.01"
+                min="0"
+                placeholder="e.g. 18"
+                value={form.gst}
+                onChange={e => setForm(f => ({ ...f, gst: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>Total Cost per Bottle (₹)</Label>
+              <Input
+                type="number"
+                value={calcFormTotalBottle?.toFixed(4) ?? ''}
                 disabled
                 className="bg-muted"
                 placeholder="Auto-calculated"
               />
             </div>
+            <div className="space-y-2">
+              <Label>Total Cost per Case (₹)</Label>
+              <Input
+                type="number"
+                value={calcFormCostCase?.toFixed(4) ?? ''}
+                disabled
+                className="bg-muted"
+                placeholder="Auto-calculated"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Description</Label>
+              <Input
+                placeholder="Optional notes"
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              />
+            </div>
           </div>
+
           {form.sku && selectedSkuConfig && (
             <p className="text-xs text-muted-foreground">
               {selectedSkuConfig.sku}: {selectedSkuConfig.bottles_per_case} bottles/case
-              {calculatedCostPerCase != null && ` → ₹${calculatedCostPerCase.toFixed(4)}/case`}
+              {calcFormCostCase != null && ` → Total cost ₹${calcFormCostCase.toFixed(4)}/case`}
             </p>
           )}
           <Button type="submit" disabled={addMutation.isPending}>
@@ -452,12 +549,14 @@ const FactoryPricingTab: React.FC = () => {
                     />
                   </div>
                 </TableHead>
+                <TableHead>GST (%)</TableHead>
+                <TableHead>Total Cost/Bottle (₹)</TableHead>
                 <TableHead>
                   <div className="flex items-center justify-between">
-                    <span>Cost/Case (₹)</span>
+                    <span>Total Cost/Case (₹)</span>
                     <ColumnFilter
                       columnKey="cost_per_case"
-                      columnName="Cost/Case"
+                      columnName="Total Cost/Case"
                       filterValue={columnFilters.cost_per_case}
                       onFilterChange={val => handleColumnFilterChange('cost_per_case', val)}
                       onClearFilter={() => handleClearColumnFilter('cost_per_case')}
@@ -467,6 +566,7 @@ const FactoryPricingTab: React.FC = () => {
                     />
                   </div>
                 </TableHead>
+                <TableHead>Description</TableHead>
                 {isManager && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
@@ -487,6 +587,8 @@ const FactoryPricingTab: React.FC = () => {
                 filteredAndSortedRows.map(({ sku, latest, history }) => {
                   const isExpanded = expandedSkus.has(sku);
                   const hasHistory = history.length > 1;
+                  const latestGst = latest.tax || 0;
+                  const latestTotalBottle = calcTotalCostPerBottle(latest.price_per_bottle, latestGst);
 
                   return (
                     <React.Fragment key={sku}>
@@ -503,21 +605,21 @@ const FactoryPricingTab: React.FC = () => {
                             >
                               {isExpanded
                                 ? <ChevronDown className="h-4 w-4" />
-                                : <ChevronRight className="h-4 w-4" />
-                              }
+                                : <ChevronRight className="h-4 w-4" />}
                             </Button>
                           )}
                         </TableCell>
                         <TableCell>{latest.pricing_date}</TableCell>
                         <TableCell className="font-medium">{latest.sku}</TableCell>
                         <TableCell>{latest.bottles_per_case}</TableCell>
+                        <TableCell>{fmt(latest.price_per_bottle)}</TableCell>
+                        <TableCell>{latestGst > 0 ? `${latestGst}%` : '—'}</TableCell>
+                        <TableCell>{fmt(latestTotalBottle)}</TableCell>
                         <TableCell>
-                          ₹{latest.price_per_bottle?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
+                          {latest.cost_per_case != null ? fmt(latest.cost_per_case) : '—'}
                         </TableCell>
-                        <TableCell>
-                          {latest.cost_per_case != null
-                            ? `₹${latest.cost_per_case.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`
-                            : '—'}
+                        <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">
+                          {latest.description ?? '—'}
                         </TableCell>
                         {isManager && (
                           <TableCell className="text-right">
@@ -529,29 +631,34 @@ const FactoryPricingTab: React.FC = () => {
                       </TableRow>
 
                       {/* Historical rows */}
-                      {isExpanded && history.slice(1).map(record => (
-                        <TableRow key={record.id} className="bg-slate-50/60">
-                          <TableCell />
-                          <TableCell className="text-sm text-muted-foreground">{record.pricing_date}</TableCell>
-                          <TableCell className="pl-8 text-sm text-muted-foreground">{record.sku}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{record.bottles_per_case}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            ₹{record.price_per_bottle?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {record.cost_per_case != null
-                              ? `₹${record.cost_per_case.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`
-                              : '—'}
-                          </TableCell>
-                          {isManager && (
-                            <TableCell className="text-right">
-                              {editingRecord?.id === record.id
-                                ? <EditInlineForm record={record} />
-                                : <ActionButtons record={record} />}
+                      {isExpanded && history.slice(1).map(record => {
+                        const recGst = record.tax || 0;
+                        const recTotalBottle = calcTotalCostPerBottle(record.price_per_bottle, recGst);
+                        return (
+                          <TableRow key={record.id} className="bg-slate-50/60">
+                            <TableCell />
+                            <TableCell className="text-sm text-muted-foreground">{record.pricing_date}</TableCell>
+                            <TableCell className="pl-8 text-sm text-muted-foreground">{record.sku}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{record.bottles_per_case}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{fmt(record.price_per_bottle)}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{recGst > 0 ? `${recGst}%` : '—'}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{fmt(recTotalBottle)}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {record.cost_per_case != null ? fmt(record.cost_per_case) : '—'}
                             </TableCell>
-                          )}
-                        </TableRow>
-                      ))}
+                            <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">
+                              {record.description ?? '—'}
+                            </TableCell>
+                            {isManager && (
+                              <TableCell className="text-right">
+                                {editingRecord?.id === record.id
+                                  ? <EditInlineForm record={record} />
+                                  : <ActionButtons record={record} />}
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        );
+                      })}
                     </React.Fragment>
                   );
                 })
