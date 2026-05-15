@@ -4,8 +4,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield } from 'lucide-react';
 import { WhatsAppConfigurationSection } from './WhatsAppConfigurationSection';
 import { WhatsAppTemplatesSection } from './WhatsAppTemplatesSection';
+import { ProductionRecipientsSection } from './ProductionRecipientsSection';
 
-type SubTab = 'settings' | 'templates';
+type SubTab = 'settings' | 'templates' | 'recipients';
 
 const WhatsAppConfigurationTab: React.FC = () => {
   const { profile } = useAuth();
@@ -35,7 +36,7 @@ const WhatsAppConfigurationTab: React.FC = () => {
       {/* Sub-tabs */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex gap-6">
-          {(['settings', 'templates'] as SubTab[]).map((tab) => (
+          {(['settings', 'templates', 'recipients'] as SubTab[]).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -47,7 +48,7 @@ const WhatsAppConfigurationTab: React.FC = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
               ].join(' ')}
             >
-              {tab === 'settings' ? 'Settings' : 'Templates'}
+              {tab === 'settings' ? 'Settings' : tab === 'templates' ? 'Templates' : 'Recipients'}
             </button>
           ))}
         </nav>
@@ -55,6 +56,7 @@ const WhatsAppConfigurationTab: React.FC = () => {
 
       {activeTab === 'settings' && <WhatsAppConfigurationSection />}
       {activeTab === 'templates' && <WhatsAppTemplatesSection />}
+      {activeTab === 'recipients' && <ProductionRecipientsSection />}
     </div>
   );
 };

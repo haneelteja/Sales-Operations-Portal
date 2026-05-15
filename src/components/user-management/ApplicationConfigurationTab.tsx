@@ -31,7 +31,6 @@ import { EditListConfigDialog } from './EditListConfigDialog';
 import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
 import { EditWhatsAppApiKeyDialog } from './EditWhatsAppApiKeyDialog';
-import { EditProductionRecipientsDialog } from './EditProductionRecipientsDialog';
 import { triggerManualBackup, getBackupConfig, type BackupConfig } from '@/services/backupService';
 import { Database, Play } from 'lucide-react';
 
@@ -52,7 +51,6 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isTentativeDeliveryDaysDialogOpen, setIsTentativeDeliveryDaysDialogOpen] = useState(false);
   const [isLabelVendorsDialogOpen, setIsLabelVendorsDialogOpen] = useState(false);
   const [isWhatsAppApiKeyDialogOpen, setIsWhatsAppApiKeyDialogOpen] = useState(false);
-  const [isProductionRecipientsDialogOpen, setIsProductionRecipientsDialogOpen] = useState(false);
   const [isRunningBackup, setIsRunningBackup] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -143,21 +141,7 @@ const ApplicationConfigurationTab: React.FC = () => {
       customKey: 'sku_configurations',
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
 
-    // Row 2: Production order recipients (custom - stored as JSON)
-    result.push({
-      id: '',
-      config_key: 'production_order_recipients',
-      config_value: '',
-      config_type: 'string',
-      description: 'Production orders group — WhatsApp recipients notified when a new order is placed',
-      updated_by: null,
-      updated_at: '',
-      created_at: '',
-      isCustom: true,
-      customKey: 'production_order_recipients',
-    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
-
-    // Row 3: Label vendors
+    // Row 2: Label vendors
     result.push({
       id: '',
       config_key: 'label_vendors',
@@ -385,17 +369,7 @@ const ApplicationConfigurationTab: React.FC = () => {
                       </TableCell>
                       <TableCell>{config.description}</TableCell>
                       <TableCell className="text-center align-middle">
-                        {config.config_key === 'production_order_recipients' ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsProductionRecipientsDialogOpen(true)}
-                            className="flex items-center gap-2"
-                          >
-                            <Edit className="h-4 w-4" />
-                            Edit
-                          </Button>
-                        ) : config.config_key === 'sku_configurations' ? (
+                        {config.config_key === 'sku_configurations' ? (
                           <Button
                             variant="outline"
                             size="sm"
@@ -672,11 +646,6 @@ const ApplicationConfigurationTab: React.FC = () => {
         onOpenChange={setIsWhatsAppApiKeyDialogOpen}
       />
 
-      {/* Production Order Recipients Dialog */}
-      <EditProductionRecipientsDialog
-        open={isProductionRecipientsDialogOpen}
-        onOpenChange={setIsProductionRecipientsDialogOpen}
-      />
     </div>
   );
 };
