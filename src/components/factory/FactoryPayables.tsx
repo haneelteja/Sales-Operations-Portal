@@ -55,6 +55,7 @@ const FactoryPayables = () => {
     description: "",
     transaction_date: ""
   });
+  const [activeTab, setActiveTab] = useState("payment");
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState<{
@@ -737,7 +738,7 @@ const FactoryPayables = () => {
       </div>
 
       {/* Tabs for Production and Payment Forms */}
-      <Tabs defaultValue="payment" className="w-full">
+      <Tabs defaultValue="payment" value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="payment">Record Payment to Elma Industries</TabsTrigger>
           <TabsTrigger value="production">Record Production Transaction</TabsTrigger>
@@ -922,7 +923,8 @@ const FactoryPayables = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Transactions Table */}
+      {/* Transactions Table — hidden on Factory Pricing tab */}
+      {activeTab !== 'pricing' &&
       <div className="border rounded-lg p-6">
         <div className="space-y-4 mb-6">
           <div className="flex items-center justify-between">
@@ -1295,7 +1297,7 @@ const FactoryPayables = () => {
           </TableBody>
         </Table>
         </div>
-      </div>
+      </div>}
     </div>
   );
 };
