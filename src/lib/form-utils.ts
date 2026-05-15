@@ -123,7 +123,8 @@ export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
   }).format(amount);
 };
 
@@ -160,9 +161,9 @@ export const calculateAmount = (quantity: number, price: number): number => {
   return quantity * price;
 };
 
-// Round to 2 decimal places
+// Round to 4 decimal places
 export const roundToTwo = (num: number): number => {
-  return Math.round((num + Number.EPSILON) * 100) / 100;
+  return Math.round((num + Number.EPSILON) * 10000) / 10000;
 };
 
 // Debounce function

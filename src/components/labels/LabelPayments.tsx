@@ -615,10 +615,10 @@ const LabelPayments = () => {
                 filteredAndSortedVendorOutstanding.map((vendor, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-medium">{vendor.vendor_name}</TableCell>
-                    <TableCell>₹{vendor.total_purchased.toLocaleString()}</TableCell>
-                    <TableCell>₹{vendor.total_paid.toLocaleString()}</TableCell>
+                    <TableCell>₹{vendor.total_purchased.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
+                    <TableCell>₹{vendor.total_paid.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell className={`font-medium ${vendor.outstanding > 0 ? 'text-red-600' : vendor.outstanding < 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                      ₹{vendor.outstanding.toLocaleString()}
+                      ₹{vendor.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                     </TableCell>
                   </TableRow>
                 ))
@@ -716,7 +716,7 @@ const LabelPayments = () => {
                     <TableCell>
                       {payment.vendor_id || 'N/A'}
                     </TableCell>
-                    <TableCell className="font-medium">₹{payment.payment_amount.toLocaleString()}</TableCell>
+                    <TableCell className="font-medium">₹{payment.payment_amount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell>{payment.payment_method}</TableCell>
                     <TableCell>{payment.description || '-'}</TableCell>
                     <TableCell className="text-right">

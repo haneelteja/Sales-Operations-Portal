@@ -1539,7 +1539,7 @@ const SalesEntry = () => {
                                 <div className="flex justify-between items-center">
                                   <span className="text-lg font-medium">Total Amount:</span>
                                   <span className="text-2xl font-bold text-green-600">
-                                    ₹{calculateTotalAmount().toFixed(2)}
+                                    ₹{calculateTotalAmount().toFixed(4)}
                                   </span>
                                 </div>
                               </div>
@@ -1906,12 +1906,12 @@ const SalesEntry = () => {
                     </TableCell>
                     <TableCell className="truncate max-w-[80px]">{transaction.sku || '-'}</TableCell>
                     <TableCell className="text-right">{transaction.quantity || '-'}</TableCell>
-                    <TableCell className="text-right">₹{transaction.amount?.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">₹{transaction.amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell>
                       <InvoiceNumberCell transactionId={transaction.id} transactionType={transaction.transaction_type} />
                     </TableCell>
                     <TableCell className="text-right">
-                      ₹{(Number((transaction as unknown as { outstanding?: number }).outstanding) || 0).toLocaleString()}
+                      ₹{(Number((transaction as unknown as { outstanding?: number }).outstanding) || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                     </TableCell>
                     <TableCell className="truncate max-w-[120px]" title={transaction.description || undefined}>
                       {transaction.description || '-'}

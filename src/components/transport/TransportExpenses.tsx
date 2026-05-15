@@ -555,7 +555,7 @@ const TransportExpenses = () => {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-blue-900">Total Transport Expenses</span>
-          <span className="text-lg font-bold text-blue-600">₹{totalExpenses.toLocaleString()}</span>
+          <span className="text-lg font-bold text-blue-600">₹{totalExpenses.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</span>
         </div>
       </div>
 
@@ -861,7 +861,7 @@ const TransportExpenses = () => {
                 <TableCell>{expense.area || 'N/A'}</TableCell>
                 <TableCell>{(expense as { transport_vendor?: string }).transport_vendor || 'N/A'}</TableCell>
                 <TableCell>{expense.expense_group || 'N/A'}</TableCell>
-                <TableCell className="text-right font-medium">₹{expense.amount?.toLocaleString()}</TableCell>
+                <TableCell className="text-right font-medium">₹{expense.amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                 <TableCell>{expense.description || 'N/A'}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">

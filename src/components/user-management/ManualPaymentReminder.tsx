@@ -123,7 +123,7 @@ export const ManualPaymentReminder: React.FC = () => {
 
       // Format outstanding amount
       const outstandingAmount = `₹${selectedCustomer.outstanding.toLocaleString('en-IN', {
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
       })}`;
 
       // Calculate days overdue (if oldest invoice exists)
@@ -258,7 +258,7 @@ export const ManualPaymentReminder: React.FC = () => {
               <span className="text-sm font-medium">Outstanding Amount:</span>
               <span className="text-sm font-semibold text-red-600">
                 ₹{selectedCustomer.outstanding.toLocaleString('en-IN', {
-                  maximumFractionDigits: 2,
+                  maximumFractionDigits: 4,
                 })}
               </span>
             </div>

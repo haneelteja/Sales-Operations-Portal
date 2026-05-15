@@ -721,19 +721,19 @@ const FactoryPayables = () => {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <h3 className="font-semibold text-blue-900">Total Production</h3>
           <p className="text-2xl font-bold text-blue-600">
-            ₹{summary?.totalProduction?.toLocaleString() || 0}
+            ₹{summary?.totalProduction?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}
           </p>
         </div>
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <h3 className="font-semibold text-green-900">Payments Made</h3>
           <p className="text-2xl font-bold text-green-600">
-            ₹{summary?.totalPayments?.toLocaleString() || 0}
+            ₹{summary?.totalPayments?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}
           </p>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h3 className="font-semibold text-red-900">Outstanding</h3>
           <p className="text-2xl font-bold text-red-600">
-            ₹{outstanding?.toLocaleString() || 0}
+            ₹{outstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}
           </p>
         </div>
       </div>
@@ -888,7 +888,7 @@ const FactoryPayables = () => {
                     id="production-amount"
                     type="number"
                     step="0.01"
-                    value={getCalculatedAmount().toFixed(2)}
+                    value={getCalculatedAmount().toFixed(4)}
                     disabled
                     className="bg-muted"
                   />
@@ -1150,7 +1150,7 @@ const FactoryPayables = () => {
                   {transaction.quantity || '-'}
                 </TableCell>
                 <TableCell className="text-center">
-                  {pricePerCase ? `₹${pricePerCase.toLocaleString()}` : '-'}
+                  {pricePerCase ? `₹${pricePerCase.toLocaleString('en-IN', { maximumFractionDigits: 4 })}` : '-'}
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge variant={transaction.transaction_type === 'production' ? 'default' : 'secondary'}>
@@ -1171,7 +1171,7 @@ const FactoryPayables = () => {
                       }
                     }
                     
-                    return `${transaction.transaction_type === 'production' ? '+' : '-'}₹${amount.toLocaleString()}`;
+                    return `${transaction.transaction_type === 'production' ? '+' : '-'}₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`;
                   })()}
                 </TableCell>
                 <TableCell className="text-right">

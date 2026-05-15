@@ -500,7 +500,7 @@ function LedgerDrawer({ c, open, onClose }: { c: CustomerRow; open: boolean; onC
                     </span>
                   )}
                   {c.price_per_case != null && (
-                    <span className="text-[10px] text-muted-foreground">₹{c.price_per_case.toLocaleString('en-IN')}/case</span>
+                    <span className="text-[10px] text-muted-foreground">₹{c.price_per_case.toLocaleString('en-IN', { maximumFractionDigits: 4 })}/case</span>
                   )}
                 </div>
               </div>
@@ -700,7 +700,7 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger }: {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2">
           {c.price_per_case != null && (
             <span className="text-[10px] text-muted-foreground">
-              ₹{c.price_per_case.toLocaleString('en-IN')}/case
+              ₹{c.price_per_case.toLocaleString('en-IN', { maximumFractionDigits: 4 })}/case
             </span>
           )}
           {c.phone && (

@@ -157,7 +157,7 @@ export function useMultiSaleSubmission({
     onSuccess: async ({ transactions, customerId }) => {
       toast({
         title: 'Success',
-        description: `Successfully recorded ${salesItems.length} sale${salesItems.length > 1 ? 's' : ''} with total amount ₹${calculateTotalAmount().toFixed(2)} and corresponding factory transactions!`,
+        description: `Successfully recorded ${salesItems.length} sale${salesItems.length > 1 ? 's' : ''} with total amount ₹${calculateTotalAmount().toFixed(4)} and corresponding factory transactions!`,
       });
       onSuccessReset();
       invalidateRelated('sales_transactions');

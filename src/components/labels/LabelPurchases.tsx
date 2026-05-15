@@ -243,7 +243,7 @@ const LabelPurchases = () => {
     const p = entry.price !== '' && entry.price !== undefined ? Number(entry.price) : null;
     if (p === null) return '';
     const gst = entry.gst !== '' && entry.gst !== undefined ? Number(entry.gst) : 0;
-    return String((p * (1 + gst / 100)).toFixed(2));
+    return String((p * (1 + gst / 100)).toFixed(4));
   }, [vendorPricingEntries]);
 
   const { data: purchases } = useQuery({
@@ -397,7 +397,7 @@ const LabelPurchases = () => {
   const handleVendorChange = (vendor: string) => {
     const cost = lookupPrice(vendor, form.sku, form.purchase_date);
     const total = cost && form.quantity
-      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(2)
+      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(4)
       : form.total_amount;
     setForm(prev => ({ ...prev, vendor_id: vendor, cost_per_label: cost, total_amount: cost ? total : prev.total_amount }));
   };
@@ -406,7 +406,7 @@ const LabelPurchases = () => {
   const handleSkuChange = (sku: string) => {
     const cost = lookupPrice(form.vendor_id, sku, form.purchase_date);
     const total = cost && form.quantity
-      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(2)
+      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(4)
       : form.total_amount;
     setForm(prev => ({ ...prev, sku, cost_per_label: cost, total_amount: cost ? total : prev.total_amount }));
   };
@@ -415,7 +415,7 @@ const LabelPurchases = () => {
   const handleDateChange = (date: string) => {
     const cost = form.vendor_id && form.sku ? lookupPrice(form.vendor_id, form.sku, date) : form.cost_per_label;
     const total = cost && form.quantity
-      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(2)
+      ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(4)
       : form.total_amount;
     setForm(prev => ({ ...prev, purchase_date: date, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
   };
@@ -432,7 +432,7 @@ const LabelPurchases = () => {
   const handleEditVendorChange = (vendor: string) => {
     const cost = lookupPrice(vendor, editForm.sku, editForm.purchase_date);
     const total = cost && editForm.quantity
-      ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(2)
+      ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(4)
       : editForm.total_amount;
     setEditForm(prev => ({ ...prev, vendor_id: vendor, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
   };
@@ -440,7 +440,7 @@ const LabelPurchases = () => {
   const handleEditSkuChange = (sku: string) => {
     const cost = lookupPrice(editForm.vendor_id, sku, editForm.purchase_date);
     const total = cost && editForm.quantity
-      ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(2)
+      ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(4)
       : editForm.total_amount;
     setEditForm(prev => ({ ...prev, sku, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
   };
@@ -828,7 +828,7 @@ const LabelPurchases = () => {
                     <TableCell>{purchase.sku || '—'}</TableCell>
                     <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
                     <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
-                    <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell>{purchase.vendor_id || 'N/A'}</TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center gap-2">

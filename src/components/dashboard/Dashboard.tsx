@@ -499,7 +499,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-green-900 mb-1">Total Sales</h3>
-                <p className="text-2xl font-bold text-green-600">₹{profitData?.totalSales.toLocaleString() || 0}</p>
+                <p className="text-2xl font-bold text-green-600">₹{profitData?.totalSales.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
               </div>
             </div>
           </CardContent>
@@ -511,7 +511,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-red-900 mb-1">Factory Costs</h3>
-                <p className="text-2xl font-bold text-red-600">₹{profitData?.factoryPayables.toLocaleString() || 0}</p>
+                <p className="text-2xl font-bold text-red-600">₹{profitData?.factoryPayables.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
               </div>
             </div>
           </CardContent>
@@ -523,7 +523,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-orange-900 mb-1">Transport</h3>
-                <p className="text-2xl font-bold text-orange-600">₹{profitData?.transportExpenses.toLocaleString() || 0}</p>
+                <p className="text-2xl font-bold text-orange-600">₹{profitData?.transportExpenses.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
               </div>
             </div>
           </CardContent>
@@ -540,7 +540,7 @@ const Dashboard = memo(() => {
                   Net Profit
                 </h3>
                 <p className={`text-2xl font-bold ${(profitData?.profit || 0) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                  ₹{profitData?.profit.toLocaleString() || 0}
+                  ₹{profitData?.profit.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}
                 </p>
               </div>
             </div>
@@ -553,7 +553,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-rose-800 mb-1">Client Outstanding - Pending receivables</h3>
-                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString() || 0}</p>
+                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
               </div>
             </div>
           </CardContent>
@@ -565,7 +565,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-purple-800 mb-1">Elma Factory Outstanding</h3>
-                <p className="text-2xl font-bold text-purple-600">₹{metrics?.factoryOutstanding?.toLocaleString() || 0}</p>
+                <p className="text-2xl font-bold text-purple-600">₹{metrics?.factoryOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
               </div>
             </div>
           </CardContent>
@@ -589,7 +589,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-teal-900 mb-1">Sale This Month</h3>
-                <p className="text-2xl font-bold text-teal-600">₹{monthlySales?.saleThisMonth.toLocaleString() ?? 0}</p>
+                <p className="text-2xl font-bold text-teal-600">₹{monthlySales?.saleThisMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -601,7 +601,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-cyan-900 mb-1">Sale Previous Month</h3>
-                <p className="text-2xl font-bold text-cyan-600">₹{monthlySales?.salePrevMonth.toLocaleString() ?? 0}</p>
+                <p className="text-2xl font-bold text-cyan-600">₹{monthlySales?.salePrevMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -613,7 +613,7 @@ const Dashboard = memo(() => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-rose-900 mb-1">Total Outstanding (All Clients)</h3>
-                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString() ?? 0}</p>
+                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
               </div>
             </div>
           </CardContent>

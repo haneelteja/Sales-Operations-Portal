@@ -793,7 +793,7 @@ const ConfigurationManagement = () => {
                     const sku = v === "__none__" ? "" : v;
                     const opt = availableSKUs.find((o) => o.sku === sku);
                     const ppb = parseFloat(editForm.price_per_bottle);
-                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(2) : editForm.price_per_case;
+                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(4) : editForm.price_per_case;
                     setEditForm({ ...editForm, sku, price_per_case: ppc });
                   }}
                   disabled={availableSKUsLoading}
@@ -820,7 +820,7 @@ const ConfigurationManagement = () => {
                   onChange={(e) => {
                     const ppb = parseFloat(e.target.value);
                     const opt = availableSKUs.find((o) => o.sku === editForm.sku);
-                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(2) : editForm.price_per_case;
+                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(4) : editForm.price_per_case;
                     setEditForm({ ...editForm, price_per_bottle: e.target.value, price_per_case: ppc });
                   }}
                   placeholder="0.00"

@@ -38,7 +38,7 @@ const safeCalculateAmount = (qty: string, price: string): string => {
   const p = parseFloat(price);
   if (isNaN(q) || isNaN(p)) return '';
   const result = q * p;
-  return isNaN(result) ? '' : result.toFixed(2);
+  return isNaN(result) ? '' : result.toFixed(4);
 };
 
 export function useSalesItemsManager({

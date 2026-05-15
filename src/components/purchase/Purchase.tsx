@@ -259,7 +259,7 @@ const Purchase = () => {
           <div className="space-y-2">
             <Label>Total Cost (₹)</Label>
             <div className="h-10 px-3 flex items-center rounded-md border bg-muted/50 text-sm font-medium">
-              ₹{((parseFloat(form.quantity) || 0) * (parseFloat(form.cost_per_unit) || 0)).toLocaleString() || "0"}
+              ₹{((parseFloat(form.quantity) || 0) * (parseFloat(form.cost_per_unit) || 0)).toLocaleString('en-IN', { maximumFractionDigits: 4 }) || "0"}
             </div>
           </div>
         </div>
@@ -298,7 +298,7 @@ const Purchase = () => {
           <h3 className="text-lg font-semibold">Purchase History</h3>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
-              Total: ₹{totalAmount.toLocaleString()}
+              Total: ₹{totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
             </span>
             <Button variant="outline" size="sm" onClick={exportToExcel}>
               <Download className="h-4 w-4 mr-2" />
@@ -341,9 +341,9 @@ const Purchase = () => {
                     <TableCell>{p.item}</TableCell>
                     <TableCell>{p.sku || "-"}</TableCell>
                     <TableCell className="text-right">{p.quantity}</TableCell>
-                    <TableCell className="text-right">₹{p.cost_per_unit?.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">₹{p.cost_per_unit?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell className="text-right font-medium">
-                      ₹{p.total_amount?.toLocaleString()}
+                      ₹{p.total_amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                     </TableCell>
                     <TableCell>{p.vendor || "-"}</TableCell>
                     <TableCell className="max-w-[200px] truncate">{p.description || "-"}</TableCell>

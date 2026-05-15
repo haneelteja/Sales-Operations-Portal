@@ -268,16 +268,16 @@ const Reports = memo(() => {
               <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Total Production</p>
-                  <p className="text-2xl font-bold">₹{factoryReport?.totalProduction.toLocaleString()}</p>
+                  <p className="text-2xl font-bold">₹{factoryReport?.totalProduction.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Payments Made</p>
-                  <p className="text-2xl font-bold">₹{factoryReport?.totalPayments.toLocaleString()}</p>
+                  <p className="text-2xl font-bold">₹{factoryReport?.totalPayments.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Outstanding</p>
                   <p className="text-2xl font-bold text-red-600">
-                    ₹{((factoryReport?.totalProduction || 0) - (factoryReport?.totalPayments || 0)).toLocaleString()}
+                    ₹{((factoryReport?.totalProduction || 0) - (factoryReport?.totalPayments || 0)).toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                   </p>
                 </div>
               </div>
@@ -296,7 +296,7 @@ const Reports = memo(() => {
                       <TableCell>{new Date(transaction.transaction_date).toLocaleDateString()}</TableCell>
                       <TableCell>{transaction.transaction_type}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-right">₹{transaction.amount?.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{transaction.amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -315,16 +315,16 @@ const Reports = memo(() => {
               <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Total Sales</p>
-                  <p className="text-2xl font-bold">₹{clientReport?.totalSales.toLocaleString()}</p>
+                  <p className="text-2xl font-bold">₹{clientReport?.totalSales.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Payments Received</p>
-                  <p className="text-2xl font-bold">₹{clientReport?.totalPayments.toLocaleString()}</p>
+                  <p className="text-2xl font-bold">₹{clientReport?.totalPayments.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Outstanding</p>
                   <p className="text-2xl font-bold text-orange-600">
-                    ₹{((clientReport?.totalSales || 0) - (clientReport?.totalPayments || 0)).toLocaleString()}
+                    ₹{((clientReport?.totalSales || 0) - (clientReport?.totalPayments || 0)).toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                   </p>
                 </div>
               </div>
@@ -346,7 +346,7 @@ const Reports = memo(() => {
                       <TableCell>{transaction.customers?.dealer_name}</TableCell>
                       <TableCell>{transaction.transaction_type}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-right border-r border-green-200/50">₹{transaction.amount?.toLocaleString()}</TableCell>
+                      <TableCell className="text-right border-r border-green-200/50">₹{transaction.amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                       <TableCell>
                         <InvoiceNumberCell transactionId={transaction.id} transactionType={transaction.transaction_type} />
                       </TableCell>
@@ -426,13 +426,13 @@ const Reports = memo(() => {
                         </TableCell>
                         <TableCell>{receivable.customer.area}</TableCell>
                         <TableCell className="text-right">
-                          ₹{receivable.totalSales.toLocaleString()}
+                          ₹{receivable.totalSales.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                         </TableCell>
                         <TableCell className="text-right">
-                          ₹{receivable.totalPayments.toLocaleString()}
+                          ₹{receivable.totalPayments.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                         </TableCell>
                         <TableCell className="text-right font-semibold">
-                          ₹{receivable.outstanding.toLocaleString()}
+                          ₹{receivable.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                         </TableCell>
                         <TableCell>
                           <Badge 
@@ -480,7 +480,7 @@ const Reports = memo(() => {
             <CardContent>
               <div className="mb-4 text-center">
                 <p className="text-sm text-muted-foreground">Total Transport Expenses</p>
-                <p className="text-3xl font-bold">₹{transportReport?.totalExpenses.toLocaleString()}</p>
+                <p className="text-3xl font-bold">₹{transportReport?.totalExpenses.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</p>
               </div>
               <Table>
                 <TableHeader>
@@ -497,7 +497,7 @@ const Reports = memo(() => {
                       <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
                       <TableCell>{expense.description}</TableCell>
                       <TableCell>{expense.expense_group}</TableCell>
-                      <TableCell className="text-right">₹{expense.amount?.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{expense.amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -515,7 +515,7 @@ const Reports = memo(() => {
             <CardContent>
               <div className="mb-4 text-center">
                 <p className="text-sm text-muted-foreground">Total Label Purchases</p>
-                <p className="text-3xl font-bold">₹{labelsReport?.totalPurchases.toLocaleString()}</p>
+                <p className="text-3xl font-bold">₹{labelsReport?.totalPurchases.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</p>
               </div>
               
               <div className="space-y-4">
@@ -536,7 +536,7 @@ const Reports = memo(() => {
                           <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
                           <TableCell>{purchase.vendor_id || 'N/A'}</TableCell>
                           <TableCell className="text-right">{purchase.quantity}</TableCell>
-                          <TableCell className="text-right">₹{purchase.total_amount?.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">₹{purchase.total_amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

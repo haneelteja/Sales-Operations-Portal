@@ -720,7 +720,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                         <TableCell>
                           <Input
                             readOnly
-                            value={row.price_per_case > 0 ? row.price_per_case.toFixed(2) : ""}
+                            value={row.price_per_case > 0 ? row.price_per_case.toFixed(4) : ""}
                             className="h-9 bg-muted"
                           />
                         </TableCell>
