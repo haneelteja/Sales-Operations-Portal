@@ -407,6 +407,21 @@ const FactoryPricingTab: React.FC = () => {
                 <TableHead className="w-8" />
                 <TableHead>
                   <div className="flex items-center justify-between">
+                    <span>Pricing Date</span>
+                    <ColumnFilter
+                      columnKey="pricing_date"
+                      columnName="Pricing Date"
+                      filterValue={columnFilters.pricing_date}
+                      onFilterChange={val => handleColumnFilterChange('pricing_date', val)}
+                      onClearFilter={() => handleClearColumnFilter('pricing_date')}
+                      sortDirection={columnSorts.pricing_date}
+                      onSortChange={dir => handleColumnSortChange('pricing_date', dir)}
+                      dataType="date"
+                    />
+                  </div>
+                </TableHead>
+                <TableHead>
+                  <div className="flex items-center justify-between">
                     <span>SKU</span>
                     <ColumnFilter
                       columnKey="sku"
@@ -452,21 +467,6 @@ const FactoryPricingTab: React.FC = () => {
                     />
                   </div>
                 </TableHead>
-                <TableHead>
-                  <div className="flex items-center justify-between">
-                    <span>Pricing Date</span>
-                    <ColumnFilter
-                      columnKey="pricing_date"
-                      columnName="Pricing Date"
-                      filterValue={columnFilters.pricing_date}
-                      onFilterChange={val => handleColumnFilterChange('pricing_date', val)}
-                      onClearFilter={() => handleClearColumnFilter('pricing_date')}
-                      sortDirection={columnSorts.pricing_date}
-                      onSortChange={dir => handleColumnSortChange('pricing_date', dir)}
-                      dataType="date"
-                    />
-                  </div>
-                </TableHead>
                 {isManager && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
@@ -508,6 +508,7 @@ const FactoryPricingTab: React.FC = () => {
                             </Button>
                           )}
                         </TableCell>
+                        <TableCell>{latest.pricing_date}</TableCell>
                         <TableCell className="font-medium">{latest.sku}</TableCell>
                         <TableCell>{latest.bottles_per_case}</TableCell>
                         <TableCell>
@@ -518,7 +519,6 @@ const FactoryPricingTab: React.FC = () => {
                             ? `₹${latest.cost_per_case.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`
                             : '—'}
                         </TableCell>
-                        <TableCell>{latest.pricing_date}</TableCell>
                         {isManager && (
                           <TableCell className="text-right">
                             {editingRecord?.id === latest.id
@@ -532,6 +532,7 @@ const FactoryPricingTab: React.FC = () => {
                       {isExpanded && history.slice(1).map(record => (
                         <TableRow key={record.id} className="bg-slate-50/60">
                           <TableCell />
+                          <TableCell className="text-sm text-muted-foreground">{record.pricing_date}</TableCell>
                           <TableCell className="pl-8 text-sm text-muted-foreground">{record.sku}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{record.bottles_per_case}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">
@@ -542,7 +543,6 @@ const FactoryPricingTab: React.FC = () => {
                               ? `₹${record.cost_per_case.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`
                               : '—'}
                           </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{record.pricing_date}</TableCell>
                           {isManager && (
                             <TableCell className="text-right">
                               {editingRecord?.id === record.id
