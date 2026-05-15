@@ -1,4 +1,4 @@
-project_id = "yltbknkksjgtexluhtau"
+project_id = "qkvmdrtfhpcvwvqjuyuu"
 
 # Allow 360Messenger to GET the PDF without Authorization header (proxy still validates access_key)
 [functions.whatsapp-pdf-proxy]
