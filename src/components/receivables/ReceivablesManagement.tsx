@@ -261,20 +261,24 @@ async function fetchLedgerRows(customerId: string): Promise<LedgerRow[]> {
 
 // ── Summary strip ─────────────────────────────────────────────────────────────
 
-function SummaryStrip({ data }: { data: CustomerRow[] }) {
-  const totalOutstanding = data.reduce((s, c) => s + c.outstanding_balance, 0);
+function SummaryStrip({ data, allData }: { data: CustomerRow[]; allData: CustomerRow[] }) {
+  const totalOutstanding = allData.reduce((s, c) => s + c.outstanding_balance, 0);
+  const totalRevenue = allData.reduce((s, c) => s + c.total_revenue, 0);
+  const totalPaid = totalRevenue - totalOutstanding;
+  const collectionRate = totalRevenue > 0 ? Math.round((totalPaid / totalRevenue) * 100) : 0;
+
   const totalProfit = data.reduce((s, c) => s + c.total_profit, 0);
   const highRisk = data.filter(c => getRisk(c) === 'high').length;
-  const totalRevenue = data.reduce((s, c) => s + c.total_revenue, 0);
   const totalPendingBills = data.reduce((s, c) => s + c.pending_bills, 0);
+  const filteredRevenue = data.reduce((s, c) => s + c.total_revenue, 0);
 
   const now = new Date();
   const thisMonthYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevMonthYM = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
-  const saleThisMonth = data.reduce((s, c) => s + (c.monthly.find(m => m.month === thisMonthYM)?.revenue ?? 0), 0);
-  const salePrevMonth = data.reduce((s, c) => s + (c.monthly.find(m => m.month === prevMonthYM)?.revenue ?? 0), 0);
+  const saleThisMonth = allData.reduce((s, c) => s + (c.monthly.find(m => m.month === thisMonthYM)?.revenue ?? 0), 0);
+  const salePrevMonth = allData.reduce((s, c) => s + (c.monthly.find(m => m.month === prevMonthYM)?.revenue ?? 0), 0);
 
   const stats = [
     {
@@ -287,13 +291,22 @@ function SummaryStrip({ data }: { data: CustomerRow[] }) {
       valueColor: 'text-foreground',
     },
     {
-      label: 'Total Receivable',
+      label: 'Total Outstanding (All Clients)',
       value: fmt(totalOutstanding),
       sub: `${fmt(totalRevenue)} total revenue`,
       icon: CreditCard,
       iconBg: 'bg-blue-100 dark:bg-blue-900/40',
       iconColor: 'text-blue-600 dark:text-blue-400',
       valueColor: 'text-blue-600 dark:text-blue-400',
+    },
+    {
+      label: 'Collection Rate',
+      value: `${collectionRate}%`,
+      sub: 'payment efficiency',
+      icon: TrendingUp,
+      iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
+      iconColor: 'text-indigo-600 dark:text-indigo-400',
+      valueColor: collectionRate >= 70 ? 'text-emerald-600 dark:text-emerald-400' : collectionRate >= 40 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400',
     },
     {
       label: 'Bills Pending',
@@ -307,7 +320,7 @@ function SummaryStrip({ data }: { data: CustomerRow[] }) {
     {
       label: 'Cumulative Profit',
       value: fmt(totalProfit),
-      sub: totalRevenue > 0 ? `${((totalProfit / totalRevenue) * 100).toFixed(1)}% margin` : '—',
+      sub: filteredRevenue > 0 ? `${((totalProfit / filteredRevenue) * 100).toFixed(1)}% margin` : '—',
       icon: TrendingUp,
       iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
       iconColor: 'text-emerald-600 dark:text-emerald-400',
@@ -343,7 +356,7 @@ function SummaryStrip({ data }: { data: CustomerRow[] }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-7 gap-0 border-b bg-card">
+    <div className="grid grid-cols-2 lg:grid-cols-8 gap-0 border-b bg-card">
       {stats.map((s, i) => (
         <div
           key={i}
@@ -963,7 +976,7 @@ const ReceivablesManagement: React.FC = () => {
 
   return (
     <div className="min-h-full flex flex-col">
-      <SummaryStrip data={sorted} />
+      <SummaryStrip data={sorted} allData={data ?? []} />
 
       {/* Toolbar */}
       <div className="flex flex-col gap-2 px-5 py-3 border-b bg-card sticky top-0 z-10">
