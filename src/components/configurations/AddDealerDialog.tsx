@@ -359,6 +359,12 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
 
   const priceChangedOrNew = (sku: string, pricePerBottleStr: string): boolean => {
     const skuKey = sku.trim();
+    // New pricing date for this SKU → always allow insert
+    const dateAlreadyExists = rowsForPair.some(
+      (r) => r.sku?.trim() === skuKey && r.pricing_date === date
+    );
+    if (!dateAlreadyExists) return true;
+    // Same date already exists — only insert if price actually changed
     const prev = initialPricesBySkuRef.current[skuKey];
     if (prev === undefined) return true;
     const cur = parseFloat(pricePerBottleStr);
@@ -386,7 +392,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         rowsToInsert = rowsToConsider.filter((r) => priceChangedOrNew(r.sku, r.price_per_bottle));
         if (rowsToInsert.length === 0) {
           throw new Error(
-            "No price changes to save. Edit a price or add a SKU, or turn off existing branch to add a new branch."
+            "No changes to save. Change a price, add a SKU, or use a different pricing date."
           );
         }
       }
