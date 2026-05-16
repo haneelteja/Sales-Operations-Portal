@@ -838,13 +838,16 @@ const SalesEntry = () => {
         try {
           // Apply sorting
           const activeSort = Object.entries(columnSorts).find(([_, direction]) => direction !== null);
-          // Default to reverse chronological order (latest first) if no sort is active
+          // Default: latest date first; same date → payments before sales; then created_at DESC
           if (!activeSort) {
             const dateA = new Date(a.transaction_date).getTime();
             const dateB = new Date(b.transaction_date).getTime();
             if (isNaN(dateA) || isNaN(dateB)) return 0;
-            // Latest first (descending)
-            return dateB - dateA;
+            if (dateA !== dateB) return dateB - dateA;
+            const typeOrder = (t: string) => t === 'payment' ? 0 : 1;
+            const typeDiff = typeOrder(a.transaction_type || '') - typeOrder(b.transaction_type || '');
+            if (typeDiff !== 0) return typeDiff;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
           }
 
           const [columnKey, direction] = activeSort;
