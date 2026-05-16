@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   Loader2, Search, TrendingUp, CreditCard, Users, AlertTriangle,
   ChevronDown, MapPin, X, IndianRupee, Package, Calendar,
-  Phone, MessageCircle, FileText, Receipt,
+  Phone, MessageCircle, FileText, Receipt, ArrowUpDown, ChevronUp,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -50,7 +50,9 @@ interface LedgerRow {
   balance: number;
 }
 
-type SortKey = 'balance' | 'name' | 'profit' | 'orders' | 'bills';
+type SortKey = 'balance' | 'name' | 'profit' | 'orders' | 'bills' | 'cases' | 'last_payment' | 'last_order' | 'risk' | 'avg_credit';
+type SortDir = 'asc' | 'desc';
+type RiskFilter = 'all' | 'high' | 'medium' | 'low';
 type RiskLevel = 'high' | 'medium' | 'low';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -830,27 +832,36 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger }: {
 
 // ── Sort tab ──────────────────────────────────────────────────────────────────
 
-function SortTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function SortTab({ active, dir, onClick, children }: { active: boolean; dir?: SortDir; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+      className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
         active
           ? 'bg-foreground text-background shadow-sm'
           : 'text-muted-foreground hover:text-foreground hover:bg-muted'
       }`}
     >
       {children}
+      {active && dir === 'asc' && <ChevronUp className="h-3 w-3" />}
+      {active && dir === 'desc' && <ChevronDown className="h-3 w-3" />}
+      {!active && <ArrowUpDown className="h-3 w-3 opacity-40" />}
     </button>
   );
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
+const RISK_ORDER: Record<RiskLevel, number> = { high: 0, medium: 1, low: 2 };
+
 const ReceivablesManagement: React.FC = () => {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('balance');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');
+  const [areaFilter, setAreaFilter] = useState('');
+  const [skuFilter, setSkuFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [ledgerCustomer, setLedgerCustomer] = useState<CustomerRow | null>(null);
 
@@ -860,21 +871,69 @@ const ReceivablesManagement: React.FC = () => {
     staleTime: 60000,
   });
 
+  const uniqueAreas = useMemo(() => {
+    if (!data) return [];
+    return [...new Set(data.map(c => c.area).filter(Boolean) as string[])].sort();
+  }, [data]);
+
+  const uniqueSkus = useMemo(() => {
+    if (!data) return [];
+    return [...new Set(data.map(c => c.sku).filter(Boolean) as string[])].sort();
+  }, [data]);
+
+  const hasActiveFilters = search || riskFilter !== 'all' || areaFilter || skuFilter;
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const clearAll = () => {
+    setSearch('');
+    setRiskFilter('all');
+    setAreaFilter('');
+    setSkuFilter('');
+  };
+
   const sorted = useMemo(() => {
     if (!data) return [];
     const q = search.toLowerCase();
-    const filtered = q
-      ? data.filter(c => c.name.toLowerCase().includes(q) || (c.area ?? '').toLowerCase().includes(q))
-      : data;
+    let filtered = data;
+
+    if (q) {
+      filtered = filtered.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.area ?? '').toLowerCase().includes(q) ||
+        (c.sku ?? '').toLowerCase().includes(q) ||
+        (c.phone ?? '').includes(q) ||
+        (c.whatsapp_number ?? '').includes(q)
+      );
+    }
+    if (riskFilter !== 'all') filtered = filtered.filter(c => getRisk(c) === riskFilter);
+    if (areaFilter) filtered = filtered.filter(c => c.area === areaFilter);
+    if (skuFilter) filtered = filtered.filter(c => c.sku === skuFilter);
+
     return [...filtered].sort((a, b) => {
-      if (sortKey === 'balance') return b.outstanding_balance - a.outstanding_balance;
-      if (sortKey === 'name') return a.name.localeCompare(b.name);
-      if (sortKey === 'profit') return b.total_profit - a.total_profit;
-      if (sortKey === 'orders') return b.orders_after_last_payment - a.orders_after_last_payment;
-      if (sortKey === 'bills') return b.pending_bills - a.pending_bills;
-      return 0;
+      let cmp = 0;
+      switch (sortKey) {
+        case 'balance':  cmp = a.outstanding_balance - b.outstanding_balance; break;
+        case 'name':     cmp = a.name.localeCompare(b.name); break;
+        case 'profit':   cmp = a.total_profit - b.total_profit; break;
+        case 'orders':   cmp = a.orders_after_last_payment - b.orders_after_last_payment; break;
+        case 'bills':    cmp = a.pending_bills - b.pending_bills; break;
+        case 'cases':    cmp = a.total_cases - b.total_cases; break;
+        case 'avg_credit': cmp = a.avg_credit_per_month - b.avg_credit_per_month; break;
+        case 'last_payment': cmp = (a.last_payment_date ?? '').localeCompare(b.last_payment_date ?? ''); break;
+        case 'last_order':   cmp = (a.last_order_date ?? '').localeCompare(b.last_order_date ?? ''); break;
+        case 'risk':     cmp = RISK_ORDER[getRisk(a)] - RISK_ORDER[getRisk(b)]; break;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
     });
-  }, [data, search, sortKey]);
+  }, [data, search, sortKey, sortDir, riskFilter, areaFilter, skuFilter]);
 
   if (isLoading) {
     return (
@@ -907,54 +966,119 @@ const ReceivablesManagement: React.FC = () => {
       <SummaryStrip data={sorted} />
 
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-3 items-center px-5 py-3 border-b bg-card sticky top-0 z-10">
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name or area…"
-            className="w-full pl-9 pr-8 py-2 text-sm bg-muted/50 border border-border rounded-lg outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder:text-muted-foreground"
-          />
-          {search && (
-            <button type="button" aria-label="Clear search" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+      <div className="flex flex-col gap-2 px-5 py-3 border-b bg-card sticky top-0 z-10">
+        {/* Row 1: search + filters */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search name, area, SKU, phone…"
+              className="w-full pl-9 pr-8 py-2 text-sm bg-muted/50 border border-border rounded-lg outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder:text-muted-foreground"
+            />
+            {search && (
+              <button type="button" aria-label="Clear search" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Risk filter */}
+          <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-0.5">
+            {(['all', 'high', 'medium', 'low'] as RiskFilter[]).map(r => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRiskFilter(r)}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-all capitalize ${
+                  riskFilter === r
+                    ? r === 'all' ? 'bg-foreground text-background shadow-sm'
+                      : r === 'high' ? 'bg-red-500 text-white shadow-sm'
+                      : r === 'medium' ? 'bg-amber-500 text-white shadow-sm'
+                      : 'bg-emerald-500 text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                {r === 'all' ? 'All Risk' : r}
+              </button>
+            ))}
+          </div>
+
+          {/* Area filter */}
+          <select
+            aria-label="Filter by area"
+            value={areaFilter}
+            onChange={e => setAreaFilter(e.target.value)}
+            className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+          >
+            <option value="">All Areas</option>
+            {uniqueAreas.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+
+          {/* SKU filter */}
+          <select
+            aria-label="Filter by SKU"
+            value={skuFilter}
+            onChange={e => setSkuFilter(e.target.value)}
+            className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+          >
+            <option value="">All SKUs</option>
+            {uniqueSkus.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            {hasActiveFilters && (
+              <button type="button" onClick={clearAll} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 transition-colors">
+                <X className="h-3 w-3" />Clear All
+              </button>
+            )}
+            {highCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />{highCount} high risk
+              </span>
+            )}
+            {medCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{medCount} medium
+              </span>
+            )}
+            <span className="text-xs text-muted-foreground">{sorted.length} customers</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-muted/50 rounded-xl p-1">
-          <SortTab active={sortKey === 'balance'} onClick={() => setSortKey('balance')}>
-            <IndianRupee className="inline h-3 w-3 mr-1" />Balance
+        {/* Row 2: sort tabs */}
+        <div className="flex flex-wrap items-center gap-1 bg-muted/50 rounded-xl p-1 w-fit">
+          <SortTab active={sortKey === 'balance'} dir={sortDir} onClick={() => handleSort('balance')}>
+            <IndianRupee className="h-3 w-3" />Balance
           </SortTab>
-          <SortTab active={sortKey === 'bills'} onClick={() => setSortKey('bills')}>
-            <Receipt className="inline h-3 w-3 mr-1" />Bills
+          <SortTab active={sortKey === 'bills'} dir={sortDir} onClick={() => handleSort('bills')}>
+            <Receipt className="h-3 w-3" />Bills
           </SortTab>
-          <SortTab active={sortKey === 'orders'} onClick={() => setSortKey('orders')}>
-            <Package className="inline h-3 w-3 mr-1" />Pending
+          <SortTab active={sortKey === 'orders'} dir={sortDir} onClick={() => handleSort('orders')}>
+            <Package className="h-3 w-3" />Pending Orders
           </SortTab>
-          <SortTab active={sortKey === 'profit'} onClick={() => setSortKey('profit')}>
-            <TrendingUp className="inline h-3 w-3 mr-1" />Profit
+          <SortTab active={sortKey === 'profit'} dir={sortDir} onClick={() => handleSort('profit')}>
+            <TrendingUp className="h-3 w-3" />Profit
           </SortTab>
-          <SortTab active={sortKey === 'name'} onClick={() => setSortKey('name')}>
-            <Calendar className="inline h-3 w-3 mr-1" />A–Z
+          <SortTab active={sortKey === 'cases'} dir={sortDir} onClick={() => handleSort('cases')}>
+            <Package className="h-3 w-3" />Cases
           </SortTab>
-        </div>
-
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
-          {highCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              {highCount} high risk
-            </span>
-          )}
-          {medCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              {medCount} medium
-            </span>
-          )}
-          <span className="text-xs text-muted-foreground">{sorted.length} customers</span>
+          <SortTab active={sortKey === 'avg_credit'} dir={sortDir} onClick={() => handleSort('avg_credit')}>
+            <IndianRupee className="h-3 w-3" />Avg Credit
+          </SortTab>
+          <SortTab active={sortKey === 'last_payment'} dir={sortDir} onClick={() => handleSort('last_payment')}>
+            <Calendar className="h-3 w-3" />Last Payment
+          </SortTab>
+          <SortTab active={sortKey === 'last_order'} dir={sortDir} onClick={() => handleSort('last_order')}>
+            <Calendar className="h-3 w-3" />Last Order
+          </SortTab>
+          <SortTab active={sortKey === 'risk'} dir={sortDir} onClick={() => handleSort('risk')}>
+            <AlertTriangle className="h-3 w-3" />Risk
+          </SortTab>
+          <SortTab active={sortKey === 'name'} dir={sortDir} onClick={() => handleSort('name')}>
+            <Users className="h-3 w-3" />A–Z
+          </SortTab>
         </div>
       </div>
 
