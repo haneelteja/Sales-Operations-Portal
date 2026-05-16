@@ -11,7 +11,7 @@ BEGIN
     SELECT
       st2.id,
       SUM(
-        CASE WHEN st2.type = 'sale' THEN st2.amount ELSE -st2.amount END
+        CASE WHEN st2.transaction_type = 'sale' THEN st2.amount ELSE -st2.amount END
       ) OVER (
         ORDER BY st2.transaction_date, st2.created_at
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
