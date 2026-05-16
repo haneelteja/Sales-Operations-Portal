@@ -88,6 +88,9 @@ const FactoryPayables = () => {
     amount: null
   });
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 50;
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { invalidateRelated } = useCacheInvalidation();
@@ -226,6 +229,17 @@ const FactoryPayables = () => {
     return eligible?.[0]?.cost_per_case || null;
   };
 
+  // For display: falls back to amount/quantity when SKU doesn't match factory_pricing
+  // (handles non-standard SKU formats like "500 P", "P500ml" stored in older records)
+  const getDisplayPricePerCase = (sku: string | null, transactionDate: string, transactionType: string, amount: number | null, quantity: number | null): number | null => {
+    const fromPricing = getPricePerCase(sku, transactionDate);
+    if (fromPricing) return fromPricing;
+    if (transactionType === 'production' && quantity && quantity > 0 && amount) {
+      return amount / quantity;
+    }
+    return null;
+  };
+
   // Filter and sort transactions (memoized for performance)
   const filteredAndSortedTransactions = useMemo(() => {
     if (!transactions) return [];
@@ -241,7 +255,7 @@ const FactoryPayables = () => {
       : (transaction.customers?.dealer_name || '');
     const area = transaction.customers?.area || '';
     const quantity = transaction.quantity?.toString() || '';
-    const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
+    const pricePerCase = getDisplayPricePerCase(transaction.sku, transaction.transaction_date, transaction.transaction_type, transaction.amount, transaction.quantity);
     const pricePerCaseStr = pricePerCase?.toString() || '';
     
     // Global search filter (using debounced value)
@@ -353,8 +367,8 @@ const FactoryPayables = () => {
         valueB = b.quantity || 0;
         break;
       case 'price_per_case':
-        valueA = getPricePerCase(a.sku, a.transaction_date) || 0;
-        valueB = getPricePerCase(b.sku, b.transaction_date) || 0;
+        valueA = getDisplayPricePerCase(a.sku, a.transaction_date, a.transaction_type, a.amount, a.quantity) || 0;
+        valueB = getDisplayPricePerCase(b.sku, b.transaction_date, b.transaction_type, b.amount, b.quantity) || 0;
         break;
       case 'type':
         valueA = a.transaction_type || '';
@@ -375,8 +389,17 @@ const FactoryPayables = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing]);
 
-  // Column filter handlers (memoized)
+  // Paginated slice of filtered+sorted transactions
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredAndSortedTransactions.slice(start, start + PAGE_SIZE);
+  }, [filteredAndSortedTransactions, currentPage]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedTransactions.length / PAGE_SIZE));
+
+  // Reset to page 1 whenever filters/search change
   const handleColumnFilterChange = useCallback((columnKey: string, value: string | string[]) => {
+    setCurrentPage(1);
     setColumnFilters(prev => ({
       ...prev,
       [columnKey]: value
@@ -384,6 +407,7 @@ const FactoryPayables = () => {
   }, []);
 
   const handleClearColumnFilter = useCallback((columnKey: string) => {
+    setCurrentPage(1);
     setColumnFilters(prev => ({
       ...prev,
       [columnKey]: ""
@@ -932,6 +956,7 @@ const FactoryPayables = () => {
               <h3 className="text-lg font-semibold">Elma Transaction History</h3>
             <span className="text-sm text-muted-foreground">
               {filteredAndSortedTransactions.length} of {transactions?.length || 0} transactions
+              {totalPages > 1 && ` · Page ${currentPage} of ${totalPages}`}
             </span>
             </div>
             <Button
@@ -950,7 +975,7 @@ const FactoryPayables = () => {
             <Input
               placeholder="Search transactions by SKU, description, amount, date, or type..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               className="max-w-md"
             />
             {(searchTerm || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
@@ -1133,11 +1158,11 @@ const FactoryPayables = () => {
                 </TableCell>
               </TableRow>
             ) : filteredAndSortedTransactions.length > 0 ? (
-              filteredAndSortedTransactions.map((transaction) => {
-                const clientName = transaction.transaction_type === 'payment' 
+              paginatedTransactions.map((transaction) => {
+                const clientName = transaction.transaction_type === 'payment'
                   ? (transaction.description || 'Elma Payment')
                   : (transaction.customers?.dealer_name || '-');
-                const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
+                const pricePerCase = getDisplayPricePerCase(transaction.sku, transaction.transaction_date, transaction.transaction_type, transaction.amount, transaction.quantity);
 
                 return (
               <TableRow key={transaction.id}>
@@ -1169,15 +1194,12 @@ const FactoryPayables = () => {
                 }`}>
                   {(() => {
                     let amount = transaction.amount || 0;
-                    
-                    // For production transactions, calculate amount based on factory pricing
-                    if (transaction.transaction_type === 'production' && transaction.quantity && transaction.sku) {
-                      const pricing = factoryPricing?.find(p => p.sku === transaction.sku);
-                      if (pricing && pricing.cost_per_case) {
-                        amount = transaction.quantity * pricing.cost_per_case;
-                      }
+
+                    // Use date-aware pricePerCase (already computed above) for production transactions
+                    if (transaction.transaction_type === 'production' && transaction.quantity && pricePerCase) {
+                      amount = transaction.quantity * pricePerCase;
                     }
-                    
+
                     return `${transaction.transaction_type === 'production' ? '+' : '-'}₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`;
                   })()}
                 </TableCell>
@@ -1297,7 +1319,36 @@ const FactoryPayables = () => {
           </TableBody>
         </Table>
         </div>
+
+        {/* Pagination controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-4 border-t border-slate-200/50">
+            <span className="text-sm text-muted-foreground">
+              Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filteredAndSortedTransactions.length)} of {filteredAndSortedTransactions.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                ← Prev
+              </Button>
+              <span className="text-sm font-medium px-2">{currentPage} / {totalPages}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next →
+              </Button>
+            </div>
+          </div>
+        )}
       </div>}
+
     </div>
   );
 };

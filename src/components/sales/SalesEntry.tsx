@@ -596,6 +596,7 @@ const SalesEntry = () => {
             transaction_date,
             transaction_type,
             amount,
+            total_amount,
             quantity,
             sku,
             description,
@@ -650,9 +651,17 @@ const SalesEntry = () => {
         return 0;
       }
 
-      // Get all transactions for this customer, sorted chronologically
+      const ref = recentTransactions.find(t => t?.customer_id === customerId);
+      const refClientName = ref?.customers?.client_name;
+      const refBranch = ref?.customers?.branch;
+
       const customerTransactions = recentTransactions
-        .filter(t => t?.customer_id === customerId)
+        .filter(t => {
+          if (refClientName && refBranch) {
+            return t?.customers?.client_name === refClientName && t?.customers?.branch === refBranch;
+          }
+          return t?.customer_id === customerId;
+        })
         .sort((a, b) => {
           try {
             const dateA = new Date(a.transaction_date).getTime();
@@ -734,29 +743,16 @@ const SalesEntry = () => {
         return [];
       }
       
-      // Pre-calculate outstanding amounts for all transactions with error handling
-      const transactionsWithOutstanding = recentTransactions.map((transaction, index) => {
-        try {
-          if (!transaction?.customer_id || !transaction?.transaction_date || !transaction?.id) {
-            console.warn(`Invalid transaction data at index ${index}:`, transaction);
-            return { ...transaction, outstanding: 0 };
-          }
-          
-          const outstanding = calculateCumulativeOutstanding(
-            transaction.customer_id, 
-            transaction.transaction_date, 
-            transaction.id
-          );
-          return { ...transaction, outstanding };
-        } catch (error) {
-          console.error(`Error calculating outstanding for transaction at index ${index}:`, error);
-          return { ...transaction, outstanding: 0 };
-        }
-      });
+      // Use total_amount from DB as the running outstanding (source of truth)
+      // total_amount is updated by the one-time recalculation SQL and on new inserts
+      const transactionsWithOutstanding = recentTransactions.map((transaction) => ({
+        ...transaction,
+        outstanding: transaction.total_amount ?? 0,
+      }));
       
       return transactionsWithOutstanding.filter((transaction) => {
         try {
-          const customerName = transaction.customers?.dealer_name || '';
+          const customerName = transaction.customers?.client_name || transaction.customers?.dealer_name || '';
           const area = getTransactionBranch(transaction);
           const sku = transaction.sku || '';
           const description = transaction.description || '';
@@ -862,8 +858,8 @@ const SalesEntry = () => {
               if (isNaN(valueA) || isNaN(valueB)) return 0;
               break;
             case 'customer':
-              valueA = a.customers?.dealer_name || '';
-              valueB = b.customers?.dealer_name || '';
+              valueA = a.customers?.client_name || a.customers?.dealer_name || '';
+              valueB = b.customers?.client_name || b.customers?.dealer_name || '';
               break;
             case 'area':
               valueA = getTransactionBranch(a);
@@ -901,8 +897,7 @@ const SalesEntry = () => {
       console.error('Critical error filtering and sorting transactions:', error);
       return [];
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts, calculateCumulativeOutstanding]);
+  }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts]);
 
   // Paginate the filtered results
   const totalFilteredTransactions = filteredAndSortedRecentTransactions.length;
@@ -930,16 +925,19 @@ const SalesEntry = () => {
       if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
-      const name = t.customers?.dealer_name;
+      const name = t.customers?.client_name || t.customers?.dealer_name;
       if (name) unique.add(name);
     });
     return Array.from(unique).sort();
   }, [recentTransactions, columnFilters, getTransactionBranch]);
 
+  const getClientName = (t: typeof recentTransactions[0]) =>
+    t.customers?.client_name || t.customers?.dealer_name || '';
+
   const getUniqueBranches = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
-      if (!passesMultiFilter(t.customers?.dealer_name || '', columnFilters.customer)) return;
+      if (!passesMultiFilter(getClientName(t), columnFilters.customer)) return;
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
       const area = getTransactionBranch(t);
@@ -951,7 +949,7 @@ const SalesEntry = () => {
   const getUniqueSKUs = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
-      if (!passesMultiFilter(t.customers?.dealer_name || '', columnFilters.customer)) return;
+      if (!passesMultiFilter(getClientName(t), columnFilters.customer)) return;
       if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
       if (t.sku) unique.add(t.sku);
@@ -962,7 +960,7 @@ const SalesEntry = () => {
   const getUniqueTypes = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
-      if (!passesMultiFilter(t.customers?.dealer_name || '', columnFilters.customer)) return;
+      if (!passesMultiFilter(getClientName(t), columnFilters.customer)) return;
       if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
       if (t.transaction_type) unique.add(t.transaction_type);
@@ -981,7 +979,7 @@ const SalesEntry = () => {
       const customer = customers?.find(c => c.id === transaction.customer_id);
       return {
         'Date': new Date(transaction.transaction_date).toLocaleDateString(),
-        'Client': transaction.customers?.dealer_name || 'N/A',
+        'Client': transaction.customers?.client_name || transaction.customers?.dealer_name || 'N/A',
         'Branch': getTransactionBranch(transaction) || 'N/A',
         'Type': transaction.transaction_type || '',
         'SKU': transaction.sku || '',
@@ -1005,7 +1003,7 @@ const SalesEntry = () => {
   const exportTransactionsAsLedger = async () => {
     const rows = filteredAndSortedRecentTransactions.map((tx) => ({
       date: tx.transaction_date,
-      clientName: tx.customers?.dealer_name || 'Unknown',
+      clientName: tx.customers?.client_name || tx.customers?.dealer_name || 'Unknown',
       branch: getTransactionBranch(tx) || '',
       type: tx.transaction_type || 'sale',
       sku: tx.sku,
@@ -1890,7 +1888,7 @@ const SalesEntry = () => {
                   <TableRow key={transaction.id}>
                     <TableCell className="whitespace-nowrap">{new Date(transaction.transaction_date).toLocaleDateString()}</TableCell>
                     <TableCell className="truncate max-w-[100px]">
-                      {transaction.customers?.dealer_name}
+                      {transaction.customers?.client_name || transaction.customers?.dealer_name}
                     </TableCell>
                     <TableCell className="truncate max-w-[80px]">
                       {getTransactionBranch(transaction) || '-'}
