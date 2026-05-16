@@ -556,7 +556,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   value={selectedExistingClient || "__none__"}
                   onValueChange={(v) => {
                     setSelectedExistingClient(v === "__none__" ? "" : v);
-                    setIsExistingBranch(false);
+                    setIsExistingBranch(v !== "__none__" && v !== "");
                     setSelectedExistingBranch("");
                     setBranchInput("");
                     initialPricesBySkuRef.current = {};
