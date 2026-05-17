@@ -100,14 +100,15 @@ serve(async (req) => {
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check global WhatsApp toggles
+    // Check global WhatsApp toggles + notification email
     const { data: configData } = await supabase
       .from('invoice_configurations')
       .select('config_key, config_value')
-      .in('config_key', ['whatsapp_enabled', 'whatsapp_payment_reminder_enabled']);
+      .in('config_key', ['whatsapp_enabled', 'whatsapp_payment_reminder_enabled', 'backup_notification_email']);
 
     const config: Record<string, string> = {};
     (configData || []).forEach((item) => { config[item.config_key] = item.config_value; });
+    const notificationEmail = config.backup_notification_email || 'pega2023test@gmail.com';
 
     if (config.whatsapp_enabled !== 'true' || config.whatsapp_payment_reminder_enabled !== 'true') {
       return new Response(
@@ -294,6 +295,55 @@ serve(async (req) => {
     }
 
     console.log('[payment-reminder-scheduler] results:', JSON.stringify(results));
+
+    // Send summary email — best-effort, non-blocking
+    const totalSent = results.reduce((s, r) => s + (r.newlySent ?? 0), 0);
+    const totalFailed = results.reduce((s, r) => s + (r.failed ?? 0), 0);
+    if (totalSent > 0 || totalFailed > 0) {
+      const istNow = new Date(new Date().getTime() + (5 * 60 + 30) * 60 * 1000)
+        .toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const scheduleRows = results.map((r) =>
+        `<tr>
+          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb">${r.scheduleName}</td>
+          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${r.daysOverdue ?? '—'} days</td>
+          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${r.eligible ?? 0}</td>
+          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center;color:#16a34a"><strong>${r.newlySent ?? 0}</strong></td>
+          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center;color:${(r.failed ?? 0) > 0 ? '#dc2626' : '#6b7280'}">${r.failed ?? 0}</td>
+        </tr>`
+      ).join('');
+
+      fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: notificationEmail,
+          subject: `Payment Reminders Sent — ${totalSent} sent, ${totalFailed} failed (${istNow} IST)`,
+          html: `
+            <h2 style="margin:0 0 16px">Payment Reminder Summary</h2>
+            <p><strong>Run time:</strong> ${istNow} IST</p>
+            <p><strong>Trigger:</strong> ${force ? 'Manual' : 'Scheduled (cron)'}</p>
+            <p><strong>Total sent:</strong> <span style="color:#16a34a">${totalSent}</span> &nbsp;|&nbsp; <strong>Total failed:</strong> <span style="color:#dc2626">${totalFailed}</span></p>
+            <table style="border-collapse:collapse;width:100%;margin-top:16px;font-size:14px">
+              <thead>
+                <tr style="background:#f3f4f6">
+                  <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb">Schedule</th>
+                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Overdue</th>
+                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Eligible</th>
+                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Sent</th>
+                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Failed</th>
+                </tr>
+              </thead>
+              <tbody>${scheduleRows}</tbody>
+            </table>
+            <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+            <p style="color:#6b7280;font-size:12px"><em>Automated message from Aamodha Operations Portal.</em></p>
+          `,
+        }),
+      }).catch((err) => console.error('[payment-reminder-scheduler] summary email error:', err));
+    }
 
     return new Response(
       JSON.stringify({ triggered: true, force, currentIST, scheduleCount: matchingSchedules.length, results }),
