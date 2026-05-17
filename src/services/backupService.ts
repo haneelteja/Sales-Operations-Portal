@@ -187,7 +187,9 @@ export async function updateBackupNotificationEmail(email: string): Promise<void
 }
 
 /**
- * Update backup schedule time (IST), e.g. "14:00"
+ * Update backup schedule time (IST), e.g. "14:00".
+ * Saves to DB then automatically syncs the cron-job.org schedule to the
+ * equivalent UTC time so the cron fires at the exact right moment.
  */
 export async function updateBackupScheduleTime(timeIST: string): Promise<void> {
   const validation = validateBackupScheduleTime(timeIST);
@@ -208,6 +210,13 @@ export async function updateBackupScheduleTime(timeIST: string): Promise<void> {
       logger.error('Error updating backup schedule time:', error);
       throw new Error(`Failed to update backup schedule time: ${error.message}`);
     }
+
+    // Sync cron-job.org to the exact UTC equivalent — best-effort, non-blocking
+    supabase.functions.invoke('sync-backup-cron', { body: { timeIST: timeIST.trim() } })
+      .then(({ error: fnErr }) => {
+        if (fnErr) logger.warn('[backupService] sync-backup-cron warning:', fnErr.message);
+      })
+      .catch((err) => logger.warn('[backupService] sync-backup-cron unreachable:', err));
   } catch (error) {
     logger.error('Error in updateBackupScheduleTime:', error);
     throw error;

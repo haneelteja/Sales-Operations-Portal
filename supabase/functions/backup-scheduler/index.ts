@@ -1,13 +1,15 @@
 /**
  * Backup Scheduler
  *
- * Runs on a fixed schedule (e.g. every 15 minutes). Reads backup_schedule_time_ist
- * and backup_enabled from invoice_configurations; if backup is enabled and current
- * time in IST matches the configured time (within the current 15-minute window),
- * invokes database-backup with trigger: 'automatic'.
+ * Triggered by cron-job.org at the exact UTC time that corresponds to the
+ * user-configured IST backup time (set via sync-backup-cron edge function).
+ * No longer needs 15-minute window matching — cron fires at the right moment.
  *
- * This allows the Application Configuration "Database Backup Time" to control
- * when the daily backup runs without changing cron.
+ * Guard: skips if an automatic backup already succeeded or is in progress
+ * within the last 20 hours to prevent accidental double-runs.
+ *
+ * Auth: set BACKUP_CRON_SECRET in Supabase Edge Function secrets and pass it as
+ * the x-backup-cron-secret header (or Authorization: Bearer <secret>).
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -18,48 +20,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-backup-cron-secret',
 };
 
-/** Get current time in IST as HH:MM (24h) */
-function getCurrentISTTime(): string {
-  const now = new Date();
-  const utcMs = now.getTime();
-  const istOffsetMs = (5 * 60 + 30) * 60 * 1000;
-  const istDate = new Date(utcMs + istOffsetMs);
-  const h = istDate.getUTCHours();
-  const m = istDate.getUTCMinutes();
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-/** Check if configured time (e.g. "14:00") falls within the current 15-minute window */
-function isTimeInCurrentWindow(configuredTime: string, windowMinutes: number = 15): boolean {
-  const [ch, cm] = configuredTime.trim().split(':').map(Number);
-  const configuredMins = ch * 60 + cm;
-
-  const now = new Date();
-  const utcMs = now.getTime();
-  const istOffsetMs = (5 * 60 + 30) * 60 * 1000;
-  const istDate = new Date(utcMs + istOffsetMs);
-  const currentMins = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
-
-  const windowStart = Math.floor(currentMins / windowMinutes) * windowMinutes;
-  const windowEnd = windowStart + windowMinutes;
-  return configuredMins >= windowStart && configuredMins < windowEnd;
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  // Auth: require BACKUP_CRON_SECRET (this function has verify_jwt = false)
-  const cronSecret = Deno.env.get('BACKUP_CRON_SECRET');
+  // Auth: require BACKUP_CRON_SECRET
+  const cronSecret   = Deno.env.get('BACKUP_CRON_SECRET');
   const customHeader = req.headers.get('x-backup-cron-secret')?.trim() ?? '';
-  const authHeader = req.headers.get('Authorization') ?? '';
-  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const authHeader   = req.headers.get('Authorization') ?? '';
+  const bearer       = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   const headerSecret = customHeader || bearer;
+
   if (!cronSecret || headerSecret !== cronSecret) {
     const reason = !cronSecret
       ? 'BACKUP_CRON_SECRET not set in Supabase Edge Function secrets'
-      : 'Secret mismatch or missing. Send header: x-backup-cron-secret with the exact secret, or Authorization: Bearer <secret>';
+      : 'Secret mismatch or missing. Send header: x-backup-cron-secret with the exact secret';
     return new Response(
       JSON.stringify({ error: 'Unauthorized', message: reason }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -67,7 +43,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseUrl        = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
@@ -75,50 +51,43 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { data: configData, error: configError } = await supabase
+    // Check backup_enabled flag
+    const { data: configData } = await supabase
       .from('invoice_configurations')
       .select('config_key, config_value')
-      .in('config_key', ['backup_enabled', 'backup_schedule_time_ist']);
+      .eq('config_key', 'backup_enabled')
+      .single();
 
-    if (configError) {
-      throw new Error(`Failed to fetch config: ${configError.message}`);
-    }
-
-    const config: Record<string, string> = {};
-    (configData || []).forEach((item) => {
-      config[item.config_key] = item.config_value;
-    });
-
-    if (config.backup_enabled === 'false') {
+    if (configData?.config_value === 'false') {
       return new Response(
         JSON.stringify({ triggered: false, reason: 'Backup is disabled' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const scheduleTime = (config.backup_schedule_time_ist || '14:00').trim();
-    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(scheduleTime)) {
-      return new Response(
-        JSON.stringify({ triggered: false, reason: `Invalid backup_schedule_time_ist: ${scheduleTime}` }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Dedup guard: skip if automatic backup already succeeded/in-progress in last 20 hours
+    const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+    const { data: recentBackup } = await supabase
+      .from('backup_logs')
+      .select('id, status, started_at')
+      .eq('backup_type', 'automatic')
+      .in('status', ['success', 'in_progress'])
+      .gte('started_at', twentyHoursAgo)
+      .limit(1)
+      .maybeSingle();
 
-    const currentIST = getCurrentISTTime();
-    if (!isTimeInCurrentWindow(scheduleTime)) {
+    if (recentBackup) {
       return new Response(
         JSON.stringify({
           triggered: false,
-          reason: 'Current time does not match schedule',
-          currentIST,
-          scheduleTime,
+          reason: `Automatic backup already ran at ${recentBackup.started_at} (status: ${recentBackup.status})`,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const backupUrl = `${supabaseUrl}/functions/v1/database-backup`;
-    const backupRes = await fetch(backupUrl, {
+    // Trigger the backup
+    const backupRes = await fetch(`${supabaseUrl}/functions/v1/database-backup`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${supabaseServiceKey}`,
@@ -128,35 +97,25 @@ serve(async (req) => {
     });
 
     const backupResult = await backupRes.json().catch(() => ({}));
+
     if (!backupRes.ok) {
       console.error('[backup-scheduler] database-backup failed:', backupRes.status, backupResult);
       return new Response(
-        JSON.stringify({
-          triggered: true,
-          success: false,
-          error: backupResult.error || backupRes.statusText,
-        }),
+        JSON.stringify({ triggered: true, success: false, error: backupResult.error || backupRes.statusText }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    console.log('[backup-scheduler] triggered successfully:', backupResult);
+
     return new Response(
-      JSON.stringify({
-        triggered: true,
-        success: backupResult.success !== false,
-        currentIST,
-        scheduleTime,
-        logId: backupResult.logId,
-      }),
+      JSON.stringify({ triggered: true, success: true, logId: backupResult.logId }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('[backup-scheduler] error:', error);
     return new Response(
-      JSON.stringify({
-        triggered: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }),
+      JSON.stringify({ triggered: false, error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

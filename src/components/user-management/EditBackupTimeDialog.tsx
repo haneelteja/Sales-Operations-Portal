@@ -34,6 +34,17 @@ function toTimeInputValue(value: string): string {
   return `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
 
+/** Convert HH:MM IST to a human-readable UTC string, e.g. "08:30 UTC" */
+function toUTCLabel(timeIST: string): string {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(timeIST)) return '';
+  const [h, m] = timeIST.split(':').map(Number);
+  let utcMin = m - 30;
+  let utcH   = h - 5;
+  if (utcMin < 0) { utcMin += 60; utcH -= 1; }
+  if (utcH < 0)   { utcH += 24; }
+  return `${String(utcH).padStart(2, '0')}:${String(utcMin).padStart(2, '0')} UTC`;
+}
+
 export const EditBackupTimeDialog: React.FC<EditBackupTimeDialogProps> = ({
   open,
   onOpenChange,
@@ -108,6 +119,11 @@ export const EditBackupTimeDialog: React.FC<EditBackupTimeDialogProps> = ({
             <p className="text-xs text-gray-500">
               Daily backup will run at this time in IST. Example: 14:00 = 2:00 PM IST.
             </p>
+            {toUTCLabel(timeValue) && (
+              <p className="text-xs font-medium text-blue-600">
+                Cron job will be updated to fire at {toUTCLabel(timeValue)} (equivalent UTC time)
+              </p>
+            )}
             {error && (
               <p className="text-sm text-red-600" role="alert">
                 {error}
