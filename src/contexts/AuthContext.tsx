@@ -363,28 +363,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (functionError) {
-        // Extract error message from response if available
-        let errorMessage = functionError.message || 'Failed to send password reset email';
-
-        if (functionData) {
-          if (typeof functionData === 'object') {
-            if ('error' in functionData) {
-              errorMessage = String(functionData.error);
-              if ('details' in functionData && functionData.details) {
-                errorMessage += `: ${String(functionData.details)}`;
-              }
-            } else if ('message' in functionData) {
-              errorMessage = String(functionData.message);
-            }
-          }
-        }
-
-        if (functionError.context && typeof functionError.context === 'object') {
-          if ('error' in functionError.context) {
-            errorMessage = String(functionError.context.error);
-          }
-        }
-        // Don't return error - fall through to Supabase Auth email fallback
+        // Edge Function failed — fall through to Supabase Auth email fallback
       }
 
       // Check if Edge Function succeeded

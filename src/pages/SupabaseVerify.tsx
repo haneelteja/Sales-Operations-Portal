@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { setRecoveryInProgress } from '@/lib/sessionKeys';
+import { logger } from '@/lib/logger';
 
 const SupabaseVerify: React.FC = () => {
   const navigate = useNavigate();
@@ -30,13 +31,13 @@ const SupabaseVerify: React.FC = () => {
       if (type === 'recovery' && accessToken) {
         try {
           // Set the session directly with the tokens from hash
-          const { data, error } = await supabase.auth.setSession({
+          const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken || '',
           });
 
           if (error) {
-            console.error('Session error:', error);
+            logger.error('Session error:', error);
             const errorMessage = error.message.includes('expired') 
               ? 'This reset link has expired. Please request a new one.'
               : error.message.includes('invalid') 
@@ -67,7 +68,7 @@ const SupabaseVerify: React.FC = () => {
             }, 500);
           }
         } catch (err: unknown) {
-          console.error('Verification error:', err);
+          logger.error('Verification error:', err);
           const errorMessage = err instanceof Error 
             ? err.message 
             : 'An unexpected error occurred during verification';

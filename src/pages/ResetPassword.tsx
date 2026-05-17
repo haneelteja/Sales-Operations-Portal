@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Lock, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { clearRecoveryInProgress, setRecoveryInProgress } from '@/lib/sessionKeys';
+import { logger } from '@/lib/logger';
 
 const ResetPassword = () => {
   const { updatePassword, signOut } = useAuth();
@@ -29,6 +30,8 @@ const ResetPassword = () => {
     confirmPassword: '',
   });
 
+  const sessionSetRef = useRef(false); // Track if session has been set to prevent re-processing
+
   // Check for existing session on mount
   useEffect(() => {
     const checkExistingSession = async () => {
@@ -41,8 +44,6 @@ const ResetPassword = () => {
     };
     checkExistingSession();
   }, []);
-
-  const sessionSetRef = useRef(false); // Track if session has been set to prevent re-processing
 
   useEffect(() => {
     let retryTimeout: NodeJS.Timeout | null = null;
@@ -73,7 +74,7 @@ const ResetPassword = () => {
           });
 
           if (error) {
-            console.error('Error setting session:', error);
+            logger.error('Error setting session:', error);
             const errorMessage = error.message.includes('expired') 
               ? 'This reset link has expired. Please request a new one.'
               : error.message.includes('invalid') 
@@ -107,7 +108,7 @@ const ResetPassword = () => {
             setIsProcessing(false);
           }
         } catch (err) {
-          console.error('Error processing password reset:', err);
+          logger.error('Error processing password reset:', err);
           setError('An error occurred while processing your reset link.');
           toast({
             title: "Password Reset Error",
