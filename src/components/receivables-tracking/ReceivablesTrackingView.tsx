@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -38,7 +38,6 @@ interface FollowupNote {
 }
 
 type SortKey = 'outstanding-desc' | 'outstanding-asc' | 'name' | 'last-payment' | 'followup';
-type LocalEdit = { comments: string; nextFollowupDate: string };
 
 // ── Helper Functions ──────────────────────────────────────────────────────────
 
@@ -93,7 +92,6 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     next_followup_date: string | null;
   }>;
 
-  // customer_id → { dealerName, branch }
   const customerMap = new Map<string, { dealerName: string; branch: string }>();
   for (const c of customers) {
     customerMap.set(c.id, {
@@ -102,7 +100,6 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     });
   }
 
-  // "dealerName|||branch" → { comments, nextFollowupDate }
   const followupMap = new Map<string, { comments: string; nextFollowupDate: string }>();
   for (const f of followups) {
     followupMap.set(`${f.dealer_name}|||${f.branch}`, {
@@ -111,7 +108,6 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     });
   }
 
-  // Aggregate sales and payments per dealer+branch
   const groups = new Map<string, {
     customerId: string;
     dealerName: string;
@@ -155,7 +151,6 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     }
   }
 
-  // Build rows — only clients with outstanding > 0
   const rows: RawRow[] = [];
   for (const [key, g] of groups) {
     const outstanding = g.sales - g.payments;
@@ -187,7 +182,6 @@ interface DrawerProps {
   branch: string;
   outstanding: number;
   currentFollowupDate: string;
-  onNoteSaved: (followupDate: string | null) => void;
 }
 
 function FollowupNotesDrawer({
@@ -198,7 +192,6 @@ function FollowupNotesDrawer({
   branch,
   outstanding,
   currentFollowupDate,
-  onNoteSaved,
 }: DrawerProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -229,10 +222,8 @@ function FollowupNotesDrawer({
     if (!trimmed) return;
     setSaving(true);
     try {
-      // Log to notes history
       await insertFollowupNote(customerId, trimmed, followupDate || null);
 
-      // Also upsert latest state into client_followups
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any)
         .from('client_followups')
@@ -249,7 +240,6 @@ function FollowupNotesDrawer({
 
       queryClient.invalidateQueries({ queryKey: ['followup-notes', customerId] });
       queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });
-      onNoteSaved(followupDate || null);
       setNote('');
       toast({ title: 'Note saved', description: 'Follow-up note logged successfully.' });
     } catch (err: unknown) {
@@ -263,10 +253,10 @@ function FollowupNotesDrawer({
   const getFollowupStatusBadge = (date: string | null) => {
     if (!date) return null;
     const d = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
     d.setHours(0, 0, 0, 0);
-    const diff = Math.ceil((d.getTime() - today.getTime()) / 86400000);
+    const diff = Math.ceil((d.getTime() - todayDate.getTime()) / 86400000);
     if (diff < 0) return <Badge variant="destructive" className="text-xs">Overdue</Badge>;
     if (diff === 0) return <Badge className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-100">Today</Badge>;
     return <Badge className="text-xs bg-violet-100 text-violet-800 hover:bg-violet-100">{diff}d away</Badge>;
@@ -379,11 +369,8 @@ function FollowupNotesDrawer({
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ReceivablesTrackingView() {
-  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('outstanding-desc');
-  const [localEdits, setLocalEdits] = useState<Record<string, LocalEdit>>({});
-  const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [activeNotes, setActiveNotes] = useState<{
     customerId: string;
     dealerName: string;
@@ -391,7 +378,6 @@ export default function ReceivablesTrackingView() {
     outstanding: number;
     key: string;
   } | null>(null);
-  const initialized = useRef(false);
 
   const { data, isLoading } = useQuery<FetchResult>({
     queryKey: ['receivables-tracking'],
@@ -401,30 +387,14 @@ export default function ReceivablesTrackingView() {
     refetchOnMount: true,
   });
 
-  // Populate local edits from fetched data once on first load
-  useEffect(() => {
-    if (data?.rows && !initialized.current) {
-      initialized.current = true;
-      const initial: Record<string, LocalEdit> = {};
-      for (const row of data.rows) {
-        initial[row.key] = { comments: row.comments, nextFollowupDate: row.nextFollowupDate };
-      }
-      setLocalEdits(initial);
-    }
-  }, [data?.rows]);
-
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  // Merge server data with local edits and compute isOverdue
   const displayRows = useMemo(() => {
     if (!data?.rows) return [];
 
     let rows = data.rows.map(row => {
-      const edits = localEdits[row.key];
-      const comments = edits?.comments ?? row.comments;
-      const nextFollowupDate = edits?.nextFollowupDate ?? row.nextFollowupDate;
-      const isOverdue = row.outstanding > 0 && !!nextFollowupDate && nextFollowupDate < today;
-      return { ...row, comments, nextFollowupDate, isOverdue };
+      const isOverdue = row.outstanding > 0 && !!row.nextFollowupDate && row.nextFollowupDate < today;
+      return { ...row, isOverdue };
     });
 
     if (search.trim()) {
@@ -445,63 +415,16 @@ export default function ReceivablesTrackingView() {
           if (!a.nextFollowupDate) return 1;
           if (!b.nextFollowupDate) return -1;
           return a.nextFollowupDate.localeCompare(b.nextFollowupDate);
-        default: // outstanding-desc
+        default:
           return b.outstanding - a.outstanding;
       }
     });
-  }, [data?.rows, localEdits, search, sortKey, today]);
+  }, [data?.rows, search, sortKey, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
     [displayRows]
   );
-
-  const saveFollowup = useCallback(async (
-    dealerName: string,
-    branch: string,
-    key: string,
-    customerId: string,
-    updates: { comments?: string; nextFollowupDate?: string }
-  ) => {
-    setSaving(prev => ({ ...prev, [key]: true }));
-    try {
-      const payload: Record<string, unknown> = {
-        dealer_name: dealerName,
-        branch,
-        updated_at: new Date().toISOString(),
-      };
-      if (updates.comments !== undefined) payload.comments = updates.comments || null;
-      if (updates.nextFollowupDate !== undefined) payload.next_followup_date = updates.nextFollowupDate || null;
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        .from('client_followups')
-        .upsert(payload, { onConflict: 'dealer_name,branch' });
-      if (error) throw error;
-
-      // Also log to client_followup_notes for history
-      if (customerId) {
-        let noteText = '';
-        if (updates.comments !== undefined && updates.comments.trim()) {
-          noteText = updates.comments.trim();
-        } else if (updates.nextFollowupDate !== undefined) {
-          noteText = 'Follow-up date updated';
-        }
-        if (noteText) {
-          await insertFollowupNote(
-            customerId,
-            noteText,
-            updates.nextFollowupDate ?? null
-          );
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      toast({ title: 'Error', description: `Failed to save: ${msg}`, variant: 'destructive' });
-    } finally {
-      setSaving(prev => ({ ...prev, [key]: false }));
-    }
-  }, [toast]);
 
   const handleExport = async () => {
     const wb = new ExcelJS.Workbook();
@@ -525,7 +448,6 @@ export default function ReceivablesTrackingView() {
       { key: 'followup', width: 18 },
     ];
 
-    // Title
     ws.mergeCells('A1:F1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'Receivables Management Report';
@@ -543,9 +465,9 @@ export default function ReceivablesTrackingView() {
     ws.getCell('A3').font = { size: 10, color: { argb: 'FF333333' } };
     ws.getCell('A3').alignment = { horizontal: 'center' };
 
-    ws.addRow([]); // spacer
+    ws.addRow([]);
 
-    const headerRow = ws.addRow(['Client', 'Branch', 'Outstanding (₹)', 'Last Payment', 'Comments', 'Next Follow-up']);
+    const headerRow = ws.addRow(['Client', 'Branch', 'Outstanding (₹)', 'Last Payment', 'Latest Note', 'Next Follow-up']);
     headerRow.height = 20;
     headerRow.eachCell(cell => {
       cell.fill = headerFill;
@@ -697,115 +619,80 @@ export default function ReceivablesTrackingView() {
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Client Branch</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Outstanding</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Last Payment</th>
-                <th className="px-4 py-3 font-semibold min-w-[220px]">Comments</th>
+                <th className="px-4 py-3 font-semibold min-w-[240px]">Latest Note</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Next Follow-up</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Notes</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Log</th>
               </tr>
             </thead>
             <tbody>
-              {displayRows.map(row => {
-                const isSaving = saving[row.key];
-                const edits = localEdits[row.key];
-                const commentsVal = edits?.comments ?? row.comments;
-                const followupVal = edits?.nextFollowupDate ?? row.nextFollowupDate;
+              {displayRows.map(row => (
+                <tr
+                  key={row.key}
+                  className={`border-b last:border-0 transition-colors ${
+                    row.isOverdue ? 'bg-red-50 hover:bg-red-100/60' : 'hover:bg-muted/30'
+                  }`}
+                >
+                  {/* Client Branch */}
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-medium leading-tight">{row.dealerName}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{row.branch}</div>
+                    {row.isOverdue && (
+                      <Badge variant="destructive" className="mt-1.5 text-xs">
+                        Overdue
+                      </Badge>
+                    )}
+                  </td>
 
-                return (
-                  <tr
-                    key={row.key}
-                    className={`border-b last:border-0 transition-colors ${
-                      row.isOverdue ? 'bg-red-50 hover:bg-red-100/60' : 'hover:bg-muted/30'
-                    }`}
-                  >
-                    {/* Client Branch */}
-                    <td className="px-4 py-3 align-top">
-                      <div className="font-medium leading-tight">{row.dealerName}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{row.branch}</div>
-                      {row.isOverdue && (
-                        <Badge variant="destructive" className="mt-1.5 text-xs">
-                          Overdue
-                        </Badge>
-                      )}
-                    </td>
+                  {/* Outstanding */}
+                  <td className="px-4 py-3 text-right font-bold text-red-600 whitespace-nowrap align-top">
+                    {fmt(row.outstanding)}
+                  </td>
 
-                    {/* Outstanding */}
-                    <td className="px-4 py-3 text-right font-bold text-red-600 whitespace-nowrap align-top">
-                      {fmt(row.outstanding)}
-                    </td>
+                  {/* Last Payment */}
+                  <td className="px-4 py-3 whitespace-nowrap text-muted-foreground align-top">
+                    {fmtDate(row.lastPaymentDate)}
+                  </td>
 
-                    {/* Last Payment */}
-                    <td className="px-4 py-3 whitespace-nowrap text-muted-foreground align-top">
-                      {fmtDate(row.lastPaymentDate)}
-                    </td>
+                  {/* Latest Note (read-only) */}
+                  <td className="px-4 py-3 align-top max-w-xs">
+                    {row.comments ? (
+                      <p className="text-sm text-foreground line-clamp-2">{row.comments}</p>
+                    ) : (
+                      <span className="text-sm text-muted-foreground/50 italic">No notes yet</span>
+                    )}
+                  </td>
 
-                    {/* Comments */}
-                    <td className="px-4 py-2 align-top">
-                      <textarea
-                        rows={2}
-                        className="w-full text-sm bg-transparent border border-transparent rounded px-2 py-1.5 resize-y focus:border-input focus:bg-background focus:outline-none transition-colors placeholder:text-muted-foreground/50"
-                        value={commentsVal}
-                        placeholder="Add comment..."
-                        onChange={e =>
-                          setLocalEdits(prev => ({
-                            ...prev,
-                            [row.key]: { ...prev[row.key], comments: e.target.value },
-                          }))
-                        }
-                        onBlur={e =>
-                          saveFollowup(row.dealerName, row.branch, row.key, row.customerId, {
-                            comments: e.target.value,
-                          })
-                        }
-                      />
-                      {isSaving && (
-                        <span className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                          <Loader2 className="h-3 w-3 animate-spin" /> Saving…
-                        </span>
-                      )}
-                    </td>
+                  {/* Next Follow-up Date (read-only) */}
+                  <td className="px-4 py-3 whitespace-nowrap align-top">
+                    {row.nextFollowupDate ? (
+                      <span className="text-sm">{fmtDate(row.nextFollowupDate)}</span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground/50 italic">Not set</span>
+                    )}
+                  </td>
 
-                    {/* Next Follow-up Date */}
-                    <td className="px-4 py-3 align-top">
-                      <input
-                        type="date"
-                        title="Next follow-up date"
-                        aria-label="Next follow-up date"
-                        className="text-sm bg-transparent border border-transparent rounded px-2 py-1.5 focus:border-input focus:bg-background focus:outline-none transition-colors w-full"
-                        min={(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0]; })()}
-                        value={followupVal}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setLocalEdits(prev => ({
-                            ...prev,
-                            [row.key]: { ...prev[row.key], nextFollowupDate: val },
-                          }));
-                          saveFollowup(row.dealerName, row.branch, row.key, row.customerId, { nextFollowupDate: val });
-                        }}
-                      />
-                    </td>
-
-                    {/* Notes */}
-                    <td className="px-4 py-3 align-top">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2 text-muted-foreground hover:text-foreground"
-                        onClick={() =>
-                          setActiveNotes({
-                            customerId: row.customerId,
-                            dealerName: row.dealerName,
-                            branch: row.branch,
-                            outstanding: row.outstanding,
-                            key: row.key,
-                          })
-                        }
-                      >
-                        <StickyNote className="h-4 w-4 mr-1" />
-                        Log
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
+                  {/* Log button */}
+                  <td className="px-4 py-3 align-top">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                      onClick={() =>
+                        setActiveNotes({
+                          customerId: row.customerId,
+                          dealerName: row.dealerName,
+                          branch: row.branch,
+                          outstanding: row.outstanding,
+                          key: row.key,
+                        })
+                      }
+                    >
+                      <StickyNote className="h-4 w-4 mr-1" />
+                      Log
+                    </Button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -825,17 +712,6 @@ export default function ReceivablesTrackingView() {
           branch={activeNotes.branch}
           outstanding={activeNotes.outstanding}
           currentFollowupDate={activeRow?.nextFollowupDate ?? ''}
-          onNoteSaved={(followupDate) => {
-            if (followupDate !== null) {
-              setLocalEdits(prev => ({
-                ...prev,
-                [activeNotes.key]: {
-                  ...prev[activeNotes.key],
-                  nextFollowupDate: followupDate,
-                },
-              }));
-            }
-          }}
         />
       )}
     </div>
