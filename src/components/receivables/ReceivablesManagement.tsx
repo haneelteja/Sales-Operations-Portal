@@ -286,6 +286,20 @@ async function saveFollowupNote(customerId: string, note: string, followupDate: 
   if (error) throw error;
 }
 
+async function fetchLatestFollowupDates(): Promise<Record<string, string | null>> {
+  const { data, error } = await supabase
+    .from('client_followup_notes')
+    .select('customer_id, followup_date, created_at')
+    .not('followup_date', 'is', null)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const map: Record<string, string | null> = {};
+  for (const row of data ?? []) {
+    if (!map[row.customer_id]) map[row.customer_id] = row.followup_date;
+  }
+  return map;
+}
+
 // ── Summary strip ─────────────────────────────────────────────────────────────
 
 function SummaryStrip({ data, allData }: { data: CustomerRow[]; allData: CustomerRow[] }) {
@@ -846,13 +860,42 @@ function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boole
 
 // ── Customer card ─────────────────────────────────────────────────────────────
 
-function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes }: {
+function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, latestFollowupDate, onFollowupSaved }: {
   c: CustomerRow;
   isExpanded: boolean;
   onToggle: () => void;
   onViewLedger: (e: React.MouseEvent) => void;
   onViewNotes: (e: React.MouseEvent) => void;
+  latestFollowupDate: string | null;
+  onFollowupSaved: () => void;
 }) {
+  const qc = useQueryClient();
+  const [editingFollowup, setEditingFollowup] = useState(false);
+  const [draftDate, setDraftDate] = useState('');
+  const [draftNote, setDraftNote] = useState('');
+
+  const followupMutation = useMutation({
+    mutationFn: () => saveFollowupNote(c.customer_id, draftNote.trim() || 'Follow-up date updated', draftDate || null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['followup-notes', c.customer_id] });
+      onFollowupSaved();
+      setEditingFollowup(false);
+      setDraftDate('');
+      setDraftNote('');
+    },
+  });
+
+  const openFollowupEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDraftDate(latestFollowupDate ?? '');
+    setDraftNote('');
+    setEditingFollowup(true);
+  };
+
+  const daysUntil = latestFollowupDate
+    ? Math.ceil((new Date(latestFollowupDate).getTime() - Date.now()) / 86400000)
+    : null;
+
   const risk = getRisk(c);
   const activeMonths = c.monthly.filter(m => m.revenue > 0).length;
   const daysSincePayment = daysSince(c.last_payment_date);
@@ -990,6 +1033,86 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes }: {
         />
       </div>
 
+      {/* ── Follow-up date ── */}
+      <div className="px-4 pb-2" onClick={e => e.stopPropagation()}>
+        {editingFollowup ? (
+          <div className="border border-violet-200 dark:border-violet-800 rounded-xl p-3 bg-violet-50/50 dark:bg-violet-900/10 space-y-2">
+            <p className="text-[10px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wider">Set Follow-up Date</p>
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                aria-label="Follow-up date"
+                title="Follow-up date"
+                value={draftDate}
+                onChange={e => setDraftDate(e.target.value)}
+                className="flex-1 text-sm border border-border rounded-lg px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-all text-foreground"
+              />
+              {draftDate && (
+                <button type="button" aria-label="Clear date" onClick={() => setDraftDate('')} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder="Add a note (optional)"
+              value={draftNote}
+              onChange={e => setDraftNote(e.target.value)}
+              className="w-full text-sm border border-border rounded-lg px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-all placeholder:text-muted-foreground"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setEditingFollowup(false); setDraftDate(''); setDraftNote(''); }}
+                className="flex-1 text-xs text-muted-foreground border border-border rounded-lg py-1.5 hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => followupMutation.mutate()}
+                disabled={followupMutation.isPending}
+                className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-lg py-1.5 transition-colors disabled:opacity-50"
+              >
+                {followupMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                Save
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={openFollowupEdit}
+            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-colors text-xs ${
+              latestFollowupDate
+                ? daysUntil !== null && daysUntil < 0
+                  ? 'border-red-200 bg-red-50/60 dark:border-red-800 dark:bg-red-900/10 text-red-700 dark:text-red-400'
+                  : daysUntil === 0
+                  ? 'border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400'
+                  : 'border-violet-200 bg-violet-50/60 dark:border-violet-800 dark:bg-violet-900/10 text-violet-700 dark:text-violet-400'
+                : 'border-dashed border-border text-muted-foreground hover:border-violet-300 hover:text-violet-600'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+              {latestFollowupDate ? (
+                <span>
+                  {daysUntil !== null && daysUntil < 0
+                    ? `Overdue by ${Math.abs(daysUntil)}d — `
+                    : daysUntil === 0
+                    ? 'Due today — '
+                    : `Follow-up in ${daysUntil}d — `}
+                  {fmtDate(latestFollowupDate)}
+                </span>
+              ) : (
+                <span>Set follow-up date</span>
+              )}
+            </div>
+            <Plus className="h-3 w-3 flex-shrink-0" />
+          </button>
+        )}
+      </div>
+
       {/* ── Action buttons ── */}
       <div className="px-4 pb-3 flex gap-2">
         <button
@@ -1103,6 +1226,12 @@ const ReceivablesManagement: React.FC = () => {
     queryKey: ['receivables-management'],
     queryFn: fetchReceivablesData,
     staleTime: 60000,
+  });
+
+  const { data: followupDates = {}, refetch: refetchFollowups } = useQuery({
+    queryKey: ['receivables-followup-dates'],
+    queryFn: fetchLatestFollowupDates,
+    staleTime: 30000,
   });
 
   const uniqueAreas = useMemo(() => {
@@ -1337,6 +1466,8 @@ const ReceivablesManagement: React.FC = () => {
               onToggle={() => setExpandedId(expandedId === c.customer_id ? null : c.customer_id)}
               onViewLedger={e => { e.stopPropagation(); setLedgerCustomer(c); }}
               onViewNotes={e => { e.stopPropagation(); setNotesCustomer(c); }}
+              latestFollowupDate={followupDates[c.customer_id] ?? null}
+              onFollowupSaved={() => refetchFollowups()}
             />
           ))
         )}
