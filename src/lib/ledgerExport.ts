@@ -117,20 +117,7 @@ export async function exportLedger(
   ws.views = [{ state: 'frozen', ySplit: colHeaderRow.number }];
 
   // ── Client groups ────────────────────────────────────────────────────────────
-  for (const [key, rows] of groups) {
-    const [clientName, branch] = key.split('|||');
-    const clientLabel = branch && branch !== clientName
-      ? `${clientName}  —  ${branch}`
-      : clientName;
-
-    // Client header
-    const clientRow = ws.addRow([clientLabel]);
-    mergeRow(clientRow.number);
-    clientRow.getCell(1).font = { bold: true, size: 11 };
-    clientRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: C.clientBg };
-    clientRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-    clientRow.height = 20;
-
+  for (const [, rows] of groups) {
     let balance = 0;
 
     for (const tx of rows) {

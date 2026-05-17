@@ -682,9 +682,9 @@ export default function ReceivablesTrackingView() {
                   {/* Log button */}
                   <td className="px-4 py-3 align-top">
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                      className="h-8 px-2 text-muted-foreground hover:text-foreground border-border/60 bg-muted/30 hover:bg-muted/60"
                       onClick={() =>
                         setActiveNotes({
                           customerId: row.customerId,
