@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Bell, Plus, Edit, Trash2, Send } from 'lucide-react';
+import { Bell, Plus, Edit, Trash2, Send, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface PaymentReminderSchedule {
   id: string;
@@ -114,6 +114,8 @@ export const PaymentReminderSchedules: React.FC = () => {
   const [editingSchedule, setEditingSchedule] = useState<PaymentReminderSchedule | null>(null);
   const [form, setForm] = useState(DEFAULT_FORM);
   const [isSendingManual, setIsSendingManual] = useState(false);
+  const [logsPage, setLogsPage] = useState(1);
+  const LOGS_PAGE_SIZE = 10;
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -147,18 +149,23 @@ export const PaymentReminderSchedules: React.FC = () => {
     },
   });
 
-  const { data: recentLogs } = useQuery({
-    queryKey: ['payment-reminder-logs'],
+  const { data: logsData } = useQuery({
+    queryKey: ['payment-reminder-logs', logsPage],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const from = (logsPage - 1) * LOGS_PAGE_SIZE;
+      const to = from + LOGS_PAGE_SIZE - 1;
+      const { data, error, count } = await supabase
         .from('payment_reminder_logs')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('triggered_at', { ascending: false })
-        .limit(20);
+        .range(from, to);
       if (error) throw error;
-      return data as PaymentReminderLog[];
+      return { logs: data as PaymentReminderLog[], total: count ?? 0 };
     },
   });
+  const recentLogs = logsData?.logs ?? [];
+  const totalLogs = logsData?.total ?? 0;
+  const totalLogsPages = Math.max(1, Math.ceil(totalLogs / LOGS_PAGE_SIZE));
 
   const saveMutation = useMutation({
     mutationFn: async (values: typeof DEFAULT_FORM) => {
@@ -270,6 +277,7 @@ export const PaymentReminderSchedules: React.FC = () => {
           ? 'No enabled schedules found.'
           : `Processed ${totalSchedules} schedule(s). ${totalSent} reminder(s) sent.`,
       });
+      setLogsPage(1);
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-logs'] });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
     } catch (err) {
@@ -419,54 +427,88 @@ export const PaymentReminderSchedules: React.FC = () => {
 
         {/* Recent logs */}
         <div>
-          <h4 className="text-sm font-semibold text-gray-700 mb-3">Recent Reminder Logs</h4>
-          {(recentLogs ?? []).length === 0 ? (
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-gray-700">Recent Reminder Logs</h4>
+            {totalLogs > 0 && (
+              <span className="text-xs text-gray-500">{totalLogs} total</span>
+            )}
+          </div>
+          {recentLogs.length === 0 ? (
             <div className="text-sm text-gray-500 text-center py-4 border rounded-md">
               No logs yet — reminders will appear here once sent
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Customer</TableHead>
-                    <TableHead className="text-right">Outstanding</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
-                    <TableHead>Triggered At</TableHead>
-                    <TableHead>Failure Reason</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(recentLogs ?? []).map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="font-medium">{log.customer_name}</TableCell>
-                      <TableCell className="text-right">
-                        ₹{log.outstanding_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge
-                          variant={
-                            log.status === 'sent'
-                              ? 'default'
-                              : log.status === 'failed'
-                              ? 'destructive'
-                              : 'secondary'
-                          }
-                        >
-                          {log.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-500">
-                        {new Date(log.triggered_at).toLocaleString('en-IN')}
-                      </TableCell>
-                      <TableCell className="text-sm text-red-600 max-w-[200px] truncate">
-                        {log.failure_reason ?? '—'}
-                      </TableCell>
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Customer</TableHead>
+                      <TableHead className="text-right">Outstanding</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead>Triggered At</TableHead>
+                      <TableHead>Failure Reason</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {recentLogs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="font-medium">{log.customer_name}</TableCell>
+                        <TableCell className="text-right">
+                          ₹{log.outstanding_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge
+                            variant={
+                              log.status === 'sent'
+                                ? 'default'
+                                : log.status === 'failed'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                          >
+                            {log.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-500">
+                          {new Date(log.triggered_at).toLocaleString('en-IN')}
+                        </TableCell>
+                        <TableCell className="text-sm text-red-600 max-w-[200px] truncate">
+                          {log.failure_reason ?? '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {totalLogsPages > 1 && (
+                <div className="flex items-center justify-between mt-3 px-1">
+                  <span className="text-xs text-gray-500">
+                    Page {logsPage} of {totalLogsPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
+                      disabled={logsPage === 1}
+                      className="h-7 w-7 p-0"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLogsPage((p) => Math.min(totalLogsPages, p + 1))}
+                      disabled={logsPage === totalLogsPages}
+                      className="h-7 w-7 p-0"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </CardContent>

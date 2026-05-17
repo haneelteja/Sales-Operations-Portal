@@ -218,6 +218,7 @@ serve(async (req) => {
 
       let sent = 0;
       let failed = 0;
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       for (const customerId of newIds) {
         const customer = customerMap.get(customerId)!;
@@ -276,6 +277,9 @@ serve(async (req) => {
           status,
           failure_reason: failureReason,
         });
+
+        // Avoid hitting WhatsApp API rate limits
+        await sleep(1000);
       }
 
       results.push({
