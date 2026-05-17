@@ -179,3 +179,25 @@ textarea {
     overscroll-behavior-y: none; /* prevent pull-to-refresh in PWA mode */
   }
 }
+
+/* 9 — Desktop overrides: undo mobile-only rules on md+ screens */
+@media (min-width: 768px) {
+  button:not(.no-min-tap),
+  [role="button"]:not(.no-min-tap),
+  a:not(.no-min-tap) {
+    min-height: unset;
+    min-width: unset;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: inherit;
+  }
+
+  header,
+  nav {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
