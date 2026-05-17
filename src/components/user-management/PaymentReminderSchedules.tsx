@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Bell, Plus, Edit, Trash2 } from 'lucide-react';
 
@@ -18,6 +19,7 @@ interface PaymentReminderSchedule {
   days_overdue: number;
   send_time_ist: string;
   min_outstanding_amount: number;
+  start_date: string | null;
   is_enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -34,28 +36,54 @@ interface PaymentReminderLog {
   triggered_at: string;
 }
 
-const DEFAULT_FORM = { name: '', days_overdue: 7, send_time_ist: '10:00', min_outstanding_amount: 0 };
+// 15-minute interval time slots for the dropdown (00:00 → 23:45)
+const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4);
+  const m = (i % 4) * 15;
+  const hh = String(h).padStart(2, '0');
+  const mm = String(m).padStart(2, '0');
+  const label = new Date(2000, 0, 1, h, m).toLocaleString('en-IN', {
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+  return { value: `${hh}:${mm}`, label };
+});
 
-/** Returns the next UTC Date at which send_time_ist (HH:MM IST) will fire. */
-function getNextRunDate(sendTimeIST: string): Date {
+const DEFAULT_FORM = {
+  name: '',
+  days_overdue: 7,
+  send_time_ist: '10:00',
+  min_outstanding_amount: 0,
+  start_date: '',
+};
+
+/** Returns the next Date (UTC) at which send_time_ist (HH:MM IST) will fire, respecting start_date. */
+function getNextRunDate(sendTimeIST: string, startDate: string | null): Date {
   const [h, m] = sendTimeIST.split(':').map(Number);
   const istOffsetMs = (5 * 60 + 30) * 60 * 1000;
   const now = new Date();
   const nowIST = new Date(now.getTime() + istOffsetMs);
 
-  // Build today's fire time as a UTC Date representing that IST clock time
   const todayFireUTC = new Date(Date.UTC(
     nowIST.getUTCFullYear(),
     nowIST.getUTCMonth(),
     nowIST.getUTCDate(),
-    h - 5,        // subtract IST offset hours
-    m - 30,       // subtract IST offset minutes (JS Date handles underflow)
+    h - 5,
+    m - 30,
     0,
   ));
 
-  return todayFireUTC > now
+  const nextOccurrence = todayFireUTC > now
     ? todayFireUTC
     : new Date(todayFireUTC.getTime() + 24 * 60 * 60 * 1000);
+
+  if (startDate) {
+    // start_date is YYYY-MM-DD in IST — build its UTC equivalent at send_time_ist
+    const [sy, smo, sd] = startDate.split('-').map(Number);
+    const startFireUTC = new Date(Date.UTC(sy, smo - 1, sd, h - 5, m - 30, 0));
+    if (startFireUTC > nextOccurrence) return startFireUTC;
+  }
+
+  return nextOccurrence;
 }
 
 function formatDateTime(date: Date): string {
@@ -83,7 +111,6 @@ export const PaymentReminderSchedules: React.FC = () => {
     },
   });
 
-  // Fetch most recent triggered_at per schedule_id for "Last Run" column
   const { data: lastRunMap } = useQuery({
     queryKey: ['payment-reminder-last-runs'],
     queryFn: async () => {
@@ -117,16 +144,20 @@ export const PaymentReminderSchedules: React.FC = () => {
 
   const saveMutation = useMutation({
     mutationFn: async (values: typeof DEFAULT_FORM) => {
+      const payload = {
+        ...values,
+        start_date: values.start_date || null,
+      };
       if (editingSchedule) {
         const { error } = await supabase
           .from('payment_reminder_schedules')
-          .update(values)
+          .update(payload)
           .eq('id', editingSchedule.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('payment_reminder_schedules')
-          .insert(values);
+          .insert(payload);
         if (error) throw error;
       }
     },
@@ -176,7 +207,13 @@ export const PaymentReminderSchedules: React.FC = () => {
 
   const openEdit = (schedule: PaymentReminderSchedule) => {
     setEditingSchedule(schedule);
-    setForm({ name: schedule.name, days_overdue: schedule.days_overdue, send_time_ist: schedule.send_time_ist, min_outstanding_amount: schedule.min_outstanding_amount ?? 0 });
+    setForm({
+      name: schedule.name,
+      days_overdue: schedule.days_overdue,
+      send_time_ist: schedule.send_time_ist,
+      min_outstanding_amount: schedule.min_outstanding_amount ?? 0,
+      start_date: schedule.start_date ?? '',
+    });
     setIsDialogOpen(true);
   };
 
@@ -193,10 +230,6 @@ export const PaymentReminderSchedules: React.FC = () => {
     }
     if (!form.days_overdue || form.days_overdue < 1) {
       toast({ title: 'Validation', description: 'Days overdue must be at least 1', variant: 'destructive' });
-      return;
-    }
-    if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(form.send_time_ist)) {
-      toast({ title: 'Validation', description: 'Time must be in HH:MM format (e.g. 10:00)', variant: 'destructive' });
       return;
     }
     saveMutation.mutate(form);
@@ -223,7 +256,6 @@ export const PaymentReminderSchedules: React.FC = () => {
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {/* Schedules table */}
         {isLoading ? (
           <div className="text-center py-4 text-gray-500">Loading schedules...</div>
         ) : (
@@ -233,6 +265,7 @@ export const PaymentReminderSchedules: React.FC = () => {
                 <TableHead>Name</TableHead>
                 <TableHead className="text-center">Days Overdue</TableHead>
                 <TableHead className="text-center">Min. Outstanding</TableHead>
+                <TableHead className="text-center">Start Date</TableHead>
                 <TableHead className="text-center">Send Time (IST)</TableHead>
                 <TableHead className="text-center">Last Run</TableHead>
                 <TableHead className="text-center">Next Run</TableHead>
@@ -243,14 +276,16 @@ export const PaymentReminderSchedules: React.FC = () => {
             <TableBody>
               {(schedules ?? []).length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-gray-500 py-6">
+                  <TableCell colSpan={9} className="text-center text-gray-500 py-6">
                     No schedules configured. Add one to get started.
                   </TableCell>
                 </TableRow>
               ) : (
                 (schedules ?? []).map((schedule) => {
                   const lastRun = lastRunMap?.get(schedule.id);
-                  const nextRun = schedule.is_enabled ? getNextRunDate(schedule.send_time_ist) : null;
+                  const nextRun = schedule.is_enabled
+                    ? getNextRunDate(schedule.send_time_ist, schedule.start_date)
+                    : null;
                   return (
                     <TableRow key={schedule.id}>
                       <TableCell className="font-medium">{schedule.name}</TableCell>
@@ -260,7 +295,14 @@ export const PaymentReminderSchedules: React.FC = () => {
                           ? `₹${schedule.min_outstanding_amount.toLocaleString('en-IN')}`
                           : <span className="text-gray-400">Any</span>}
                       </TableCell>
-                      <TableCell className="text-center">{schedule.send_time_ist}</TableCell>
+                      <TableCell className="text-center text-sm">
+                        {schedule.start_date
+                          ? new Date(schedule.start_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : <span className="text-gray-400">Immediately</span>}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {TIME_SLOTS.find((s) => s.value === schedule.send_time_ist)?.label ?? schedule.send_time_ist}
+                      </TableCell>
                       <TableCell className="text-center text-sm text-gray-500">
                         {lastRun ? formatDateTime(new Date(lastRun)) : '—'}
                       </TableCell>
@@ -405,13 +447,34 @@ export const PaymentReminderSchedules: React.FC = () => {
               </p>
             </div>
             <div className="space-y-2">
-              <Label>Send Time IST (24h format)</Label>
+              <Label>Start Date</Label>
               <Input
-                value={form.send_time_ist}
-                onChange={(e) => setForm((f) => ({ ...f, send_time_ist: e.target.value }))}
-                placeholder="10:00"
+                type="date"
+                value={form.start_date}
+                onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
               />
-              <p className="text-xs text-gray-500">Reminders will fire within the 15-minute window containing this time</p>
+              <p className="text-xs text-gray-500">
+                Schedule will only fire on or after this date. Leave blank to start immediately.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Send Time (IST)</Label>
+              <Select
+                value={form.send_time_ist}
+                onValueChange={(val) => setForm((f) => ({ ...f, send_time_ist: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select time" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {TIME_SLOTS.map((slot) => (
+                    <SelectItem key={slot.value} value={slot.value}>
+                      {slot.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">Reminders fire within the 15-minute window containing this time</p>
             </div>
           </div>
           <DialogFooter>

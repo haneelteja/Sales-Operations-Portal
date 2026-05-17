@@ -94,7 +94,11 @@ serve(async (req) => {
     if (schedulesError) throw new Error(`Failed to fetch schedules: ${schedulesError.message}`);
 
     const currentIST = getCurrentISTTime();
-    const matchingSchedules = (schedules || []).filter((s) => isTimeInCurrentWindow(s.send_time_ist));
+    const todayIST = new Date(new Date().getTime() + (5 * 60 + 30) * 60 * 1000).toISOString().slice(0, 10);
+    const matchingSchedules = (schedules || []).filter((s) =>
+      isTimeInCurrentWindow(s.send_time_ist) &&
+      (!s.start_date || s.start_date <= todayIST)
+    );
 
     if (matchingSchedules.length === 0) {
       return new Response(
