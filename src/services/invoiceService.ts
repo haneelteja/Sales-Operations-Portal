@@ -270,7 +270,7 @@ export function prepareInvoiceData(
   const dueDate = calculateDueDate(invoiceDate);
 
   const safeAmount = transaction.amount ?? 0;
-  const safeTotalAmount = transaction.total_amount ?? safeAmount;
+  const safeTotalAmount = Math.round((transaction.total_amount ?? safeAmount) * 100) / 100;
   const safePricePerCase = customer.price_per_case ?? 0;
   const amountInWords = convertNumberToWords(safeTotalAmount);
 
@@ -343,7 +343,7 @@ export function prepareMultiInvoiceData(
     };
   });
 
-  const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+  const totalAmount = Math.round(items.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
 
   return {
     invoiceNumber: '',

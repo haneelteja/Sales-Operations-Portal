@@ -68,6 +68,11 @@ const ApplicationConfigurationTab: React.FC = () => {
     queryFn: getBackupConfig,
   });
 
+  const backupEnabledConfig = useMemo(
+    () => configurations?.find((c) => c.config_key === 'backup_enabled') ?? null,
+    [configurations]
+  );
+
   // Update configuration mutation
   const updateMutation = useMutation({
     mutationFn: ({ id, config_value }: { id: string; config_value: string }) =>
@@ -546,10 +551,22 @@ const ApplicationConfigurationTab: React.FC = () => {
 
             {/* Backup Info */}
             {backupConfig && (
-              <div className="text-sm text-gray-600 space-y-1">
+              <div className="text-sm text-gray-600 space-y-2">
                 <p><strong>Backup Folder:</strong> {backupConfig.backup_folder_path}</p>
                 <p><strong>Notification Email:</strong> {backupConfig.backup_notification_email}</p>
-                <p><strong>Status:</strong> {backupConfig.backup_enabled ? 'Enabled' : 'Disabled'}</p>
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold text-gray-700">Automatic Backup:</span>
+                  {backupEnabledConfig ? (
+                    <AutoInvoiceToggle
+                      config={backupEnabledConfig}
+                      value={backupEnabledConfig.config_value === 'true'}
+                      onChange={(newValue) => handleToggleChange(backupEnabledConfig, newValue)}
+                      isLoading={updateMutation.isPending}
+                    />
+                  ) : (
+                    <span>{backupConfig.backup_enabled ? 'Enabled' : 'Disabled'}</span>
+                  )}
+                </div>
               </div>
             )}
           </div>

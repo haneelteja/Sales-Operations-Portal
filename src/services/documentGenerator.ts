@@ -394,7 +394,7 @@ function formatCurrency(amount: number | null | undefined): string {
     return '₹0.00';
   }
   return `₹${safeAmount.toLocaleString('en-IN', {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })}`;
 }
