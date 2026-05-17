@@ -17,6 +17,7 @@ interface PaymentReminderSchedule {
   name: string;
   days_overdue: number;
   send_time_ist: string;
+  min_outstanding_amount: number;
   is_enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -33,7 +34,7 @@ interface PaymentReminderLog {
   triggered_at: string;
 }
 
-const DEFAULT_FORM = { name: '', days_overdue: 7, send_time_ist: '10:00' };
+const DEFAULT_FORM = { name: '', days_overdue: 7, send_time_ist: '10:00', min_outstanding_amount: 0 };
 
 /** Returns the next UTC Date at which send_time_ist (HH:MM IST) will fire. */
 function getNextRunDate(sendTimeIST: string): Date {
@@ -175,7 +176,7 @@ export const PaymentReminderSchedules: React.FC = () => {
 
   const openEdit = (schedule: PaymentReminderSchedule) => {
     setEditingSchedule(schedule);
-    setForm({ name: schedule.name, days_overdue: schedule.days_overdue, send_time_ist: schedule.send_time_ist });
+    setForm({ name: schedule.name, days_overdue: schedule.days_overdue, send_time_ist: schedule.send_time_ist, min_outstanding_amount: schedule.min_outstanding_amount ?? 0 });
     setIsDialogOpen(true);
   };
 
@@ -231,6 +232,7 @@ export const PaymentReminderSchedules: React.FC = () => {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead className="text-center">Days Overdue</TableHead>
+                <TableHead className="text-center">Min. Outstanding</TableHead>
                 <TableHead className="text-center">Send Time (IST)</TableHead>
                 <TableHead className="text-center">Last Run</TableHead>
                 <TableHead className="text-center">Next Run</TableHead>
@@ -241,7 +243,7 @@ export const PaymentReminderSchedules: React.FC = () => {
             <TableBody>
               {(schedules ?? []).length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-gray-500 py-6">
+                  <TableCell colSpan={8} className="text-center text-gray-500 py-6">
                     No schedules configured. Add one to get started.
                   </TableCell>
                 </TableRow>
@@ -253,6 +255,11 @@ export const PaymentReminderSchedules: React.FC = () => {
                     <TableRow key={schedule.id}>
                       <TableCell className="font-medium">{schedule.name}</TableCell>
                       <TableCell className="text-center">{schedule.days_overdue} days</TableCell>
+                      <TableCell className="text-center">
+                        {schedule.min_outstanding_amount > 0
+                          ? `₹${schedule.min_outstanding_amount.toLocaleString('en-IN')}`
+                          : <span className="text-gray-400">Any</span>}
+                      </TableCell>
                       <TableCell className="text-center">{schedule.send_time_ist}</TableCell>
                       <TableCell className="text-center text-sm text-gray-500">
                         {lastRun ? formatDateTime(new Date(lastRun)) : '—'}
@@ -381,6 +388,20 @@ export const PaymentReminderSchedules: React.FC = () => {
               />
               <p className="text-xs text-gray-500">
                 Customers whose oldest outstanding sale is at least this many days old will receive a reminder
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Minimum Outstanding Amount (₹)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.min_outstanding_amount}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, min_outstanding_amount: parseFloat(e.target.value) || 0 }))
+                }
+              />
+              <p className="text-xs text-gray-500">
+                Only remind customers whose outstanding balance is at least this amount. Set to 0 to remind all.
               </p>
             </div>
             <div className="space-y-2">

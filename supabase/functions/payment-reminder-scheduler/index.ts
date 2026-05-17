@@ -146,10 +146,13 @@ serve(async (req) => {
     for (const schedule of matchingSchedules) {
       const daysOverdueMs = schedule.days_overdue * 24 * 60 * 60 * 1000;
 
+      const minOutstanding = schedule.min_outstanding_amount ?? 0;
+
       // Find customers eligible for this schedule
       const eligibleIds = Array.from(customerData.entries())
         .filter(([customerId, data]) => {
           if (data.outstanding <= 0) return false;
+          if (data.outstanding < minOutstanding) return false;
           if (!data.oldestSaleDate) return false;
           if (!customerMap.has(customerId)) return false;
           const oldestDate = new Date(data.oldestSaleDate);
