@@ -1,12 +1,14 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, TrendingUp, Download, Search, Loader2 } from 'lucide-react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ExcelJS from 'exceljs';
 
@@ -14,6 +16,7 @@ import ExcelJS from 'exceljs';
 
 interface RawRow {
   key: string;
+  customerId: string;
   dealerName: string;
   branch: string;
   outstanding: number;
@@ -27,9 +30,40 @@ interface FetchResult {
   collectionsThisMonth: number;
 }
 
-type SortKey = 'outstanding-desc' | 'outstanding-asc' | 'name' | 'last-payment' | 'followup';
+interface FollowupNote {
+  id: string;
+  note: string;
+  followup_date: string | null;
+  created_at: string;
+}
 
+type SortKey = 'outstanding-desc' | 'outstanding-asc' | 'name' | 'last-payment' | 'followup';
 type LocalEdit = { comments: string; nextFollowupDate: string };
+
+// ── Helper Functions ──────────────────────────────────────────────────────────
+
+async function fetchFollowupNotes(customerId: string): Promise<FollowupNote[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('client_followup_notes')
+    .select('id, note, followup_date, created_at')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as FollowupNote[];
+}
+
+async function insertFollowupNote(
+  customerId: string,
+  note: string,
+  followupDate: string | null
+) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('client_followup_notes')
+    .insert({ customer_id: customerId, note, followup_date: followupDate || null });
+  if (error) throw error;
+}
 
 // ── Data Fetching ─────────────────────────────────────────────────────────────
 
@@ -79,6 +113,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
 
   // Aggregate sales and payments per dealer+branch
   const groups = new Map<string, {
+    customerId: string;
     dealerName: string;
     branch: string;
     sales: number;
@@ -97,6 +132,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     const key = `${customer.dealerName}|||${customer.branch}`;
     if (!groups.has(key)) {
       groups.set(key, {
+        customerId: tx.customer_id,
         dealerName: customer.dealerName,
         branch: customer.branch,
         sales: 0,
@@ -128,6 +164,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     const followup = followupMap.get(key) ?? { comments: '', nextFollowupDate: '' };
     rows.push({
       key,
+      customerId: g.customerId,
       dealerName: g.dealerName,
       branch: g.branch,
       outstanding,
@@ -140,6 +177,205 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
   return { rows, collectionsThisMonth };
 }
 
+// ── FollowupNotesDrawer ───────────────────────────────────────────────────────
+
+interface DrawerProps {
+  open: boolean;
+  onClose: () => void;
+  customerId: string;
+  dealerName: string;
+  branch: string;
+  outstanding: number;
+  currentFollowupDate: string;
+  onNoteSaved: (followupDate: string | null) => void;
+}
+
+function FollowupNotesDrawer({
+  open,
+  onClose,
+  customerId,
+  dealerName,
+  branch,
+  outstanding,
+  currentFollowupDate,
+  onNoteSaved,
+}: DrawerProps) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [note, setNote] = useState('');
+  const [followupDate, setFollowupDate] = useState(currentFollowupDate);
+  const [saving, setSaving] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setFollowupDate(currentFollowupDate);
+  }, [currentFollowupDate, open]);
+
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => textareaRef.current?.focus(), 100);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
+  const { data: notes, isLoading } = useQuery({
+    queryKey: ['followup-notes', customerId],
+    queryFn: () => fetchFollowupNotes(customerId),
+    enabled: open && !!customerId,
+  });
+
+  const handleSave = async () => {
+    const trimmed = note.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    try {
+      // Log to notes history
+      await insertFollowupNote(customerId, trimmed, followupDate || null);
+
+      // Also upsert latest state into client_followups
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('client_followups')
+        .upsert(
+          {
+            dealer_name: dealerName,
+            branch,
+            comments: trimmed,
+            ...(followupDate ? { next_followup_date: followupDate } : {}),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'dealer_name,branch' }
+        );
+
+      queryClient.invalidateQueries({ queryKey: ['followup-notes', customerId] });
+      queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });
+      onNoteSaved(followupDate || null);
+      setNote('');
+      toast({ title: 'Note saved', description: 'Follow-up note logged successfully.' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getFollowupStatusBadge = (date: string | null) => {
+    if (!date) return null;
+    const d = new Date(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
+    const diff = Math.ceil((d.getTime() - today.getTime()) / 86400000);
+    if (diff < 0) return <Badge variant="destructive" className="text-xs">Overdue</Badge>;
+    if (diff === 0) return <Badge className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-100">Today</Badge>;
+    return <Badge className="text-xs bg-violet-100 text-violet-800 hover:bg-violet-100">{diff}d away</Badge>;
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={o => !o && onClose()}>
+      <SheetContent className="w-full sm:max-w-lg flex flex-col">
+        <SheetHeader className="pb-4 border-b">
+          <SheetTitle className="flex flex-col gap-1">
+            <span className="font-semibold text-base">{dealerName}</span>
+            {branch && <span className="text-sm font-normal text-muted-foreground">{branch}</span>}
+            <span className="text-sm font-bold text-red-600">
+              ₹{outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })} outstanding
+            </span>
+          </SheetTitle>
+        </SheetHeader>
+
+        {/* Add note form */}
+        <div className="space-y-3 py-4 border-b">
+          <Textarea
+            ref={textareaRef}
+            rows={3}
+            placeholder="Add a follow-up note..."
+            value={note}
+            onChange={e => setNote(e.target.value)}
+          />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Clock className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                type="date"
+                className="pl-8 text-sm"
+                value={followupDate}
+                onChange={e => setFollowupDate(e.target.value)}
+                title="Follow-up date"
+                aria-label="Follow-up date"
+              />
+            </div>
+            {followupDate && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={() => setFollowupDate('')}
+                aria-label="Clear follow-up date"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+            <Button
+              size="sm"
+              className="shrink-0"
+              disabled={!note.trim() || saving}
+              onClick={handleSave}
+            >
+              {saving
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                : <Plus className="h-3.5 w-3.5 mr-1" />}
+              Save
+            </Button>
+          </div>
+        </div>
+
+        {/* Notes log */}
+        <div className="flex-1 overflow-y-auto space-y-4 py-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-20">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : !notes?.length ? (
+            <div className="text-center py-12 text-muted-foreground text-sm">
+              <StickyNote className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              No notes yet. Add the first one above.
+            </div>
+          ) : (
+            notes.map((n, i) => (
+              <div key={n.id} className="relative pl-6">
+                {i < notes.length - 1 && (
+                  <div className="absolute left-[7px] top-5 bottom-0 w-px bg-border" />
+                )}
+                <div className="absolute left-0 top-1.5 h-3.5 w-3.5 rounded-full border-2 border-primary bg-background" />
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-2 flex-wrap">
+                  <span>
+                    {new Date(n.created_at).toLocaleString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  {getFollowupStatusBadge(n.followup_date)}
+                </div>
+                <p className="text-sm">{n.note}</p>
+                {n.followup_date && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Follow-up: {new Date(n.followup_date).toLocaleDateString('en-IN')}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ReceivablesTrackingView() {
@@ -148,6 +384,13 @@ export default function ReceivablesTrackingView() {
   const [sortKey, setSortKey] = useState<SortKey>('outstanding-desc');
   const [localEdits, setLocalEdits] = useState<Record<string, LocalEdit>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [activeNotes, setActiveNotes] = useState<{
+    customerId: string;
+    dealerName: string;
+    branch: string;
+    outstanding: number;
+    key: string;
+  } | null>(null);
   const initialized = useRef(false);
 
   const { data, isLoading } = useQuery<FetchResult>({
@@ -217,6 +460,7 @@ export default function ReceivablesTrackingView() {
     dealerName: string,
     branch: string,
     key: string,
+    customerId: string,
     updates: { comments?: string; nextFollowupDate?: string }
   ) => {
     setSaving(prev => ({ ...prev, [key]: true }));
@@ -233,8 +477,24 @@ export default function ReceivablesTrackingView() {
       const { error } = await (supabase as any)
         .from('client_followups')
         .upsert(payload, { onConflict: 'dealer_name,branch' });
-
       if (error) throw error;
+
+      // Also log to client_followup_notes for history
+      if (customerId) {
+        let noteText = '';
+        if (updates.comments !== undefined && updates.comments.trim()) {
+          noteText = updates.comments.trim();
+        } else if (updates.nextFollowupDate !== undefined) {
+          noteText = 'Follow-up date updated';
+        }
+        if (noteText) {
+          await insertFollowupNote(
+            customerId,
+            noteText,
+            updates.nextFollowupDate ?? null
+          );
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       toast({ title: 'Error', description: `Failed to save: ${msg}`, variant: 'destructive' });
@@ -340,6 +600,8 @@ export default function ReceivablesTrackingView() {
     );
   }
 
+  const activeRow = activeNotes ? displayRows.find(r => r.key === activeNotes.key) : null;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -437,6 +699,7 @@ export default function ReceivablesTrackingView() {
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Last Payment</th>
                 <th className="px-4 py-3 font-semibold min-w-[220px]">Comments</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Next Follow-up</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Notes</th>
               </tr>
             </thead>
             <tbody>
@@ -488,7 +751,7 @@ export default function ReceivablesTrackingView() {
                           }))
                         }
                         onBlur={e =>
-                          saveFollowup(row.dealerName, row.branch, row.key, {
+                          saveFollowup(row.dealerName, row.branch, row.key, row.customerId, {
                             comments: e.target.value,
                           })
                         }
@@ -504,6 +767,8 @@ export default function ReceivablesTrackingView() {
                     <td className="px-4 py-3 align-top">
                       <input
                         type="date"
+                        title="Next follow-up date"
+                        aria-label="Next follow-up date"
                         className="text-sm bg-transparent border border-transparent rounded px-2 py-1.5 focus:border-input focus:bg-background focus:outline-none transition-colors w-full"
                         min={(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0]; })()}
                         value={followupVal}
@@ -513,9 +778,30 @@ export default function ReceivablesTrackingView() {
                             ...prev,
                             [row.key]: { ...prev[row.key], nextFollowupDate: val },
                           }));
-                          saveFollowup(row.dealerName, row.branch, row.key, { nextFollowupDate: val });
+                          saveFollowup(row.dealerName, row.branch, row.key, row.customerId, { nextFollowupDate: val });
                         }}
                       />
+                    </td>
+
+                    {/* Notes */}
+                    <td className="px-4 py-3 align-top">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setActiveNotes({
+                            customerId: row.customerId,
+                            dealerName: row.dealerName,
+                            branch: row.branch,
+                            outstanding: row.outstanding,
+                            key: row.key,
+                          })
+                        }
+                      >
+                        <StickyNote className="h-4 w-4 mr-1" />
+                        Log
+                      </Button>
                     </td>
                   </tr>
                 );
@@ -528,6 +814,30 @@ export default function ReceivablesTrackingView() {
       <p className="text-xs text-muted-foreground text-right">
         {displayRows.length} client{displayRows.length !== 1 ? 's' : ''} with outstanding balance
       </p>
+
+      {/* Follow-up Notes Drawer */}
+      {activeNotes && (
+        <FollowupNotesDrawer
+          open={!!activeNotes}
+          onClose={() => setActiveNotes(null)}
+          customerId={activeNotes.customerId}
+          dealerName={activeNotes.dealerName}
+          branch={activeNotes.branch}
+          outstanding={activeNotes.outstanding}
+          currentFollowupDate={activeRow?.nextFollowupDate ?? ''}
+          onNoteSaved={(followupDate) => {
+            if (followupDate !== null) {
+              setLocalEdits(prev => ({
+                ...prev,
+                [activeNotes.key]: {
+                  ...prev[activeNotes.key],
+                  nextFollowupDate: followupDate,
+                },
+              }));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
