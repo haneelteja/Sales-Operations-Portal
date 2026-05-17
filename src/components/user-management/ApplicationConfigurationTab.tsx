@@ -32,6 +32,7 @@ import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
 import { EditWhatsAppApiKeyDialog } from './EditWhatsAppApiKeyDialog';
 import { triggerManualBackup, getBackupConfig, type BackupConfig } from '@/services/backupService';
+import { PaymentReminderSchedules } from './PaymentReminderSchedules';
 import { Database, Play } from 'lucide-react';
 
 const BACKUP_TABLE_KEYS = ['backup_folder_path', 'backup_schedule_time_ist'];
@@ -639,6 +640,9 @@ const ApplicationConfigurationTab: React.FC = () => {
         open={isLabelVendorsDialogOpen}
         onOpenChange={setIsLabelVendorsDialogOpen}
       />
+
+      {/* Payment Reminder Schedules */}
+      <PaymentReminderSchedules />
 
       {/* WhatsApp API Key Dialog */}
       <EditWhatsAppApiKeyDialog
