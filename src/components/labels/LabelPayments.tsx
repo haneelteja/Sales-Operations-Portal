@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download, Search, Filter } from "lucide-react";
@@ -477,19 +477,12 @@ const LabelPayments = () => {
 
           <div className="space-y-2">
             <Label htmlFor="vendor">Vendor *</Label>
-            <Select
+            <SearchableSelect
+              options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
               value={form.vendor_id}
               onValueChange={(value) => setForm({...form, vendor_id: value})}
-            >
-              <SelectTrigger id="vendor">
-                <SelectValue placeholder="Select a vendor" />
-              </SelectTrigger>
-              <SelectContent>
-                {(labelVendors || []).map((vendor) => (
-                  <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Select a vendor"
+            />
           </div>
 
           <div className="space-y-2">
@@ -507,19 +500,16 @@ const LabelPayments = () => {
 
           <div className="space-y-2">
             <Label htmlFor="payment-method">Payment Method *</Label>
-            <Select 
-              value={form.payment_method} 
+            <SearchableSelect
+              options={[
+                { value: "Cash", label: "Cash" },
+                { value: "Bank Transfer", label: "Bank Transfer" },
+                { value: "UPI", label: "UPI" },
+              ]}
+              value={form.payment_method}
               onValueChange={(value) => setForm({...form, payment_method: value})}
-            >
-              <SelectTrigger id="payment-method">
-                <SelectValue placeholder="Select payment method" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Cash">Cash</SelectItem>
-                <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                <SelectItem value="UPI">UPI</SelectItem>
-              </SelectContent>
-            </Select>
+              placeholder="Select payment method"
+            />
           </div>
 
           <div className="space-y-2 md:col-span-2 lg:col-span-1">
@@ -775,19 +765,12 @@ const LabelPayments = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-vendor">Vendor *</Label>
-                  <Select
+                  <SearchableSelect
+                    options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
                     value={editForm.vendor_id}
                     onValueChange={(value) => setEditForm({...editForm, vendor_id: value})}
-                  >
-                    <SelectTrigger id="edit-vendor">
-                      <SelectValue placeholder="Select a vendor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(labelVendors || []).map((vendor) => (
-                        <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select a vendor"
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -805,19 +788,16 @@ const LabelPayments = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-payment-method">Payment Method *</Label>
-                  <Select 
-                    value={editForm.payment_method} 
+                  <SearchableSelect
+                    options={[
+                      { value: "Cash", label: "Cash" },
+                      { value: "Bank Transfer", label: "Bank Transfer" },
+                      { value: "UPI", label: "UPI" },
+                    ]}
+                    value={editForm.payment_method}
                     onValueChange={(value) => setEditForm({...editForm, payment_method: value})}
-                  >
-                    <SelectTrigger id="edit-payment-method">
-                      <SelectValue placeholder="Select payment method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="UPI">UPI</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select payment method"
+                  />
                 </div>
 
                 <div className="space-y-2 md:col-span-2">

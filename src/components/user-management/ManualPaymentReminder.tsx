@@ -8,13 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Send, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -208,37 +202,16 @@ export const ManualPaymentReminder: React.FC = () => {
         {/* Customer Selection */}
         <div className="space-y-2">
           <Label htmlFor="customer-select">Select Customer</Label>
-          <Select
+          <SearchableSelect
+            options={(receivables ?? []).map(r => ({
+              value: r.customer.id,
+              label: `${r.customer.dealer_name}${r.customer.area ? ` - ${r.customer.area}` : ''} (Outstanding: ₹${r.outstanding.toLocaleString('en-IN')})`
+            }))}
             value={selectedCustomerId}
             onValueChange={setSelectedCustomerId}
+            placeholder={receivablesLoading ? "Loading customers..." : "Choose a customer with outstanding balance"}
             disabled={customersLoading || receivablesLoading}
-          >
-            <SelectTrigger id="customer-select">
-              <SelectValue placeholder="Choose a customer with outstanding balance" />
-            </SelectTrigger>
-            <SelectContent>
-              {receivablesLoading ? (
-                <SelectItem value="loading" disabled>
-                  Loading customers...
-                </SelectItem>
-              ) : receivables && receivables.length > 0 ? (
-                receivables.map((receivable) => (
-                  <SelectItem key={receivable.customer.id} value={receivable.customer.id}>
-                    {receivable.customer.dealer_name}
-                    {receivable.customer.area && ` - ${receivable.customer.area}`}
-                    {' '}
-                    <span className="text-muted-foreground">
-                      (Outstanding: ₹{receivable.outstanding.toLocaleString('en-IN')})
-                    </span>
-                  </SelectItem>
-                ))
-              ) : (
-                <SelectItem value="none" disabled>
-                  No customers with outstanding balance
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
+          />
         </div>
 
         {/* Customer Details */}

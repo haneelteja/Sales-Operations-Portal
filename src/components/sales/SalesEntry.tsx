@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -1222,46 +1222,24 @@ const SalesEntry = () => {
                   
                   <div className="space-y-2">
                     <Label htmlFor="sale-customer">Client *</Label>
-                    <Select 
+                    <SearchableSelect
+                      options={uniqueCustomersForForm.map(n => ({ value: n, label: n }))}
                       value={saleForm.customer_id ? getCustomerName(findCustomerById(saleForm.customer_id)) : ""}
                       onValueChange={handleCustomerChange}
+                      placeholder={customersLoading ? "Loading clients..." : "Select client"}
                       disabled={customersLoading}
-                    >
-                      <SelectTrigger id="sale-customer">
-                        <SelectValue placeholder={customersLoading ? "Loading clients..." : "Select client"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {customersLoading ? (
-                          <SelectItem value="loading" disabled>Loading...</SelectItem>
-                        ) : (
-                          uniqueCustomersForForm.map((customerName) => (
-                            <SelectItem key={customerName} value={customerName}>
-                              {customerName}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="sale-area">Branch *</Label>
-                    <Select 
+                    <SearchableSelect
+                      options={availableAreas.map(a => ({ value: a, label: a }))}
                       value={saleForm.area ?? ""}
                       onValueChange={handleAreaChange}
+                      placeholder={saleForm.customer_id ? "Select branch" : "Select client first"}
                       disabled={!saleForm.customer_id}
-                    >
-                      <SelectTrigger id="sale-area">
-                        <SelectValue placeholder={saleForm.customer_id ? "Select branch" : "Select client first"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableAreas.map((area) => (
-                          <SelectItem key={area} value={area}>
-                            {area}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
                   </div>
                 </div>
 
@@ -1378,31 +1356,21 @@ const SalesEntry = () => {
                               <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                                 <div className="space-y-2">
                                   <Label htmlFor="item-sku">SKU *</Label>
-                                  <Select 
-                                    value={currentItem.sku ?? ""} 
+                                  <SearchableSelect
+                                    options={availableSkus
+                                      .filter((s) => !salesItems.some((item) => item.sku === s.sku))
+                                      .map((customer) => ({ value: customer.sku || "", label: customer.sku || "" }))}
+                                    value={currentItem.sku ?? ""}
                                     onValueChange={(sku) => handleCurrentItemSKUChange(sku, (nextSku) => {
                                       const customerPricing = findCustomerRecord({
                                         customerId: saleForm.customer_id,
                                         branch: saleForm.area,
                                         sku: nextSku,
                                       });
-
                                       return customerPricing?.price_per_case?.toString() || "";
                                     })}
-                                  >
-                                    <SelectTrigger id="item-sku">
-                                      <SelectValue placeholder="Select SKU" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {availableSkus
-                                        .filter((s) => !salesItems.some((item) => item.sku === s.sku))
-                                        .map((customer) => (
-                                          <SelectItem key={`${customer.id}-${customer.sku}`} value={customer.sku || ""}>
-                                            {customer.sku}
-                                          </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                  </Select>
+                                    placeholder="Select SKU"
+                                  />
                                 </div>
 
                                 <div className="space-y-2">
@@ -1589,44 +1557,26 @@ const SalesEntry = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="payment-customer">Client *</Label>
-                    <Select 
+                    <SearchableSelect
+                      options={uniqueCustomersForForm.map(n => ({ value: n, label: n }))}
                       value={paymentForm.customer_id ? getCustomerName(findCustomerById(paymentForm.customer_id)) : ""}
                       onValueChange={(customerName) => {
                         const selectedCustomer = findCustomerRecord({ customerName });
                         setPaymentForm({...paymentForm, customer_id: selectedCustomer?.id || "", area: ""});
                       }}
-                    >
-                      <SelectTrigger id="payment-customer">
-                        <SelectValue placeholder="Select client" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {uniqueCustomersForForm.map((customerName) => (
-                          <SelectItem key={customerName} value={customerName}>
-                            {customerName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      placeholder="Select client"
+                    />
                   </div>
                   
                   <div className="space-y-2">
                     <Label htmlFor="payment-area">Branch *</Label>
-                    <Select 
+                    <SearchableSelect
+                      options={(paymentForm.customer_id ? getBranchesForCustomer(paymentForm.customer_id) : []).map(a => ({ value: a, label: a }))}
                       value={paymentForm.area ?? ""}
                       onValueChange={(area) => setPaymentForm({...paymentForm, area})}
+                      placeholder={paymentForm.customer_id ? "Select branch" : "Select client first"}
                       disabled={!paymentForm.customer_id}
-                    >
-                      <SelectTrigger id="payment-area">
-                        <SelectValue placeholder={paymentForm.customer_id ? "Select branch" : "Select client first"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {paymentForm.customer_id && getBranchesForCustomer(paymentForm.customer_id).map((area) => (
-                          <SelectItem key={area} value={area}>
-                            {area}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
                   </div>
                   
                   <div className="space-y-2">

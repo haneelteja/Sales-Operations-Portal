@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 
 type PaymentEntryCardProps = {
   paymentForm: PaymentForm;
@@ -54,38 +54,23 @@ export function PaymentEntryCard({
 
             <div className="space-y-2">
               <Label htmlFor="payment-customer">Client *</Label>
-              <Select value={customerName} onValueChange={onCustomerChange}>
-                <SelectTrigger id="payment-customer">
-                  <SelectValue placeholder="Select client" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customerNames.map((name) => (
-                    <SelectItem key={name} value={name}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={customerNames.map(n => ({ value: n, label: n }))}
+                value={customerName}
+                onValueChange={onCustomerChange}
+                placeholder="Select client"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="payment-area">Branch *</Label>
-              <Select
+              <SearchableSelect
+                options={branches.map(b => ({ value: b, label: b }))}
                 value={paymentForm.area ?? ''}
                 onValueChange={onBranchChange}
+                placeholder={paymentForm.customer_id ? 'Select branch' : 'Select client first'}
                 disabled={!paymentForm.customer_id}
-              >
-                <SelectTrigger id="payment-area">
-                  <SelectValue placeholder={paymentForm.customer_id ? 'Select branch' : 'Select client first'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch} value={branch}>
-                      {branch}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </div>
           </div>
 

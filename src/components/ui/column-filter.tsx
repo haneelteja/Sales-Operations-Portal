@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MoreVertical, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { MoreVertical, X, ArrowUpDown, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,6 +47,11 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
   // Default onClearFilter to empty function if not provided
   const handleClearFilter = onClearFilter || (() => {});
   const [isOpen, setIsOpen] = useState(false);
+  const [optionSearch, setOptionSearch] = useState('');
+
+  const filteredOptions = options.filter(o =>
+    o.toLowerCase().includes(optionSearch.toLowerCase())
+  );
 
   const handleFilterChange = (value: string | string[]) => {
     onFilterChange(value);
@@ -111,40 +116,23 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
       );
     }
 
-    if (dataType === 'multiselect' && options.length > 0) {
-      const selectedValues = Array.isArray(currentFilterValue) ? currentFilterValue : [];
-      return (
-        <div className="space-y-2">
-          <div className="max-h-48 overflow-y-auto border rounded-md p-2">
-            {options.map((option) => (
-              <label key={option} className="flex items-center space-x-2 py-1 hover:bg-gray-50 rounded px-2">
-                <input
-                  type="checkbox"
-                  checked={selectedValues.includes(option)}
-                  onChange={(e) => handleMultiSelectChange(option, e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                <span className="text-sm">{option}</span>
-              </label>
-            ))}
-          </div>
-          {selectedValues.length > 0 && (
-            <div className="text-xs text-gray-500">
-              {selectedValues.length} selected
-            </div>
-          )}
+    const renderSearchableMultiselect = (selectedValues: string[]) => (
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-gray-400" />
+          <Input
+            type="text"
+            placeholder="Search options..."
+            value={optionSearch}
+            onChange={(e) => setOptionSearch(e.target.value)}
+            className="pl-7 h-8 text-sm"
+          />
         </div>
-      );
-    }
-
-    // Auto-enable multiselect when options are provided (unless explicitly text type)
-    if (options.length > 0 && dataType !== 'text') {
-      const selectedValues = Array.isArray(currentFilterValue) ? currentFilterValue : 
-                            (currentFilterValue ? [currentFilterValue] : []);
-      return (
-        <div className="space-y-2">
-          <div className="max-h-48 overflow-y-auto border rounded-md p-2">
-            {options.map((option) => (
+        <div className="max-h-40 overflow-y-auto border rounded-md p-1">
+          {filteredOptions.length === 0 ? (
+            <div className="py-2 px-2 text-sm text-gray-400">No options found</div>
+          ) : (
+            filteredOptions.map((option) => (
               <label key={option} className="flex items-center space-x-2 py-1 hover:bg-gray-50 rounded px-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -154,34 +142,68 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
                 />
                 <span className="text-sm">{option}</span>
               </label>
-            ))}
-          </div>
-          {selectedValues.length > 0 && (
-            <div className="text-xs text-gray-500">
-              {selectedValues.length} selected
-            </div>
+            ))
           )}
         </div>
-      );
+        {selectedValues.length > 0 && (
+          <div className="text-xs text-gray-500">{selectedValues.length} selected</div>
+        )}
+      </div>
+    );
+
+    if (dataType === 'multiselect' && options.length > 0) {
+      const selectedValues = Array.isArray(currentFilterValue) ? currentFilterValue : [];
+      return renderSearchableMultiselect(selectedValues);
     }
 
-    // Single select dropdown (only for explicit text type with options)
+    // Auto-enable multiselect when options are provided (unless explicitly text type)
+    if (options.length > 0 && dataType !== 'text') {
+      const selectedValues = Array.isArray(currentFilterValue) ? currentFilterValue :
+                            (currentFilterValue ? [currentFilterValue] : []);
+      return renderSearchableMultiselect(selectedValues);
+    }
+
+    // Single select with search (for explicit text type with options)
     if (options.length > 0 && dataType === 'text') {
+      const currentVal = Array.isArray(currentFilterValue) ? '' : (currentFilterValue || '');
       return (
         <div className="space-y-2">
-          <select
-            id={`${columnKey}-filter`}
-            value={Array.isArray(currentFilterValue) ? '' : (currentFilterValue || '')}
-            onChange={(e) => handleFilterChange(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-          >
-            <option value="">All {displayName}</option>
-            {options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="Search options..."
+              value={optionSearch}
+              onChange={(e) => setOptionSearch(e.target.value)}
+              className="pl-7 h-8 text-sm"
+            />
+          </div>
+          <div className="max-h-40 overflow-y-auto border rounded-md p-1">
+            <label className="flex items-center space-x-2 py-1 hover:bg-gray-50 rounded px-2 cursor-pointer">
+              <input
+                type="radio"
+                checked={currentVal === ''}
+                onChange={() => handleFilterChange('')}
+                className="border-gray-300"
+              />
+              <span className="text-sm text-gray-500">All {displayName}</span>
+            </label>
+            {filteredOptions.length === 0 ? (
+              <div className="py-2 px-2 text-sm text-gray-400">No options found</div>
+            ) : (
+              filteredOptions.map((option) => (
+                <label key={option} className="flex items-center space-x-2 py-1 hover:bg-gray-50 rounded px-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={currentVal === option}
+                    onChange={() => handleFilterChange(option)}
+                    className="border-gray-300"
+                  />
+                  <span className="text-sm">{option}</span>
+                </label>
+              ))
+            )}
+          </div>
         </div>
       );
     }
@@ -201,7 +223,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
   };
 
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+    <DropdownMenu open={isOpen} onOpenChange={(o) => { setIsOpen(o); if (!o) setOptionSearch(''); }}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"

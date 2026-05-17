@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -837,42 +837,26 @@ const FactoryPayables = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="production-client">Client *</Label>
-                  <Select
+                  <SearchableSelect
+                    options={uniqueClientNames.flatMap((name) => {
+                      const c = customers?.find(c => c.dealer_name === name);
+                      return c ? [{ value: c.id, label: name }] : [];
+                    })}
                     value={productionForm.customer_id || ""}
                     onValueChange={handleProductionClientChange}
-                  >
-                    <SelectTrigger id="production-client">
-                      <SelectValue placeholder="Select client" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[300px]">
-                      {uniqueClientNames.map((name) => {
-                        // Use the first record for this dealer_name as the representative ID
-                        const c = customers?.find(c => c.dealer_name === name);
-                        if (!c) return null;
-                        return (
-                          <SelectItem key={name} value={c.id}>{name}</SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select client"
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="production-branch">Branch *</Label>
-                  <Select
+                  <SearchableSelect
+                    options={productionBranches.map(b => ({ value: b, label: b }))}
                     value={productionForm.area || ""}
                     onValueChange={handleProductionBranchChange}
+                    placeholder={productionForm.customer_id ? "Select branch" : "Select client first"}
                     disabled={!productionForm.customer_id}
-                  >
-                    <SelectTrigger id="production-branch">
-                      <SelectValue placeholder={productionForm.customer_id ? "Select branch" : "Select client first"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {productionBranches.map((branch) => (
-                        <SelectItem key={branch} value={branch}>{branch}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
               </div>
 
@@ -880,19 +864,12 @@ const FactoryPayables = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="production-sku">SKU *</Label>
-                  <Select
+                  <SearchableSelect
+                    options={productionSKUs.map(sku => ({ value: sku, label: sku }))}
                     value={productionForm.sku || ""}
                     onValueChange={(value) => setProductionForm({...productionForm, sku: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select SKU" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {productionSKUs.map((sku) => (
-                        <SelectItem key={sku} value={sku}>{sku}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select SKU"
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -1235,21 +1212,12 @@ const FactoryPayables = () => {
                               <>
                                 <div className="space-y-2">
                                   <Label htmlFor="edit-sku">SKU</Label>
-                                  <Select 
-                                    value={editForm.sku || ""} 
+                                  <SearchableSelect
+                                    options={(availableSKUs ?? []).map(sku => ({ value: sku, label: sku }))}
+                                    value={editForm.sku || ""}
                                     onValueChange={(value) => setEditForm({...editForm, sku: value})}
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select SKU" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {availableSKUs?.map((sku) => (
-                                        <SelectItem key={sku} value={sku}>
-                                          {sku}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                    placeholder="Select SKU"
+                                  />
                                 </div>
                                 
                                 <div className="space-y-2">

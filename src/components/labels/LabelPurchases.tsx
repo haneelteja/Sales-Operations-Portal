@@ -6,7 +6,7 @@ import type { LabelPurchase, LabelPurchaseForm, MutationFunction } from "@/types
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -630,34 +630,23 @@ const LabelPurchases = () => {
 
           <div className="space-y-2">
             <Label htmlFor="sku">SKU</Label>
-            <Select value={form.sku} onValueChange={handleSkuChange} disabled={!form.client_id}>
-              <SelectTrigger>
-                <SelectValue placeholder={form.client_id ? "Select SKU" : "Select client first"} />
-              </SelectTrigger>
-              <SelectContent>
-                {addFormSkus.length > 0 ? (
-                  addFormSkus.map((sku) => (
-                    <SelectItem key={sku} value={sku}>{sku}</SelectItem>
-                  ))
-                ) : (
-                  <div className="px-2 py-1.5 text-sm text-muted-foreground">No SKU assigned to this client</div>
-                )}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={addFormSkus.map((sku) => ({ value: sku, label: sku }))}
+              value={form.sku}
+              onValueChange={handleSkuChange}
+              placeholder={form.client_id ? "Select SKU" : "Select client first"}
+              disabled={!form.client_id}
+            />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="vendor">Vendor *</Label>
-            <Select value={form.vendor_id} onValueChange={handleVendorChange}>
-              <SelectTrigger id="vendor">
-                <SelectValue placeholder="Select vendor" />
-              </SelectTrigger>
-              <SelectContent>
-                {(labelVendors || []).map((vendor) => (
-                  <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
+              value={form.vendor_id}
+              onValueChange={handleVendorChange}
+              placeholder="Select vendor"
+            />
           </div>
         </div>
 
@@ -865,33 +854,22 @@ const LabelPurchases = () => {
                                 </div>
                                 <div className="space-y-2">
                                   <Label>SKU</Label>
-                                  <Select value={editForm.sku} onValueChange={handleEditSkuChange} disabled={!editForm.client_id}>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder={editForm.client_id ? "Select SKU" : "Select client first"} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {editFormSkus.length > 0 ? (
-                                        editFormSkus.map((sku) => (
-                                          <SelectItem key={sku} value={sku}>{sku}</SelectItem>
-                                        ))
-                                      ) : (
-                                        <div className="px-2 py-1.5 text-sm text-muted-foreground">No SKU assigned to this client</div>
-                                      )}
-                                    </SelectContent>
-                                  </Select>
+                                  <SearchableSelect
+                                    options={editFormSkus.map((sku) => ({ value: sku, label: sku }))}
+                                    value={editForm.sku}
+                                    onValueChange={handleEditSkuChange}
+                                    placeholder={editForm.client_id ? "Select SKU" : "Select client first"}
+                                    disabled={!editForm.client_id}
+                                  />
                                 </div>
                                 <div className="space-y-2">
                                   <Label>Vendor *</Label>
-                                  <Select value={editForm.vendor_id} onValueChange={handleEditVendorChange}>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select vendor" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(labelVendors || []).map((vendor) => (
-                                        <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  <SearchableSelect
+                                    options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
+                                    value={editForm.vendor_id}
+                                    onValueChange={handleEditVendorChange}
+                                    placeholder="Select vendor"
+                                  />
                                 </div>
                               </div>
 

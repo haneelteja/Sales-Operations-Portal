@@ -27,13 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Loader2 } from "lucide-react";
 import { gstinSchema, indiaWhatsAppSchema } from "@/lib/validation/schemas";
@@ -552,30 +546,20 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
             {isExistingClient ? (
               <div className="space-y-2 sm:col-span-1">
                 <Label>Client *</Label>
-                <Select
-                  value={selectedExistingClient || "__none__"}
+                <SearchableSelect
+                  options={distinctClients.map(n => ({ value: n, label: n }))}
+                  value={selectedExistingClient || ''}
                   onValueChange={(v) => {
-                    setSelectedExistingClient(v === "__none__" ? "" : v);
-                    setIsExistingBranch(v !== "__none__" && v !== "");
+                    setSelectedExistingClient(v);
+                    setIsExistingBranch(v !== "");
                     setSelectedExistingBranch("");
                     setBranchInput("");
                     initialPricesBySkuRef.current = {};
                     setSkuRows(updateRowPricePerCase([getInitialRow()]));
                   }}
+                  placeholder={clientsLoading ? "Loading..." : "Select client"}
                   disabled={clientsLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={clientsLoading ? "Loading..." : "Select client"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Select client</SelectItem>
-                    {distinctClients.map((name) => (
-                      <SelectItem key={name} value={name}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
                 {fieldErrors.dealer_name && <p className="text-sm text-destructive">{fieldErrors.dealer_name}</p>}
               </div>
             ) : (
@@ -594,23 +578,13 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
             {isExistingClient && isExistingBranch ? (
               <div className="space-y-2">
                 <Label>Branch *</Label>
-                <Select
-                  value={selectedExistingBranch || "__none__"}
-                  onValueChange={(v) => setSelectedExistingBranch(v === "__none__" ? "" : v)}
+                <SearchableSelect
+                  options={branchesForClient.map(b => ({ value: b, label: b }))}
+                  value={selectedExistingBranch || ''}
+                  onValueChange={(v) => setSelectedExistingBranch(v)}
+                  placeholder={branchesLoading ? "Loading..." : "Select branch"}
                   disabled={!selectedExistingClient || branchesLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={branchesLoading ? "Loading..." : "Select branch"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Select branch</SelectItem>
-                    {branchesForClient.map((b) => (
-                      <SelectItem key={b} value={b}>
-                        {b}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
                 {fieldErrors.area && <p className="text-sm text-destructive">{fieldErrors.area}</p>}
               </div>
             ) : (
@@ -689,23 +663,17 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                     return (
                       <TableRow key={index}>
                         <TableCell>
-                          <Select
-                            value={row.sku || "__none__"}
-                            onValueChange={(v) => setRow(index, { sku: v === "__none__" ? "" : v })}
+                          <SearchableSelect
+                            options={availableOptions.map(opt => ({
+                              value: opt.sku,
+                              label: `${opt.sku} (${opt.bottles_per_case} bottles/case)`
+                            }))}
+                            value={row.sku || ''}
+                            onValueChange={(v) => setRow(index, { sku: v })}
+                            placeholder={skusLoading ? "Loading..." : "Select SKU"}
                             disabled={skusLoading}
-                          >
-                            <SelectTrigger className="h-9">
-                              <SelectValue placeholder={skusLoading ? "Loading..." : "Select SKU"} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">Select SKU</SelectItem>
-                              {availableOptions.map((opt) => (
-                                <SelectItem key={opt.sku} value={opt.sku}>
-                                  {opt.sku} ({opt.bottles_per_case} bottles/case)
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            className="h-9"
+                          />
                           {(fieldErrors[`sku_${index}`] || fieldErrors[`price_${index}`]) && (
                             <p className="text-xs text-destructive mt-1">
                               {fieldErrors[`sku_${index}`] || fieldErrors[`price_${index}`]}

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Download } from "lucide-react";
@@ -178,53 +178,23 @@ const Purchase = () => {
 
           <div className="space-y-2">
             <Label htmlFor="item">Item *</Label>
-            <Select
+            <SearchableSelect
+              options={purchaseItems.map((i) => ({ value: i, label: i }))}
               value={form.item}
               onValueChange={(v) => setForm({ ...form, item: v, sku: "" })}
-              required
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select item" />
-              </SelectTrigger>
-              <SelectContent>
-                {purchaseItems.map((i) => (
-                  <SelectItem key={i} value={i}>
-                    {i}
-                  </SelectItem>
-                ))}
-                {purchaseItems.length === 0 && (
-                  <SelectItem value="_none" disabled>
-                    Configure in Application Configuration
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
+              placeholder="Select item"
+            />
           </div>
 
           {form.item === "Preforms" && (
             <div className="space-y-2">
               <Label htmlFor="sku">SKU *</Label>
-              <Select
+              <SearchableSelect
+                options={availableSKUs.map((s) => ({ value: s, label: s }))}
                 value={form.sku}
                 onValueChange={(v) => setForm({ ...form, sku: v })}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select SKU" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableSKUs.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                  {availableSKUs.length === 0 && (
-                    <SelectItem value="_none" disabled>
-                      Add SKUs in Application Configuration
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
+                placeholder="Select SKU"
+              />
             </div>
           )}
 

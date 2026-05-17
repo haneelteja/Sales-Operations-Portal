@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { Download, ChevronRight, ChevronDown, Pencil, Trash2 } from 'lucide-react';
@@ -403,16 +403,12 @@ const FactoryPricingTab: React.FC = () => {
             </div>
             <div className="space-y-2">
               <Label>SKU *</Label>
-              <Select value={form.sku} onValueChange={handleSkuChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select SKU" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(skuConfigs || []).map(s => (
-                    <SelectItem key={s.sku} value={s.sku}>{s.sku}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={(skuConfigs || []).map(s => ({ value: s.sku, label: s.sku }))}
+                value={form.sku}
+                onValueChange={handleSkuChange}
+                placeholder="Select SKU"
+              />
             </div>
             <div className="space-y-2">
               <Label>Price per Bottle (₹) *</Label>

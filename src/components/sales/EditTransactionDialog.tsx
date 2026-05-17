@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Pencil } from "lucide-react";
 import type { Customer, SalesTransaction } from "@/types";
@@ -83,41 +83,23 @@ export const EditTransactionDialog = memo(({
             
             <div className="space-y-2">
               <Label htmlFor="edit-customer">Client</Label>
-              <Select 
-                value={customers?.find(c => c.id === editForm.customer_id)?.dealer_name ?? ""} 
+              <SearchableSelect
+                options={getUniqueCustomers.map((customerName) => ({ value: customerName, label: customerName }))}
+                value={customers?.find(c => c.id === editForm.customer_id)?.dealer_name ?? ""}
                 onValueChange={onCustomerChange}
-              >
-                <SelectTrigger id="edit-customer">
-                  <SelectValue placeholder="Select client" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getUniqueCustomers.map((customerName) => (
-                    <SelectItem key={customerName} value={customerName}>
-                      {customerName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select client"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="edit-area">Branch</Label>
-              <Select 
-                value={editForm.area ?? ""} 
+              <SearchableSelect
+                options={getAvailableAreasForEdit().map((area) => ({ value: area, label: area }))}
+                value={editForm.area ?? ""}
                 onValueChange={(value) => onFormChange({ area: value })}
+                placeholder={editForm.customer_id ? "Select branch" : "Select client first"}
                 disabled={!editForm.customer_id}
-              >
-                <SelectTrigger id="edit-area">
-                  <SelectValue placeholder={editForm.customer_id ? "Select branch" : "Select client first"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {getAvailableAreasForEdit().map((area) => (
-                    <SelectItem key={area} value={area}>
-                      {area}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </div>
           </div>
 

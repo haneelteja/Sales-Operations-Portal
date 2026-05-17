@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
@@ -574,34 +574,23 @@ const TransportExpenses = () => {
           
           <div className="space-y-2">
             <Label htmlFor="client">Client</Label>
-            <Select value={form.client_id || ""} onValueChange={(value) => setForm({ ...form, client_id: value, area: "" })}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select client" />
-              </SelectTrigger>
-              <SelectContent>
-                {getUniqueCustomers().map((customer) => (
-                  <SelectItem key={customer.id} value={customer.id}>
-                    {customer.dealer_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.dealer_name }))}
+              value={form.client_id || ""}
+              onValueChange={(value) => setForm({ ...form, client_id: value, area: "" })}
+              placeholder="Select client"
+            />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="area">Branch</Label>
-            <Select value={form.area || ""} onValueChange={(value) => setForm({ ...form, area: value })} disabled={!form.client_id}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select branch" />
-              </SelectTrigger>
-              <SelectContent>
-                {getAvailableAreas(form.client_id).map((area, index) => (
-                  <SelectItem key={index} value={area}>
-                    {area}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={getAvailableAreas(form.client_id).map((area) => ({ value: area, label: area }))}
+              value={form.area || ""}
+              onValueChange={(value) => setForm({ ...form, area: value })}
+              placeholder="Select branch"
+              disabled={!form.client_id}
+            />
           </div>
         </div>
 
@@ -609,21 +598,12 @@ const TransportExpenses = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="transport-vendor">Transport Vendor *</Label>
-            <Select value={form.transport_vendor || ""} onValueChange={(value) => setForm({ ...form, transport_vendor: value })} required>
-              <SelectTrigger>
-                <SelectValue placeholder="Select transport vendor" />
-              </SelectTrigger>
-              <SelectContent>
-                {transportVendors.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-                {transportVendors.length === 0 && (
-                  <SelectItem value="_none" disabled>Configure in Application Configuration</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={transportVendors.map((v) => ({ value: v, label: v }))}
+              value={form.transport_vendor || ""}
+              onValueChange={(value) => setForm({ ...form, transport_vendor: value })}
+              placeholder="Select transport vendor"
+            />
           </div>
 
           <div className="space-y-2">
@@ -639,22 +619,12 @@ const TransportExpenses = () => {
 
           <div className="space-y-2">
             <Label htmlFor="expense-group">Expense Group</Label>
-            <Select value={form.expense_group || ""} onValueChange={(value) => setForm({ ...form, expense_group: value })}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select expense group" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">None</SelectItem>
-                {uniqueGroups.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
-                  </SelectItem>
-                ))}
-                {uniqueGroups.length === 0 && (
-                  <SelectItem value="_config" disabled>Configure in Application Configuration</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={[{ value: "_none", label: "None" }, ...uniqueGroups.map((g) => ({ value: g, label: g }))]}
+              value={form.expense_group || ""}
+              onValueChange={(value) => setForm({ ...form, expense_group: value })}
+              placeholder="Select expense group"
+            />
           </div>
         </div>
 
@@ -931,30 +901,21 @@ const TransportExpenses = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-transport-vendor">Transport Vendor *</Label>
-                <Select value={editForm.transport_vendor || ""} onValueChange={(value) => setEditForm({ ...editForm, transport_vendor: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select transport vendor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {transportVendors.map((v) => (
-                      <SelectItem key={v} value={v}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={transportVendors.map((v) => ({ value: v, label: v }))}
+                  value={editForm.transport_vendor || ""}
+                  onValueChange={(value) => setEditForm({ ...editForm, transport_vendor: value })}
+                  placeholder="Select transport vendor"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-expense-group">Expense Group</Label>
-                <Select value={editForm.expense_group || "_none"} onValueChange={(value) => setEditForm({ ...editForm, expense_group: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select expense group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">None</SelectItem>
-                    {uniqueGroups.map((g) => (
-                      <SelectItem key={g} value={g}>{g}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={[{ value: "_none", label: "None" }, ...uniqueGroups.map((g) => ({ value: g, label: g }))]}
+                  value={editForm.expense_group || "_none"}
+                  onValueChange={(value) => setEditForm({ ...editForm, expense_group: value })}
+                  placeholder="Select expense group"
+                />
               </div>
             </div>
 
@@ -973,31 +934,22 @@ const TransportExpenses = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-client">Client</Label>
-                <Select value={editForm.client_id || ""} onValueChange={(value) => setEditForm({ ...editForm, client_id: value, area: "" })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getUniqueCustomers().map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.dealer_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.dealer_name }))}
+                  value={editForm.client_id || ""}
+                  onValueChange={(value) => setEditForm({ ...editForm, client_id: value, area: "" })}
+                  placeholder="Select client"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-area">Branch</Label>
-                <Select value={editForm.area || ""} onValueChange={(value) => setEditForm({ ...editForm, area: value })} disabled={!editForm.client_id}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getAvailableAreas(editForm.client_id).map((area, index) => (
-                      <SelectItem key={index} value={area}>{area}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={getAvailableAreas(editForm.client_id).map((area) => ({ value: area, label: area }))}
+                  value={editForm.area || ""}
+                  onValueChange={(value) => setEditForm({ ...editForm, area: value })}
+                  placeholder="Select branch"
+                  disabled={!editForm.client_id}
+                />
               </div>
             </div>
 

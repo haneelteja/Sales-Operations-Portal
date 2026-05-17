@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Send, Plus } from "lucide-react";
 import { getWhatsAppConfig, sendWhatsAppMessage, sendProductionOrderNotification } from "@/services/whatsappService";
@@ -1032,22 +1032,13 @@ const OrderManagement: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="order-area" className="text-xs">Branch *</Label>
-                <Select
+                <SearchableSelect
+                  options={getAvailableAreas(orderForm.client_id).map(area => ({ value: area, label: area }))}
                   value={orderForm.area || ""}
                   onValueChange={handleAreaChange}
+                  placeholder="Select branch"
                   disabled={!orderForm.client_id}
-                >
-                  <SelectTrigger id="order-area">
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px] [&>div]:overflow-y-auto [&>div]:overflow-x-hidden [&>div::-webkit-scrollbar]:w-2 [&>div::-webkit-scrollbar-track]:bg-gray-100 [&>div::-webkit-scrollbar-thumb]:bg-gray-400 [&>div::-webkit-scrollbar-thumb]:rounded-full">
-                    {getAvailableAreas(orderForm.client_id).map((area, index) => (
-                      <SelectItem key={index} value={area}>
-                        {area}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="order-delivery">Tentative Delivery Date *</Label>
@@ -1092,22 +1083,13 @@ const OrderManagement: React.FC = () => {
                     </span>
                   ) : (
                     <div className="min-w-[140px] max-w-[260px] flex-none">
-                      <Select
+                      <SearchableSelect
+                        options={getAvailableSKUsForRow(index).map(sku => ({ value: sku, label: sku }))}
                         value={row.sku || ""}
                         onValueChange={(value) => updateSkuRow(index, "sku", value)}
+                        placeholder="Select SKU"
                         disabled={!orderForm.client_id || !orderForm.area}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select SKU" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[300px]">
-                          {getAvailableSKUsForRow(index).map((sku, i) => (
-                            <SelectItem key={i} value={sku}>
-                              {sku}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </div>
                   )}
                   <div className="w-20">
