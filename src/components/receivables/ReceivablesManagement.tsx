@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Loader2, Search, TrendingUp, CreditCard, Users, AlertTriangle,
   ChevronDown, MapPin, X, IndianRupee, Package, Calendar,
@@ -267,22 +268,28 @@ interface FollowupNote {
   note: string;
   followup_date: string | null;
   created_at: string;
+  created_by: string | null;
 }
 
 async function fetchFollowupNotes(customerId: string): Promise<FollowupNote[]> {
   const { data, error } = await supabase
     .from('client_followup_notes')
-    .select('id, note, followup_date, created_at')
+    .select('id, note, followup_date, created_at, created_by')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as FollowupNote[];
 }
 
-async function saveFollowupNote(customerId: string, note: string, followupDate: string | null): Promise<void> {
+async function saveFollowupNote(
+  customerId: string,
+  note: string,
+  followupDate: string | null,
+  createdBy?: string
+): Promise<void> {
   const { error } = await supabase
     .from('client_followup_notes')
-    .insert({ customer_id: customerId, note, followup_date: followupDate || null });
+    .insert({ customer_id: customerId, note, followup_date: followupDate || null, created_by: createdBy || null });
   if (error) throw error;
 }
 
@@ -692,6 +699,8 @@ function LedgerDrawer({ c, open, onClose }: { c: CustomerRow; open: boolean; onC
 
 function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
+  const { profile, user } = useAuth();
+  const operatorName = profile?.username || profile?.email || user?.email || 'Unknown';
   const [note, setNote] = useState('');
   const [followupDate, setFollowupDate] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -704,7 +713,7 @@ function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boole
   });
 
   const mutation = useMutation({
-    mutationFn: () => saveFollowupNote(c.customer_id, note.trim(), followupDate || null),
+    mutationFn: () => saveFollowupNote(c.customer_id, note.trim(), followupDate || null, operatorName),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['followup-notes', c.customer_id] });
       setNote('');
@@ -846,6 +855,7 @@ function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boole
                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {new Date(n.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {n.created_by && <span className="font-medium text-foreground/70">· {n.created_by}</span>}
                         </span>
                         {n.followup_date && (
                           <span className={`text-[10px] font-medium flex items-center gap-1 px-2 py-0.5 rounded-full ${
@@ -885,12 +895,14 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, late
   onFollowupSaved: () => void;
 }) {
   const qc = useQueryClient();
+  const { profile, user } = useAuth();
+  const operatorName = profile?.username || profile?.email || user?.email || 'Unknown';
   const [editingFollowup, setEditingFollowup] = useState(false);
   const [draftDate, setDraftDate] = useState('');
   const [draftNote, setDraftNote] = useState('');
 
   const followupMutation = useMutation({
-    mutationFn: () => saveFollowupNote(c.customer_id, draftNote.trim() || 'Follow-up date updated', draftDate || null),
+    mutationFn: () => saveFollowupNote(c.customer_id, draftNote.trim() || 'Follow-up date updated', draftDate || null, operatorName),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['followup-notes', c.customer_id] });
       onFollowupSaved();

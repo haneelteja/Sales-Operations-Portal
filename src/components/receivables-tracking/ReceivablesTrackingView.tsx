@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ interface FollowupNote {
   note: string;
   followup_date: string | null;
   created_at: string;
+  created_by: string | null;
 }
 
 type SortKey = 'outstanding-desc' | 'outstanding-asc' | 'name' | 'last-payment' | 'followup';
@@ -45,7 +47,7 @@ async function fetchFollowupNotes(customerId: string): Promise<FollowupNote[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('client_followup_notes')
-    .select('id, note, followup_date, created_at')
+    .select('id, note, followup_date, created_at, created_by')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
   if (error) throw error;
@@ -55,12 +57,13 @@ async function fetchFollowupNotes(customerId: string): Promise<FollowupNote[]> {
 async function insertFollowupNote(
   customerId: string,
   note: string,
-  followupDate: string | null
+  followupDate: string | null,
+  createdBy?: string
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('client_followup_notes')
-    .insert({ customer_id: customerId, note, followup_date: followupDate || null });
+    .insert({ customer_id: customerId, note, followup_date: followupDate || null, created_by: createdBy || null });
   if (error) throw error;
 }
 
@@ -195,6 +198,8 @@ function FollowupNotesDrawer({
 }: DrawerProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { profile, user } = useAuth();
+  const operatorName = profile?.username || profile?.email || user?.email || 'Unknown';
   const [note, setNote] = useState('');
   const [followupDate, setFollowupDate] = useState(currentFollowupDate);
   const [saving, setSaving] = useState(false);
@@ -222,7 +227,7 @@ function FollowupNotesDrawer({
     if (!trimmed) return;
     setSaving(true);
     try {
-      await insertFollowupNote(customerId, trimmed, followupDate || null);
+      await insertFollowupNote(customerId, trimmed, followupDate || null, operatorName);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any)
@@ -349,6 +354,9 @@ function FollowupNotesDrawer({
                       minute: '2-digit',
                     })}
                   </span>
+                  {n.created_by && (
+                    <span className="font-medium text-foreground/70">· {n.created_by}</span>
+                  )}
                   {getFollowupStatusBadge(n.followup_date)}
                 </div>
                 <p className="text-sm">{n.note}</p>
