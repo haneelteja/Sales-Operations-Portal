@@ -1,13 +1,16 @@
 /**
  * Payment Reminder Scheduler
  *
- * Triggered by an external cron (e.g. every 15 minutes). Reads enabled schedules from
- * payment_reminder_schedules; for each schedule whose send_time_ist falls in the current
- * 15-minute window, finds customers with outstanding balances overdue >= days_overdue days,
- * skips any already reminded in the last 24 hours, and sends WhatsApp reminders via whatsapp-send.
+ * Triggered by an external cron (every 15 minutes) OR manually from the app UI.
  *
- * Auth: set PAYMENT_REMINDER_CRON_SECRET in Supabase Edge Function secrets and pass it as
- * the x-reminder-cron-secret header (or Authorization: Bearer <secret>).
+ * Auth: PAYMENT_REMINDER_CRON_SECRET via x-reminder-cron-secret header (cron),
+ *       OR a valid Supabase user JWT via Authorization: Bearer (manual trigger).
+ *
+ * Body params:
+ *   force: true  — skip the 15-minute time-window check (used by manual trigger)
+ *
+ * Dedup: per schedule, a customer is skipped if already reminded within
+ *        schedule.days_overdue days (not a fixed 24 hours).
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -44,29 +47,57 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  // Auth: require PAYMENT_REMINDER_CRON_SECRET
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return new Response(
+      JSON.stringify({ error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Auth: cron secret OR valid Supabase user JWT
   const cronSecret = Deno.env.get('PAYMENT_REMINDER_CRON_SECRET');
   const customHeader = req.headers.get('x-reminder-cron-secret')?.trim() ?? '';
   const authHeader = req.headers.get('Authorization') ?? '';
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   const headerSecret = customHeader || bearer;
-  if (!cronSecret || headerSecret !== cronSecret) {
-    const reason = !cronSecret
-      ? 'PAYMENT_REMINDER_CRON_SECRET not set in Supabase Edge Function secrets'
-      : 'Secret mismatch or missing. Send header: x-reminder-cron-secret with the exact secret';
-    return new Response(
-      JSON.stringify({ error: 'Unauthorized', message: reason }),
-      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+
+  const isCronAuth = !!cronSecret && headerSecret === cronSecret;
+  let isManualTrigger = false;
+
+  if (!isCronAuth) {
+    // Try validating as a Supabase user JWT (for manual trigger from the app)
+    if (bearer) {
+      const authClient = createClient(supabaseUrl, supabaseServiceKey);
+      const { data: { user } } = await authClient.auth.getUser(bearer);
+      if (user) {
+        isManualTrigger = true;
+      } else {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized', message: 'Invalid token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else {
+      const reason = !cronSecret
+        ? 'PAYMENT_REMINDER_CRON_SECRET not set in Supabase Edge Function secrets'
+        : 'Secret mismatch or missing. Send header: x-reminder-cron-secret with the exact secret';
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized', message: reason }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
   }
 
+  // Parse body — force flag bypasses the time-window check
+  let force = isManualTrigger;
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-    }
+    const body = await req.json();
+    if (body?.force === true) force = true;
+  } catch { /* no body or not JSON */ }
 
+  try {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Check global WhatsApp toggles
@@ -95,14 +126,22 @@ serve(async (req) => {
 
     const currentIST = getCurrentISTTime();
     const todayIST = new Date(new Date().getTime() + (5 * 60 + 30) * 60 * 1000).toISOString().slice(0, 10);
+
+    // If force=true, run all enabled schedules ignoring time window
     const matchingSchedules = (schedules || []).filter((s) =>
-      isTimeInCurrentWindow(s.send_time_ist) &&
+      (force || isTimeInCurrentWindow(s.send_time_ist)) &&
       (!s.start_date || s.start_date <= todayIST)
     );
 
     if (matchingSchedules.length === 0) {
       return new Response(
-        JSON.stringify({ triggered: false, reason: 'No schedules match current time window', currentIST }),
+        JSON.stringify({
+          triggered: false,
+          reason: force
+            ? 'No enabled schedules found (or all blocked by start_date)'
+            : 'No schedules match current time window',
+          currentIST,
+        }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -142,14 +181,11 @@ serve(async (req) => {
     if (custError) throw new Error(`Failed to fetch customers: ${custError.message}`);
 
     const customerMap = new Map((customers || []).map((c) => [c.id, c]));
-
     const now = new Date();
-    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const results = [];
 
     for (const schedule of matchingSchedules) {
       const daysOverdueMs = schedule.days_overdue * 24 * 60 * 60 * 1000;
-
       const minOutstanding = schedule.min_outstanding_amount ?? 0;
 
       // Find customers eligible for this schedule
@@ -169,12 +205,13 @@ serve(async (req) => {
         continue;
       }
 
-      // Exclude customers already reminded by this schedule in the last 24 hours
+      // Dedup: skip customers already reminded by this schedule within days_overdue days
+      const dedupWindowAgo = new Date(now.getTime() - daysOverdueMs).toISOString();
       const { data: recentLogs } = await supabase
         .from('payment_reminder_logs')
         .select('customer_id')
         .eq('schedule_id', schedule.id)
-        .gte('triggered_at', oneDayAgo);
+        .gte('triggered_at', dedupWindowAgo);
 
       const recentIds = new Set((recentLogs || []).map((l: { customer_id: string }) => l.customer_id));
       const newIds = eligibleIds.filter((id) => !recentIds.has(id));
@@ -246,7 +283,7 @@ serve(async (req) => {
         scheduleName: schedule.name,
         daysOverdue: schedule.days_overdue,
         eligible: eligibleIds.length,
-        alreadySentToday: recentIds.size,
+        alreadySentInWindow: recentIds.size,
         newlySent: sent,
         failed,
       });
@@ -255,7 +292,7 @@ serve(async (req) => {
     console.log('[payment-reminder-scheduler] results:', JSON.stringify(results));
 
     return new Response(
-      JSON.stringify({ triggered: true, currentIST, scheduleCount: matchingSchedules.length, results }),
+      JSON.stringify({ triggered: true, force, currentIST, scheduleCount: matchingSchedules.length, results }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

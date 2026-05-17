@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Bell, Plus, Edit, Trash2 } from 'lucide-react';
+import { Bell, Plus, Edit, Trash2, Send } from 'lucide-react';
 
 interface PaymentReminderSchedule {
   id: string;
@@ -56,31 +56,48 @@ const DEFAULT_FORM = {
   start_date: '',
 };
 
-/** Returns the next Date (UTC) at which send_time_ist (HH:MM IST) will fire, respecting start_date. */
-function getNextRunDate(sendTimeIST: string, startDate: string | null): Date {
+/**
+ * Returns the next Date (UTC) at which this schedule will meaningfully fire.
+ * Factors in: send_time_ist, start_date, and lastRun + daysOverdue interval
+ * (since a customer reminded N days ago won't be re-reminded until N days have passed).
+ */
+function getNextRunDate(
+  sendTimeIST: string,
+  startDate: string | null,
+  lastRun: string | null,
+  daysOverdue: number,
+): Date {
   const [h, m] = sendTimeIST.split(':').map(Number);
   const istOffsetMs = (5 * 60 + 30) * 60 * 1000;
   const now = new Date();
   const nowIST = new Date(now.getTime() + istOffsetMs);
 
-  const todayFireUTC = new Date(Date.UTC(
-    nowIST.getUTCFullYear(),
-    nowIST.getUTCMonth(),
-    nowIST.getUTCDate(),
-    h - 5,
-    m - 30,
-    0,
-  ));
+  // Helper: given a UTC Date, return the send_time_ist fire time on that IST calendar day
+  function fireUTCOnISTDay(d: Date): Date {
+    const dIST = new Date(d.getTime() + istOffsetMs);
+    return new Date(Date.UTC(dIST.getUTCFullYear(), dIST.getUTCMonth(), dIST.getUTCDate(), h - 5, m - 30, 0));
+  }
 
-  const nextOccurrence = todayFireUTC > now
+  // Next fire based purely on send_time_ist (today or tomorrow)
+  const todayFireUTC = fireUTCOnISTDay(nowIST);
+  let nextOccurrence = todayFireUTC > now
     ? todayFireUTC
     : new Date(todayFireUTC.getTime() + 24 * 60 * 60 * 1000);
 
+  // Respect start_date
   if (startDate) {
-    // start_date is YYYY-MM-DD in IST — build its UTC equivalent at send_time_ist
     const [sy, smo, sd] = startDate.split('-').map(Number);
     const startFireUTC = new Date(Date.UTC(sy, smo - 1, sd, h - 5, m - 30, 0));
-    if (startFireUTC > nextOccurrence) return startFireUTC;
+    if (startFireUTC > nextOccurrence) nextOccurrence = startFireUTC;
+  }
+
+  // Factor in lastRun: don't show a next run before lastRun + daysOverdue days
+  if (lastRun) {
+    const dueAfterLastRun = new Date(new Date(lastRun).getTime() + daysOverdue * 24 * 60 * 60 * 1000);
+    // Snap to send_time_ist on or after the due date
+    const dueFire = fireUTCOnISTDay(dueAfterLastRun);
+    const snapFire = dueFire >= dueAfterLastRun ? dueFire : new Date(dueFire.getTime() + 24 * 60 * 60 * 1000);
+    if (snapFire > nextOccurrence) nextOccurrence = snapFire;
   }
 
   return nextOccurrence;
@@ -96,6 +113,7 @@ export const PaymentReminderSchedules: React.FC = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<PaymentReminderSchedule | null>(null);
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [isSendingManual, setIsSendingManual] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -235,6 +253,36 @@ export const PaymentReminderSchedules: React.FC = () => {
     saveMutation.mutate(form);
   };
 
+  const handleSendReminders = async () => {
+    setIsSendingManual(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('payment-reminder-scheduler', {
+        body: { force: true },
+      });
+      if (error) throw error;
+
+      const totalSent = (data?.results ?? []).reduce((sum: number, r: { newlySent?: number }) => sum + (r.newlySent ?? 0), 0);
+      const totalSchedules = data?.scheduleCount ?? 0;
+
+      toast({
+        title: 'Payment Reminders Sent',
+        description: totalSchedules === 0
+          ? 'No enabled schedules found.'
+          : `Processed ${totalSchedules} schedule(s). ${totalSent} reminder(s) sent.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['payment-reminder-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to send reminders',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingManual(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -248,10 +296,30 @@ export const PaymentReminderSchedules: React.FC = () => {
               Automated WhatsApp reminders sent to customers with outstanding balances
             </CardDescription>
           </div>
-          <Button onClick={openAdd} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Add Schedule
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleSendReminders}
+              disabled={isSendingManual}
+              className="flex items-center gap-2"
+            >
+              {isSendingManual ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  Send Payment Reminders
+                </>
+              )}
+            </Button>
+            <Button onClick={openAdd} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Add Schedule
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
@@ -284,7 +352,7 @@ export const PaymentReminderSchedules: React.FC = () => {
                 (schedules ?? []).map((schedule) => {
                   const lastRun = lastRunMap?.get(schedule.id);
                   const nextRun = schedule.is_enabled
-                    ? getNextRunDate(schedule.send_time_ist, schedule.start_date)
+                    ? getNextRunDate(schedule.send_time_ist, schedule.start_date, lastRun ?? null, schedule.days_overdue)
                     : null;
                   return (
                     <TableRow key={schedule.id}>
