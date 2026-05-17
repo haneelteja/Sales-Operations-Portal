@@ -286,18 +286,32 @@ async function saveFollowupNote(customerId: string, note: string, followupDate: 
   if (error) throw error;
 }
 
-async function fetchLatestFollowupDates(): Promise<Record<string, string | null>> {
+interface FollowupInfo {
+  followup_date: string | null;
+  note: string | null;
+}
+
+async function fetchLatestFollowupInfo(): Promise<Record<string, FollowupInfo>> {
   const { data, error } = await supabase
     .from('client_followup_notes')
-    .select('customer_id, followup_date, created_at')
-    .not('followup_date', 'is', null)
+    .select('customer_id, followup_date, note, created_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  const map: Record<string, string | null> = {};
+
+  const dateMap: Record<string, string> = {};
+  const noteMap: Record<string, string> = {};
+
   for (const row of data ?? []) {
-    if (!map[row.customer_id]) map[row.customer_id] = row.followup_date;
+    if (!noteMap[row.customer_id]) noteMap[row.customer_id] = row.note;
+    if (row.followup_date && !dateMap[row.customer_id]) dateMap[row.customer_id] = row.followup_date;
   }
-  return map;
+
+  const ids = new Set([...Object.keys(noteMap), ...Object.keys(dateMap)]);
+  const result: Record<string, FollowupInfo> = {};
+  for (const id of ids) {
+    result[id] = { followup_date: dateMap[id] ?? null, note: noteMap[id] ?? null };
+  }
+  return result;
 }
 
 // ── Summary strip ─────────────────────────────────────────────────────────────
@@ -860,13 +874,14 @@ function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boole
 
 // ── Customer card ─────────────────────────────────────────────────────────────
 
-function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, latestFollowupDate, onFollowupSaved }: {
+function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, latestFollowupDate, latestNote, onFollowupSaved }: {
   c: CustomerRow;
   isExpanded: boolean;
   onToggle: () => void;
   onViewLedger: (e: React.MouseEvent) => void;
   onViewNotes: (e: React.MouseEvent) => void;
   latestFollowupDate: string | null;
+  latestNote: string | null;
   onFollowupSaved: () => void;
 }) {
   const qc = useQueryClient();
@@ -1113,6 +1128,16 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, late
         )}
       </div>
 
+      {/* ── Latest note snippet ── */}
+      {latestNote && (
+        <div className="px-4 pb-2" onClick={e => e.stopPropagation()}>
+          <div className="flex items-start gap-1.5 px-3 py-2 rounded-lg bg-muted/50 border border-border/50">
+            <StickyNote className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2">{latestNote}</p>
+          </div>
+        </div>
+      )}
+
       {/* ── Action buttons ── */}
       <div className="px-4 pb-3 flex gap-2">
         <button
@@ -1228,9 +1253,9 @@ const ReceivablesManagement: React.FC = () => {
     staleTime: 60000,
   });
 
-  const { data: followupDates = {}, refetch: refetchFollowups } = useQuery({
+  const { data: followupInfo = {}, refetch: refetchFollowups } = useQuery({
     queryKey: ['receivables-followup-dates'],
-    queryFn: fetchLatestFollowupDates,
+    queryFn: fetchLatestFollowupInfo,
     staleTime: 30000,
   });
 
@@ -1466,7 +1491,8 @@ const ReceivablesManagement: React.FC = () => {
               onToggle={() => setExpandedId(expandedId === c.customer_id ? null : c.customer_id)}
               onViewLedger={e => { e.stopPropagation(); setLedgerCustomer(c); }}
               onViewNotes={e => { e.stopPropagation(); setNotesCustomer(c); }}
-              latestFollowupDate={followupDates[c.customer_id] ?? null}
+              latestFollowupDate={followupInfo[c.customer_id]?.followup_date ?? null}
+              latestNote={followupInfo[c.customer_id]?.note ?? null}
               onFollowupSaved={() => refetchFollowups()}
             />
           ))
