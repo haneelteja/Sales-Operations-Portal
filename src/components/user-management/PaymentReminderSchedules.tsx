@@ -35,6 +35,34 @@ interface PaymentReminderLog {
 
 const DEFAULT_FORM = { name: '', days_overdue: 7, send_time_ist: '10:00' };
 
+/** Returns the next UTC Date at which send_time_ist (HH:MM IST) will fire. */
+function getNextRunDate(sendTimeIST: string): Date {
+  const [h, m] = sendTimeIST.split(':').map(Number);
+  const istOffsetMs = (5 * 60 + 30) * 60 * 1000;
+  const now = new Date();
+  const nowIST = new Date(now.getTime() + istOffsetMs);
+
+  // Build today's fire time as a UTC Date representing that IST clock time
+  const todayFireUTC = new Date(Date.UTC(
+    nowIST.getUTCFullYear(),
+    nowIST.getUTCMonth(),
+    nowIST.getUTCDate(),
+    h - 5,        // subtract IST offset hours
+    m - 30,       // subtract IST offset minutes (JS Date handles underflow)
+    0,
+  ));
+
+  return todayFireUTC > now
+    ? todayFireUTC
+    : new Date(todayFireUTC.getTime() + 24 * 60 * 60 * 1000);
+}
+
+function formatDateTime(date: Date): string {
+  return date.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
 export const PaymentReminderSchedules: React.FC = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<PaymentReminderSchedule | null>(null);
@@ -51,6 +79,25 @@ export const PaymentReminderSchedules: React.FC = () => {
         .order('days_overdue', { ascending: true });
       if (error) throw error;
       return data as PaymentReminderSchedule[];
+    },
+  });
+
+  // Fetch most recent triggered_at per schedule_id for "Last Run" column
+  const { data: lastRunMap } = useQuery({
+    queryKey: ['payment-reminder-last-runs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payment_reminder_logs')
+        .select('schedule_id, triggered_at')
+        .order('triggered_at', { ascending: false });
+      if (error) throw error;
+      const map = new Map<string, string>();
+      for (const row of data ?? []) {
+        if (row.schedule_id && !map.has(row.schedule_id)) {
+          map.set(row.schedule_id, row.triggered_at);
+        }
+      }
+      return map;
     },
   });
 
@@ -114,6 +161,7 @@ export const PaymentReminderSchedules: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
       toast({ title: 'Deleted', description: 'Schedule removed' });
     },
     onError: (error: Error) => toast({ title: 'Error', description: error.message, variant: 'destructive' }),
@@ -184,6 +232,8 @@ export const PaymentReminderSchedules: React.FC = () => {
                 <TableHead>Name</TableHead>
                 <TableHead className="text-center">Days Overdue</TableHead>
                 <TableHead className="text-center">Send Time (IST)</TableHead>
+                <TableHead className="text-center">Last Run</TableHead>
+                <TableHead className="text-center">Next Run</TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-center">Actions</TableHead>
               </TableRow>
@@ -191,46 +241,60 @@ export const PaymentReminderSchedules: React.FC = () => {
             <TableBody>
               {(schedules ?? []).length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-gray-500 py-6">
+                  <TableCell colSpan={7} className="text-center text-gray-500 py-6">
                     No schedules configured. Add one to get started.
                   </TableCell>
                 </TableRow>
               ) : (
-                (schedules ?? []).map((schedule) => (
-                  <TableRow key={schedule.id}>
-                    <TableCell className="font-medium">{schedule.name}</TableCell>
-                    <TableCell className="text-center">{schedule.days_overdue} days</TableCell>
-                    <TableCell className="text-center">{schedule.send_time_ist}</TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Switch
-                          checked={schedule.is_enabled}
-                          onCheckedChange={(checked) =>
-                            toggleMutation.mutate({ id: schedule.id, is_enabled: checked })
-                          }
-                        />
-                        <Badge variant={schedule.is_enabled ? 'default' : 'secondary'}>
-                          {schedule.is_enabled ? 'Active' : 'Disabled'}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => openEdit(schedule)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => deleteMutation.mutate(schedule.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                (schedules ?? []).map((schedule) => {
+                  const lastRun = lastRunMap?.get(schedule.id);
+                  const nextRun = schedule.is_enabled ? getNextRunDate(schedule.send_time_ist) : null;
+                  return (
+                    <TableRow key={schedule.id}>
+                      <TableCell className="font-medium">{schedule.name}</TableCell>
+                      <TableCell className="text-center">{schedule.days_overdue} days</TableCell>
+                      <TableCell className="text-center">{schedule.send_time_ist}</TableCell>
+                      <TableCell className="text-center text-sm text-gray-500">
+                        {lastRun ? formatDateTime(new Date(lastRun)) : '—'}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {nextRun ? (
+                          <span className="text-blue-600 font-medium">{formatDateTime(nextRun)}</span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Switch
+                            checked={schedule.is_enabled}
+                            onCheckedChange={(checked) =>
+                              toggleMutation.mutate({ id: schedule.id, is_enabled: checked })
+                            }
+                          />
+                          <Badge variant={schedule.is_enabled ? 'default' : 'secondary'}>
+                            {schedule.is_enabled ? 'Active' : 'Disabled'}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => openEdit(schedule)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteMutation.mutate(schedule.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
