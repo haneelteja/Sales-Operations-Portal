@@ -32,7 +32,7 @@ serve(async (req) => {
     const { data: configData, error: configError } = await supabase
       .from('invoice_configurations')
       .select('config_key, config_value')
-      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled', 'backup_schedule_time_ist']);
+      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled', 'backup_schedule_time_ist', 'backup_success_notification_enabled']);
 
     if (configError) {
       throw new Error(`Failed to fetch backup config: ${configError.message}`);
@@ -159,6 +159,22 @@ serve(async (req) => {
         })
         .eq('id', logId);
 
+      // Send success notification email (only if enabled; failure emails always fire)
+      if (config.backup_success_notification_enabled !== 'false') {
+      try {
+        await sendSuccessNotification(notificationEmail, {
+          backupType,
+          fileName,
+          fileSize: compressed.length,
+          googleDrivePath: fileUrl || `${backupFolderPath}/${fileName}`,
+          durationSeconds: executionDurationSeconds,
+          logId,
+        }, supabaseUrl, supabaseAnonKey);
+      } catch (emailError) {
+        console.error('Failed to send success notification email:', emailError);
+      }
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -262,6 +278,71 @@ async function compressGzip(data: Uint8Array): Promise<Uint8Array> {
   }
 
   return result;
+}
+
+function formatFileSizeEdge(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+function formatDurationEdge(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+/**
+ * Send success notification email
+ */
+async function sendSuccessNotification(
+  email: string,
+  details: {
+    backupType: string;
+    fileName: string;
+    fileSize: number;
+    googleDrivePath: string;
+    durationSeconds: number;
+    logId: string;
+  },
+  supabaseUrl: string,
+  supabaseAnonKey: string
+): Promise<void> {
+  try {
+    const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: email,
+        subject: `[Database Backup] Backup Successful - ${new Date().toLocaleDateString()}`,
+        html: `
+          <h2>Database Backup Successful</h2>
+          <p><strong>Date & Time:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>
+          <p><strong>Backup Type:</strong> ${details.backupType}</p>
+          <p><strong>Status:</strong> ✅ Success</p>
+          <p><strong>File Name:</strong> ${details.fileName}</p>
+          <p><strong>File Size:</strong> ${formatFileSizeEdge(details.fileSize)}</p>
+          <p><strong>Duration:</strong> ${formatDurationEdge(details.durationSeconds)}</p>
+          <p><strong>Storage Location:</strong> ${details.googleDrivePath}</p>
+          <p><strong>Backup ID:</strong> ${details.logId}</p>
+          <hr>
+          <p><em>This is an automated message from Aamodha Operations Portal.</em></p>
+        `,
+      }),
+    });
+
+    if (!emailResponse.ok) {
+      throw new Error(`Email send failed: ${emailResponse.statusText}`);
+    }
+  } catch (error) {
+    console.error('Failed to send success notification email:', error);
+  }
 }
 
 /**

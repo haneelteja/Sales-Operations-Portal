@@ -88,6 +88,11 @@ const ApplicationConfigurationTab: React.FC = () => {
     [configurations]
   );
 
+  const backupSuccessNotifConfig = useMemo(
+    () => configurations?.find((c) => c.config_key === 'backup_success_notification_enabled') ?? null,
+    [configurations]
+  );
+
   const { data: latestBackupLog } = useQuery<BackupLog | null>({
     queryKey: ['latest-backup-log'],
     queryFn: async () => {
@@ -625,6 +630,24 @@ const ApplicationConfigurationTab: React.FC = () => {
                   />
                 ) : (
                   <span className="text-gray-500">{backupConfig?.backup_enabled ? 'Enabled' : 'Disabled'}</span>
+                )}
+              </div>
+
+              {/* Success Notification Toggle */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="font-medium text-gray-700">Success Notification Email</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Send email when backup succeeds. Failure emails are always sent.</p>
+                </div>
+                {backupSuccessNotifConfig ? (
+                  <AutoInvoiceToggle
+                    config={backupSuccessNotifConfig}
+                    value={backupSuccessNotifConfig.config_value !== 'false'}
+                    onChange={(newValue) => handleToggleChange(backupSuccessNotifConfig, newValue)}
+                    isLoading={updateMutation.isPending}
+                  />
+                ) : (
+                  <span className="text-gray-500">{backupConfig?.backup_success_notification_enabled ? 'Enabled' : 'Disabled'}</span>
                 )}
               </div>
             </div>

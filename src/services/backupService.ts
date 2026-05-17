@@ -30,6 +30,7 @@ export interface BackupConfig {
   backup_enabled: boolean;
   backup_retention_days: number;
   backup_schedule_time_ist?: string;
+  backup_success_notification_enabled: boolean;
 }
 
 /**
@@ -99,7 +100,7 @@ export async function getBackupConfig(): Promise<BackupConfig> {
     const { data, error } = await supabase
       .from('invoice_configurations')
       .select('config_key, config_value')
-      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled', 'backup_retention_days', 'backup_schedule_time_ist']);
+      .in('config_key', ['backup_folder_path', 'backup_notification_email', 'backup_enabled', 'backup_retention_days', 'backup_schedule_time_ist', 'backup_success_notification_enabled']);
 
     if (error) {
       logger.error('Error fetching backup config:', error);
@@ -112,6 +113,7 @@ export async function getBackupConfig(): Promise<BackupConfig> {
       backup_enabled: true,
       backup_retention_days: 15,
       backup_schedule_time_ist: '14:00',
+      backup_success_notification_enabled: true,
     };
 
     (data || []).forEach((item) => {
@@ -126,6 +128,8 @@ export async function getBackupConfig(): Promise<BackupConfig> {
         config.backup_retention_days = Number.isFinite(n) ? Math.max(1, Math.min(365, n)) : 15;
       } else if (item.config_key === 'backup_schedule_time_ist') {
         config.backup_schedule_time_ist = item.config_value?.trim() || '14:00';
+      } else if (item.config_key === 'backup_success_notification_enabled') {
+        config.backup_success_notification_enabled = item.config_value !== 'false';
       }
     });
 
