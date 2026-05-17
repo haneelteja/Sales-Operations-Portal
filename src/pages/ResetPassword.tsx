@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -12,9 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { clearRecoveryInProgress, setRecoveryInProgress } from '@/lib/sessionKeys';
 
 const ResetPassword = () => {
-  const { updatePassword, signOut, session, user } = useAuth();
+  const { updatePassword, signOut } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const { toast } = useToast();
   
   const [isLoading, setIsLoading] = useState(false);
@@ -35,7 +34,6 @@ const ResetPassword = () => {
     const checkExistingSession = async () => {
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       if (existingSession && existingSession.user) {
-        console.log('ResetPassword: Found existing valid session on mount');
         sessionSetRef.current = true;
         setHasValidSession(true);
         setIsProcessing(false);
@@ -43,19 +41,6 @@ const ResetPassword = () => {
     };
     checkExistingSession();
   }, []);
-
-  // Log component mount for debugging
-  useEffect(() => {
-    console.log('ResetPassword: Component mounted', {
-      pathname: location.pathname,
-      hash: location.hash || window.location.hash,
-      search: location.search || window.location.search,
-      fullUrl: window.location.href,
-      state: location.state,
-      hasSession: !!session,
-      hasUser: !!user
-    });
-  }, [location, session, user]);
 
   const sessionSetRef = useRef(false); // Track if session has been set to prevent re-processing
 
@@ -79,19 +64,6 @@ const ResetPassword = () => {
       
       const { accessToken, refreshToken, type } = checkForTokens();
       
-      // Log for debugging (only first few times to avoid spam)
-      if (retryCount < 3 || (type === 'recovery' && accessToken)) {
-        console.log('ResetPassword: Checking for tokens', {
-          retryCount,
-          hash: window.location.hash.substring(0, 50) + '...', // Truncate for readability
-          search: window.location.search,
-          hasAccessToken: !!accessToken,
-          hasType: !!type,
-          type: type,
-          sessionAlreadySet: sessionSetRef.current
-        });
-      }
-
       if (accessToken && (type === 'recovery' || type === 'invite')) {
         try {
           // Set the session with the tokens from the URL
@@ -150,27 +122,15 @@ const ResetPassword = () => {
         }
       } else if (retryCount < 20 && !sessionSetRef.current) {
         // Retry up to 20 times (2 seconds total) to allow hash fragments to be processed
-        // This handles the case where Supabase redirects asynchronously
-        if (retryCount === 0) {
-          console.log('ResetPassword: No tokens found on first check, starting retry loop...');
-        }
         retryTimeout = setTimeout(() => {
           if (isMounted && !sessionSetRef.current) {
             processPasswordReset(retryCount + 1);
           }
         }, 100);
       } else if (!sessionSetRef.current) {
-        // No valid reset tokens found after retries
-        console.warn('ResetPassword: No password reset tokens found in URL after retries', {
-          hash: window.location.hash.substring(0, 50) + '...',
-          search: window.location.search,
-          retryCount
-        });
-        
-        // Check if there's an existing valid session (user might have clicked expired link but is still logged in)
+        // No valid reset tokens found after retries — check for an existing valid session
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession && existingSession.user) {
-          console.log('ResetPassword: Found existing session, allowing password reset');
           sessionSetRef.current = true;
           setHasValidSession(true);
           setIsProcessing(false);
@@ -199,7 +159,6 @@ const ResetPassword = () => {
     // Also listen for hash changes (in case hash arrives after component mounts)
     const handleHashChange = () => {
       if (isMounted && isProcessing && !sessionSetRef.current) {
-        console.log('ResetPassword: Hash change detected, rechecking tokens');
         processPasswordReset(0);
       }
     };

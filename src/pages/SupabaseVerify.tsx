@@ -50,7 +50,6 @@ const SupabaseVerify: React.FC = () => {
               variant: "destructive",
             });
           } else {
-            console.log('Session set successfully:', data);
             setSuccess(true);
             // Mark recovery in progress so portal is not shown until password is set
             setRecoveryInProgress();
@@ -187,6 +186,7 @@ const SupabaseVerify: React.FC = () => {
           
           <div className="text-center">
             <button
+              type="button"
               onClick={() => navigate('/auth')}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
@@ -200,9 +200,5 @@ const SupabaseVerify: React.FC = () => {
 };
 
 export default SupabaseVerify;
-
-
-
-
 
 

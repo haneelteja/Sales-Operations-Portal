@@ -213,8 +213,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     
     // Development: Mock authentication
-    console.log('🔐 Bypassing authentication for development...');
-    
     // For mock auth, don't require password reset (development only)
     // In production, this will be handled by real Supabase auth
     setRequiresPasswordReset(false);
@@ -253,8 +251,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     
     setProfile(mockProfile);
-    
-    console.log('✅ Mock authentication successful!');
+
     return {
       error: null,
       requiresPasswordReset: false
@@ -355,31 +352,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           functionData = result.data;
           functionError = result.error;
         } catch (err) {
-          console.error('Exception calling Edge Function:', err);
+          logger.error('Exception calling Edge Function:', err);
           functionError = err as Error;
           functionData = null;
         }
       } else {
         // Skip Edge Function - go straight to Supabase Auth email
-        console.info('ℹ️ Resend email disabled. Using Supabase Auth email directly.');
         functionError = new Error('Resend email disabled');
         functionData = null;
       }
 
       if (functionError) {
-        console.warn('⚠️ Edge Function error (will fallback to Supabase Auth):', functionError);
-        console.warn('Error details:', {
-          message: functionError.message,
-          context: functionError.context,
-          status: functionError.status,
-          statusCode: functionError.statusCode,
-          data: functionData
-        });
-        
         // Extract error message from response if available
         let errorMessage = functionError.message || 'Failed to send password reset email';
-        
-        // Try to extract error from response data
+
         if (functionData) {
           if (typeof functionData === 'object') {
             if ('error' in functionData) {
@@ -390,24 +376,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else if ('message' in functionData) {
               errorMessage = String(functionData.message);
             }
-            
-            // Check for troubleshooting info
-            if ('troubleshooting' in functionData && functionData.troubleshooting) {
-              const troubleshooting = functionData.troubleshooting as { issue?: string; solution?: string };
-              console.info('ℹ️ Troubleshooting info:', troubleshooting);
-            }
           }
         }
-        
-        // Also check error context
+
         if (functionError.context && typeof functionError.context === 'object') {
           if ('error' in functionError.context) {
             errorMessage = String(functionError.context.error);
           }
         }
-        
-        console.info('ℹ️ Edge Function failed:', errorMessage);
-        console.info('🔄 Proceeding to Supabase Auth email fallback...');
         // Don't return error - fall through to Supabase Auth email fallback
       }
 
@@ -426,10 +402,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Use Supabase Auth email (works without domain verification)
-      console.log('📧 Using Supabase Auth email service for password reset');
-      console.log('Email:', email);
-      console.log('Reset URL:', resetUrl);
-      
       try {
         // IMPORTANT: Supabase resetPasswordForEmail returns success even if user doesn't exist
         // This is a security feature to prevent email enumeration attacks
@@ -439,22 +411,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           redirectTo: resetUrl
         });
 
-        // Log the full response for debugging
-        console.log('📧 Supabase Auth response:', {
-          data: authData,
-          error: authError,
-          email: email,
-          redirectTo: resetUrl,
-          note: 'Supabase returns success even if user does not exist (security feature)'
-        });
-
         if (authError) {
-          console.error('❌ Supabase Auth email error:', authError);
-          console.error('Error details:', {
-            message: authError.message,
-            status: authError.status,
-            name: authError.name
-          });
+          logger.error('Supabase Auth email error:', authError);
           
           // Handle rate limiting with user-friendly message
           const errorMessage = authError.message || '';
@@ -472,18 +430,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { error: authError as Error };
         }
 
-        // Supabase returns null/undefined on success for resetPasswordForEmail
-        // This doesn't guarantee email was sent - Supabase silently succeeds even if user doesn't exist
-        console.log('✅ Supabase Auth accepted password reset request');
-        console.log('⚠️ IMPORTANT: Supabase returns success even if user does not exist (security feature)');
-        console.log('⚠️ If email is not received, verify:');
-        console.log('   1. User exists in Supabase Auth (Dashboard → Auth → Users)');
-        console.log('   2. Site URL is configured: https://sales-operations-portal.vercel.app');
-        console.log('   3. Redirect URL is added: /reset-password');
-        console.log('   4. Email confirmation is not required (or email is confirmed)');
-        console.log('   5. Check spam folder');
-        console.log('   6. Check Supabase Auth logs (Dashboard → Auth → Logs)');
-
         // Clear password reset requirement if user is logged in
         if (user) {
           await supabase.auth.updateUser({
@@ -496,12 +442,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         return { error: null };
       } catch (fallbackError) {
-        console.error('❌ Fallback to Supabase Auth also failed:', fallbackError);
+        logger.error('Fallback to Supabase Auth also failed:', fallbackError);
         return { error: fallbackError as Error };
       }
     } catch (error: unknown) {
       const errorObj = error as Error;
-      console.error('Password reset error:', errorObj);
+      logger.error('Password reset error:', errorObj);
       return { error: errorObj };
     }
   }, [user]);
