@@ -31,11 +31,11 @@ import { EditListConfigDialog } from './EditListConfigDialog';
 import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
 import { EditWhatsAppApiKeyDialog } from './EditWhatsAppApiKeyDialog';
-import { triggerManualBackup, getBackupConfig, type BackupConfig } from '@/services/backupService';
+import { triggerManualBackup, getBackupConfig, getBackupLogs, formatDateInIST, formatFileSize, formatDuration, type BackupConfig, type BackupLog } from '@/services/backupService';
 import { PaymentReminderSchedules } from './PaymentReminderSchedules';
 import { Database, Play } from 'lucide-react';
 
-const BACKUP_TABLE_KEYS = ['backup_folder_path', 'backup_schedule_time_ist'];
+const BACKUP_TABLE_KEYS: string[] = [];
 
 const ApplicationConfigurationTab: React.FC = () => {
   const { profile } = useAuth();
@@ -72,6 +72,29 @@ const ApplicationConfigurationTab: React.FC = () => {
     () => configurations?.find((c) => c.config_key === 'backup_enabled') ?? null,
     [configurations]
   );
+
+  const backupScheduleConfig = useMemo(
+    () => configurations?.find((c) => c.config_key === 'backup_schedule_time_ist') ?? null,
+    [configurations]
+  );
+
+  const backupFolderConfig = useMemo(
+    () => configurations?.find((c) => c.config_key === 'backup_folder_path') ?? null,
+    [configurations]
+  );
+
+  const backupEmailConfig = useMemo(
+    () => configurations?.find((c) => c.config_key === 'backup_notification_email') ?? null,
+    [configurations]
+  );
+
+  const { data: latestBackupLog } = useQuery<BackupLog | null>({
+    queryKey: ['latest-backup-log'],
+    queryFn: async () => {
+      const { logs } = await getBackupLogs(1, 1, undefined, 'started_at', 'desc');
+      return logs[0] ?? null;
+    },
+  });
 
   // Update configuration mutation
   const updateMutation = useMutation({
@@ -123,9 +146,6 @@ const ApplicationConfigurationTab: React.FC = () => {
       'expense_groups',
       'tentative_delivery_days',
       'whatsapp_api_key',
-      'backup_folder_path',
-      'backup_schedule_time_ist',
-      'backup_notification_email',
       'invoice_number_format',
     ];
 
@@ -260,8 +280,8 @@ const ApplicationConfigurationTab: React.FC = () => {
           title: 'Success',
           description: 'Backup started successfully',
         });
-        // Refresh backup config to get updated status
         refetchBackupConfig();
+        queryClient.invalidateQueries({ queryKey: ['latest-backup-log'] });
       } else {
         toast({
           title: 'Error',
@@ -519,7 +539,7 @@ const ApplicationConfigurationTab: React.FC = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-6">
             {/* Backup Actions */}
             <div className="flex gap-4">
               <Button
@@ -549,26 +569,108 @@ const ApplicationConfigurationTab: React.FC = () => {
               </Button>
             </div>
 
-            {/* Backup Info */}
-            {backupConfig && (
-              <div className="text-sm text-gray-600 space-y-2">
-                <p><strong>Backup Folder:</strong> {backupConfig.backup_folder_path}</p>
-                <p><strong>Notification Email:</strong> {backupConfig.backup_notification_email}</p>
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold text-gray-700">Automatic Backup:</span>
-                  {backupEnabledConfig ? (
-                    <AutoInvoiceToggle
-                      config={backupEnabledConfig}
-                      value={backupEnabledConfig.config_value === 'true'}
-                      onChange={(newValue) => handleToggleChange(backupEnabledConfig, newValue)}
-                      isLoading={updateMutation.isPending}
-                    />
-                  ) : (
-                    <span>{backupConfig.backup_enabled ? 'Enabled' : 'Disabled'}</span>
-                  )}
+            {/* Backup Settings */}
+            <div className="border rounded-lg divide-y text-sm">
+              {/* Backup Time */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="font-medium text-gray-700">Backup Time (IST)</p>
+                  <p className="text-gray-500 mt-0.5">{backupConfig?.backup_schedule_time_ist || '—'}</p>
                 </div>
+                {backupScheduleConfig && (
+                  <Button variant="outline" size="sm" onClick={() => handleBackupTimeEdit(backupScheduleConfig)} className="flex items-center gap-2">
+                    <Edit className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
               </div>
-            )}
+
+              {/* Backup Folder */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="font-medium text-gray-700">Backup Folder</p>
+                  <p className="text-gray-500 mt-0.5">{backupConfig?.backup_folder_path || '—'}</p>
+                </div>
+                {backupFolderConfig && (
+                  <Button variant="outline" size="sm" onClick={() => handleBackupFolderEdit(backupFolderConfig)} className="flex items-center gap-2">
+                    <Edit className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
+              </div>
+
+              {/* Notification Email */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="font-medium text-gray-700">Notification Email</p>
+                  <p className="text-gray-500 mt-0.5">{backupConfig?.backup_notification_email || '—'}</p>
+                </div>
+                {backupEmailConfig && (
+                  <Button variant="outline" size="sm" onClick={() => handleNotificationEmailEdit(backupEmailConfig)} className="flex items-center gap-2">
+                    <Edit className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
+              </div>
+
+              {/* Automatic Backup Toggle */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <p className="font-medium text-gray-700">Automatic Backup</p>
+                {backupEnabledConfig ? (
+                  <AutoInvoiceToggle
+                    config={backupEnabledConfig}
+                    value={backupEnabledConfig.config_value === 'true'}
+                    onChange={(newValue) => handleToggleChange(backupEnabledConfig, newValue)}
+                    isLoading={updateMutation.isPending}
+                  />
+                ) : (
+                  <span className="text-gray-500">{backupConfig?.backup_enabled ? 'Enabled' : 'Disabled'}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Latest Backup Run */}
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Latest Backup Run</p>
+              {latestBackupLog ? (
+                <div className="border rounded-lg overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Date & Time</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Type</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Status</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">File Name</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">File Size</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Duration</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Failure Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-t">
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatDateInIST(latestBackupLog.started_at)}</td>
+                        <td className="px-3 py-2 capitalize">{latestBackupLog.backup_type}</td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            latestBackupLog.status === 'success' ? 'bg-green-100 text-green-700' :
+                            latestBackupLog.status === 'failed' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {latestBackupLog.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 font-mono text-xs">{latestBackupLog.file_name || '—'}</td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatFileSize(latestBackupLog.file_size_bytes)}</td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDuration(latestBackupLog.execution_duration_seconds)}</td>
+                        <td className="px-3 py-2 text-gray-500">{latestBackupLog.failure_reason || '—'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No backup runs found.</p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
