@@ -172,16 +172,46 @@ serve(async (req) => {
       }
     }
 
-    // Fetch active customers with WhatsApp numbers
-    const { data: customers, error: custError } = await supabase
+    // Fetch ALL customer rows (active + inactive) — the customers table has multiple rows
+    // per dealer (one per pricing period). Transactions reference old pricing-period IDs
+    // that are now is_active=false, so filtering to is_active=true would hide those customers.
+    const { data: allCustomers, error: custError } = await supabase
       .from('customers')
-      .select('id, dealer_name, whatsapp_number')
-      .eq('is_active', true)
-      .not('whatsapp_number', 'is', null);
+      .select('id, dealer_name, whatsapp_number, is_active');
 
     if (custError) throw new Error(`Failed to fetch customers: ${custError.message}`);
 
-    const customerMap = new Map((customers || []).map((c) => [c.id, c]));
+    // Map every customer row ID → dealer_name (covers all pricing periods)
+    const idToDealerName = new Map<string, string>(
+      (allCustomers || []).map((c) => [c.id, c.dealer_name])
+    );
+
+    // Map dealer_name → the best row to use for sending (active row preferred, must have WhatsApp number)
+    const dealerInfo = new Map<string, { id: string; dealer_name: string; whatsapp_number: string }>();
+    for (const c of (allCustomers || [])) {
+      if (!c.whatsapp_number) continue;
+      const existing = dealerInfo.get(c.dealer_name);
+      if (!existing || (!existing.is_active && c.is_active)) {
+        dealerInfo.set(c.dealer_name, { id: c.id, dealer_name: c.dealer_name, whatsapp_number: c.whatsapp_number });
+      }
+    }
+
+    // Aggregate outstanding + oldest sale date PER DEALER (across all pricing-period IDs)
+    const dealerData = new Map<string, { outstanding: number; oldestSaleDate: string | null }>();
+    for (const [customerId, data] of customerData.entries()) {
+      const dealerName = idToDealerName.get(customerId);
+      if (!dealerName) continue;
+      if (!dealerInfo.has(dealerName)) continue; // no WhatsApp number → skip
+      if (!dealerData.has(dealerName)) {
+        dealerData.set(dealerName, { outstanding: 0, oldestSaleDate: null });
+      }
+      const entry = dealerData.get(dealerName)!;
+      entry.outstanding += data.outstanding;
+      if (data.oldestSaleDate && (!entry.oldestSaleDate || data.oldestSaleDate < entry.oldestSaleDate)) {
+        entry.oldestSaleDate = data.oldestSaleDate;
+      }
+    }
+
     const now = new Date();
     const results = [];
 
@@ -189,41 +219,43 @@ serve(async (req) => {
       const daysOverdueMs = schedule.days_overdue * 24 * 60 * 60 * 1000;
       const minOutstanding = schedule.min_outstanding_amount ?? 0;
 
-      // Find customers eligible for this schedule
-      const eligibleIds = Array.from(customerData.entries())
-        .filter(([customerId, data]) => {
+      // Find dealers eligible for this schedule
+      const eligibleDealers = Array.from(dealerData.entries())
+        .filter(([, data]) => {
           if (data.outstanding <= 0) return false;
           if (data.outstanding < minOutstanding) return false;
           if (!data.oldestSaleDate) return false;
-          if (!customerMap.has(customerId)) return false;
           const oldestDate = new Date(data.oldestSaleDate);
           return now.getTime() - oldestDate.getTime() >= daysOverdueMs;
         })
-        .map(([id]) => id);
+        .map(([dealerName]) => dealerName);
 
-      if (eligibleIds.length === 0) {
+      if (eligibleDealers.length === 0) {
         results.push({ scheduleId: schedule.id, scheduleName: schedule.name, sent: 0, skipped: 0, reason: 'No eligible customers' });
         continue;
       }
 
-      // Dedup: skip customers already reminded by this schedule within days_overdue days
+      // Dedup: skip dealers already reminded by this schedule within days_overdue days
+      // Use the active customer ID for dedup lookup
       const dedupWindowAgo = new Date(now.getTime() - daysOverdueMs).toISOString();
+      const eligibleActiveIds = eligibleDealers.map((name) => dealerInfo.get(name)!.id);
       const { data: recentLogs } = await supabase
         .from('payment_reminder_logs')
         .select('customer_id')
         .eq('schedule_id', schedule.id)
+        .in('customer_id', eligibleActiveIds)
         .gte('triggered_at', dedupWindowAgo);
 
       const recentIds = new Set((recentLogs || []).map((l: { customer_id: string }) => l.customer_id));
-      const newIds = eligibleIds.filter((id) => !recentIds.has(id));
+      const newDealers = eligibleDealers.filter((name) => !recentIds.has(dealerInfo.get(name)!.id));
 
       let sent = 0;
       let failed = 0;
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-      for (const customerId of newIds) {
-        const customer = customerMap.get(customerId)!;
-        const data = customerData.get(customerId)!;
+      for (const dealerName of newDealers) {
+        const customer = dealerInfo.get(dealerName)!;
+        const data = dealerData.get(dealerName)!;
 
         const daysOverdueActual = Math.floor(
           (now.getTime() - new Date(data.oldestSaleDate!).getTime()) / (1000 * 60 * 60 * 24)
@@ -242,7 +274,7 @@ serve(async (req) => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              customerId,
+              customerId: customer.id,
               messageType: 'payment_reminder',
               triggerType: 'scheduled',
               placeholders: {
@@ -271,7 +303,7 @@ serve(async (req) => {
 
         await supabase.from('payment_reminder_logs').insert({
           schedule_id: schedule.id,
-          customer_id: customerId,
+          customer_id: customer.id,
           customer_name: customer.dealer_name,
           outstanding_amount: data.outstanding,
           whatsapp_message_log_id: whatsappLogId,
@@ -287,7 +319,7 @@ serve(async (req) => {
         scheduleId: schedule.id,
         scheduleName: schedule.name,
         daysOverdue: schedule.days_overdue,
-        eligible: eligibleIds.length,
+        eligible: eligibleDealers.length,
         alreadySentInWindow: recentIds.size,
         newlySent: sent,
         failed,

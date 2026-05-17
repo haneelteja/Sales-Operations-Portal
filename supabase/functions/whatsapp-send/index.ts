@@ -117,15 +117,6 @@ serve(async (req) => {
       throw new Error(`Customer not found: ${customerError?.message || 'Unknown error'}`);
     }
 
-    // Log API configuration (mask sensitive data) - after customer is fetched
-    // console.log('WhatsApp API Configuration:', {
-      apiUrl,
-      apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : 'missing',
-      messageType,
-      customerId,
-      customerName: customer.dealer_name,
-      whatsappNumber: customer.whatsapp_number,
-    });
 
     if (!customer.whatsapp_number) {
       throw new Error(`Customer ${customer.dealer_name} does not have a WhatsApp number`);
