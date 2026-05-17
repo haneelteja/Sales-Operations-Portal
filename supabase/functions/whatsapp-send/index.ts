@@ -118,7 +118,7 @@ serve(async (req) => {
     }
 
     // Log API configuration (mask sensitive data) - after customer is fetched
-    console.log('WhatsApp API Configuration:', {
+    // console.log('WhatsApp API Configuration:', {
       apiUrl,
       apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : 'missing',
       messageType,
@@ -215,8 +215,8 @@ serve(async (req) => {
       const sendTextMessage = async (): Promise<Record<string, unknown>> => {
         const endpoint = `/sendMessage/${apiKey}`;
         const fullUrl = `${apiUrl}${endpoint}`;
-        console.log(`📤 Sending WhatsApp message via 360Messenger API: ${fullUrl}`);
-        console.log(`📱 To: ${customer.whatsapp_number}, Message length: ${messageContent.length} chars`);
+        // console.log(`📤 Sending WhatsApp message via 360Messenger API: ${fullUrl}`);
+        // console.log(`📱 To: ${customer.whatsapp_number}, Message length: ${messageContent.length} chars`);
         const formData = new URLSearchParams();
         formData.append('phonenumber', customer.whatsapp_number);
         formData.append('text', messageContent);
@@ -251,7 +251,7 @@ serve(async (req) => {
       const logDriveFetch = (label: string, res: Response, bodyPreview?: string) => {
         const ct = res.headers.get('content-type') || '';
         if (!res.ok || !ct.includes('application/pdf')) {
-          console.log(`[Drive fetch] ${label} status=${res.status} contentType=${ct.slice(0, 50)}${bodyPreview != null ? ` bodyPreview=${bodyPreview.slice(0, 120)}` : ''}`);
+          // console.log(`[Drive fetch] ${label} status=${res.status} contentType=${ct.slice(0, 50)}${bodyPreview != null ? ` bodyPreview=${bodyPreview.slice(0, 120)}` : ''}`);
         }
       };
       const fetchGoogleDrivePdfBytes = async (fileId: string): Promise<ArrayBuffer | null> => {
@@ -282,7 +282,7 @@ serve(async (req) => {
                 if (apiRes.ok && (ct.includes('application/pdf') || ct.includes('application/octet-stream'))) {
                   const buf = await apiRes.arrayBuffer();
                   if (buf.byteLength > 0 && buf.byteLength < 20 * 1024 * 1024) {
-                    console.log(`[Drive fetch] Got PDF via Drive API OAuth, size=${buf.byteLength}`);
+                    // console.log(`[Drive fetch] Got PDF via Drive API OAuth, size=${buf.byteLength}`);
                     return buf;
                   }
                 }
@@ -290,13 +290,13 @@ serve(async (req) => {
               }
             } else {
               const err = await tokenRes.json().catch(() => ({}));
-              console.log(`[Drive fetch] Google token refresh failed status=${tokenRes.status} error=${err.error}`);
+              // console.log(`[Drive fetch] Google token refresh failed status=${tokenRes.status} error=${err.error}`);
             }
           } else {
-            console.log('[Drive fetch] Google OAuth secrets not set (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN)');
+            // console.log('[Drive fetch] Google OAuth secrets not set (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN)');
           }
         } catch (e) {
-          console.log('[Drive fetch] Drive API error:', e instanceof Error ? e.message : String(e));
+          // console.log('[Drive fetch] Drive API error:', e instanceof Error ? e.message : String(e));
         }
 
         // 2) Public URLs with browser User-Agent (avoid 403 / HTML)
@@ -346,7 +346,7 @@ serve(async (req) => {
         const logResponse = async (res: Response, label: string) => {
           if (!res.ok) {
             const body = await res.text();
-            console.log(`[WhatsApp document] ${label} status=${res.status} body=${body.slice(0, 300)}`);
+            // console.log(`[WhatsApp document] ${label} status=${res.status} body=${body.slice(0, 300)}`);
           }
         };
 
@@ -376,23 +376,23 @@ serve(async (req) => {
                   // Put filename in URL path + query so 360Messenger/WhatsApp can use it (header, path, or query)
                   const proxyUrl = `${supabaseUrl}/functions/v1/whatsapp-pdf-proxy/${encodeURIComponent(pdfFileName)}?path=${encodeURIComponent(tempPath)}&filename=${encodeURIComponent(pdfFileName)}&access_key=${encodeURIComponent(proxyAccessKey)}`;
                   documentUrlToSend = proxyUrl;
-                  console.log('[WhatsApp document] Using whatsapp-pdf-proxy URL for PDF (Content-Disposition filename)');
+                  // console.log('[WhatsApp document] Using whatsapp-pdf-proxy URL for PDF (Content-Disposition filename)');
                 } else {
                   const { data: signed, error: signError } = await supabase.storage
                     .from(whatsappBucket)
                     .createSignedUrl(tempPath, 3600); // 1 hour for 360Messenger to fetch
                   if (!signError && signed?.signedUrl) {
                     documentUrlToSend = signed.signedUrl;
-                    console.log('[WhatsApp document] Using Supabase Storage signed URL for PDF (set WHATSAPP_PDF_PROXY_ACCESS_KEY for filename fix)');
+                    // console.log('[WhatsApp document] Using Supabase Storage signed URL for PDF (set WHATSAPP_PDF_PROXY_ACCESS_KEY for filename fix)');
                   } else {
-                    console.log('[WhatsApp document] createSignedUrl failed:', signError?.message ?? 'no url');
+                    // console.log('[WhatsApp document] createSignedUrl failed:', signError?.message ?? 'no url');
                   }
                 }
               } else {
-                console.log('[WhatsApp document] Storage upload failed:', uploadError.message, '(create bucket', whatsappBucket, 'in Supabase Dashboard if missing)');
+                // console.log('[WhatsApp document] Storage upload failed:', uploadError.message, '(create bucket', whatsappBucket, 'in Supabase Dashboard if missing)');
               }
             } catch (e) {
-              console.log('[WhatsApp document] Storage error:', e instanceof Error ? e.message : String(e));
+              // console.log('[WhatsApp document] Storage error:', e instanceof Error ? e.message : String(e));
             }
 
             if (documentUrlToSend) {
@@ -442,12 +442,12 @@ serve(async (req) => {
                   });
                   if (res.ok) {
                     const resBody = await res.json().catch(() => ({}));
-                    console.log(`✅ Document (PDF) sent via JSON ${attempt.endpoint}`, resBody);
+                    // console.log(`✅ Document (PDF) sent via JSON ${attempt.endpoint}`, resBody);
                     return true;
                   }
                   await logResponse(res, `JSON ${attempt.endpoint}`);
                 } catch (err) {
-                  console.log(`Document JSON ${attempt.endpoint} failed:`, err instanceof Error ? err.message : err);
+                  // console.log(`Document JSON ${attempt.endpoint} failed:`, err instanceof Error ? err.message : err);
                 }
               }
 
@@ -460,12 +460,12 @@ serve(async (req) => {
                     body: new URLSearchParams({ phonenumber: customer.whatsapp_number, text: caption, [param]: documentUrlToSend, filename: pdfFileName }).toString(),
                   });
                   if (res.ok) {
-                    console.log(`✅ Document (PDF) sent via form-urlencoded param ${param}`);
+                    // console.log(`✅ Document (PDF) sent via form-urlencoded param ${param}`);
                     return true;
                   }
                   await logResponse(res, `/sendMessage form ${param}`);
                 } catch (err) {
-                  console.log(`Document form ${param} failed:`, err instanceof Error ? err.message : err);
+                  // console.log(`Document form ${param} failed:`, err instanceof Error ? err.message : err);
                 }
               }
             }
@@ -479,15 +479,15 @@ serve(async (req) => {
               form.append('file', new Blob([pdfBytes], { type: 'application/pdf' }), pdfFileName);
               const uploadRes = await fetch(`${apiUrl}/sendMessage/${apiKey}`, { method: 'POST', body: form });
               if (uploadRes.ok) {
-                console.log('✅ Document (PDF) sent via /sendMessage multipart file');
+                // console.log('✅ Document (PDF) sent via /sendMessage multipart file');
                 return true;
               }
               await logResponse(uploadRes, '/sendMessage multipart');
             } catch (err) {
-              console.log('Document /sendMessage multipart failed:', err instanceof Error ? err.message : err);
+              // console.log('Document /sendMessage multipart failed:', err instanceof Error ? err.message : err);
             }
           } else {
-            console.log('Could not fetch PDF bytes from Google Drive; skipping document send to avoid sending HTML.');
+            // console.log('Could not fetch PDF bytes from Google Drive; skipping document send to avoid sending HTML.');
           }
           return false;
         }
@@ -510,12 +510,12 @@ serve(async (req) => {
               body: new URLSearchParams(formParams).toString(),
             });
             if (res.ok) {
-              console.log(`✅ Document sent via /sendMessage with param ${param}`);
+              // console.log(`✅ Document sent via /sendMessage with param ${param}`);
               return true;
             }
             await logResponse(res, `/sendMessage ${param}`);
           } catch (err) {
-            console.log(`Document /sendMessage ${param} failed:`, err instanceof Error ? err.message : err);
+            // console.log(`Document /sendMessage ${param} failed:`, err instanceof Error ? err.message : err);
           }
         }
         const chatId = customer.whatsapp_number.replace(/\D/g, '') + '@c.us';
@@ -528,12 +528,12 @@ serve(async (req) => {
               body: JSON.stringify({ chatId, text: (messageContent || '').slice(0, 1024), url: docUrl }),
             });
             if (res.ok) {
-              console.log(`✅ Document sent via v2 ${path}`);
+              // console.log(`✅ Document sent via v2 ${path}`);
               return true;
             }
             await logResponse(res, `v2 ${path}`);
           } catch (err) {
-            console.log(`Document v2 ${path} failed:`, err instanceof Error ? err.message : err);
+            // console.log(`Document v2 ${path} failed:`, err instanceof Error ? err.message : err);
           }
         }
         const docEndpoints = [
@@ -557,15 +557,15 @@ serve(async (req) => {
               body: body(),
             });
             if (res.ok) {
-              console.log(`✅ Document sent via ${path}`);
+              // console.log(`✅ Document sent via ${path}`);
               return true;
             }
             await logResponse(res, path);
           } catch (err) {
-            console.log(`Document endpoint ${path} failed:`, err instanceof Error ? err.message : err);
+            // console.log(`Document endpoint ${path} failed:`, err instanceof Error ? err.message : err);
           }
         }
-        console.log('Document fallback: provider did not accept PDF; text+link was already sent.');
+        // console.log('Document fallback: provider did not accept PDF; text+link was already sent.');
         return false;
       };
 

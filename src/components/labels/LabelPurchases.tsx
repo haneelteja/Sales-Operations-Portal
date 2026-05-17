@@ -162,7 +162,7 @@ const LabelPurchases = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("*")
+        .select("id, dealer_name, area")
         .eq("is_active", true)
         .order("dealer_name", { ascending: true });
       return data || [];
@@ -251,7 +251,7 @@ const LabelPurchases = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
-        .select("*")
+        .select("id, vendor_id, client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description")
         .order("created_at", { ascending: false });
       return data || [];
     },

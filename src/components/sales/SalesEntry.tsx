@@ -28,6 +28,7 @@ import { useAutoSave } from "@/hooks/useAutoSave";
 import { saleFormSchema, paymentFormSchema } from "@/lib/validation/schemas";
 import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
+import { passesMultiFilter } from "@/lib/utils";
 import { EditTransactionDialog } from "@/components/sales/EditTransactionDialog";
 import { InvoiceActions, InvoiceNumberCell } from "@/components/sales/InvoiceActions";
 import { PaymentEntryCard } from "@/components/sales/PaymentEntryCard";
@@ -49,12 +50,6 @@ const safeNumValue = (v: string | number | undefined | null): string => {
   return isNaN(n) ? "" : String(v);
 };
 
-// Checks whether a value passes a multiselect filter (empty filter = passes everything)
-const passesMultiFilter = (value: string, filter: string | string[] | null | undefined): boolean => {
-  if (!filter) return true;
-  const filters = Array.isArray(filter) ? filter : [filter];
-  return filters.length === 0 || filters.some(f => value.toLowerCase().includes(f.toLowerCase()));
-};
 
 const SalesEntry = () => {
   const { isMobileDevice } = useMobileDetection();
@@ -279,14 +274,14 @@ const SalesEntry = () => {
           .order("dealer_name", { ascending: true });
         
         if (error) {
-          console.error('Error fetching customers:', error);
+          logger.error('Error fetching customers:', error);
           throw new Error(`Failed to fetch customers: ${error.message}`);
         }
         
         // Customers loaded successfully
         return data || [];
       } catch (error) {
-        console.error('Critical error in customers query:', error);
+        logger.error('Critical error in customers query:', error);
         throw error;
       }
     },
@@ -483,13 +478,13 @@ const SalesEntry = () => {
           .order("sku", { ascending: true });
         
         if (error) {
-          console.error('Error fetching SKU configurations:', error);
+          logger.error('Error fetching SKU configurations:', error);
           throw new Error(`Failed to fetch SKU configurations: ${error.message}`);
         }
         
         return data || [];
       } catch (error) {
-        console.error('Critical error in SKU configurations query:', error);
+        logger.error('Critical error in SKU configurations query:', error);
         throw error;
       }
     },
@@ -610,7 +605,7 @@ const SalesEntry = () => {
           .limit(2000); // Safety limit
         
         if (error) {
-          console.error('Error fetching transactions:', error);
+          logger.error('Error fetching transactions:', error);
           throw new Error(`Failed to fetch transactions: ${error.message}`);
         }
         
@@ -619,7 +614,7 @@ const SalesEntry = () => {
           total: count || 0
         };
       } catch (error) {
-        console.error('Critical error in transactions query:', error);
+        logger.error('Critical error in transactions query:', error);
         throw error;
       }
     },
@@ -635,19 +630,19 @@ const SalesEntry = () => {
     try {
       // Input validation
       if (!recentTransactions?.length) {
-        console.warn('No recent transactions available for outstanding calculation');
+        logger.warn('No recent transactions available for outstanding calculation');
         return 0;
       }
       
       if (!customerId || !transactionDate || !transactionId) {
-        console.warn('Missing required parameters for outstanding calculation:', { customerId, transactionDate, transactionId });
+        logger.warn('Missing required parameters for outstanding calculation:', { customerId, transactionDate, transactionId });
         return 0;
       }
 
       // Validate date format
       const currentDate = new Date(transactionDate);
       if (isNaN(currentDate.getTime())) {
-        console.error('Invalid transaction date format:', transactionDate);
+        logger.error('Invalid transaction date format:', transactionDate);
         return 0;
       }
 
@@ -668,7 +663,7 @@ const SalesEntry = () => {
             const dateB = new Date(b.transaction_date).getTime();
             
             if (isNaN(dateA) || isNaN(dateB)) {
-              console.warn('Invalid date in transaction sorting:', { dateA, dateB });
+              logger.warn('Invalid date in transaction sorting:', { dateA, dateB });
               return 0;
             }
             
@@ -677,13 +672,13 @@ const SalesEntry = () => {
             }
             return dateA - dateB;
           } catch (error) {
-            console.error('Error sorting transactions:', error);
+            logger.error('Error sorting transactions:', error);
             return 0;
           }
         });
       
       if (!customerTransactions.length) {
-        console.warn(`No transactions found for customer: ${customerId}`);
+        logger.warn(`No transactions found for customer: ${customerId}`);
         return 0;
       }
       
@@ -695,7 +690,7 @@ const SalesEntry = () => {
         try {
           const txDate = new Date(transaction.transaction_date);
           if (isNaN(txDate.getTime())) {
-            console.warn('Invalid transaction date, skipping:', transaction.transaction_date);
+            logger.warn('Invalid transaction date, skipping:', transaction.transaction_date);
             continue;
           }
           
@@ -710,7 +705,7 @@ const SalesEntry = () => {
             
             const amount = Number(transaction.amount);
             if (isNaN(amount)) {
-              console.warn('Invalid amount in transaction, skipping:', transaction.amount);
+              logger.warn('Invalid amount in transaction, skipping:', transaction.amount);
               continue;
             }
             
@@ -719,18 +714,18 @@ const SalesEntry = () => {
             } else if (transaction.transaction_type === 'payment') {
               cumulativeOutstanding -= amount;
             } else {
-              console.warn('Unknown transaction type, skipping:', transaction.transaction_type);
+              logger.warn('Unknown transaction type, skipping:', transaction.transaction_type);
             }
           }
         } catch (error) {
-          console.error('Error processing individual transaction:', error, transaction);
+          logger.error('Error processing individual transaction:', error, transaction);
           continue; // Skip this transaction and continue with others
         }
       }
 
       return Math.round(cumulativeOutstanding * 100) / 100; // Round to 2 decimal places
     } catch (error) {
-      console.error('Critical error calculating cumulative outstanding:', error);
+      logger.error('Critical error calculating cumulative outstanding:', error);
       return 0;
     }
   }, [recentTransactions]);
@@ -831,7 +826,7 @@ const SalesEntry = () => {
           
           return true;
         } catch (error) {
-          console.error('Error filtering transaction:', error, transaction);
+          logger.error('Error filtering transaction:', error, transaction);
           return false; // Exclude problematic transactions
         }
       }).sort((a, b) => {
@@ -892,12 +887,12 @@ const SalesEntry = () => {
           if (valueA > valueB) return direction === 'asc' ? 1 : -1;
           return 0;
         } catch (error) {
-          console.error('Error sorting transactions:', error);
+          logger.error('Error sorting transactions:', error);
           return 0;
         }
       });
     } catch (error) {
-      console.error('Critical error filtering and sorting transactions:', error);
+      logger.error('Critical error filtering and sorting transactions:', error);
       return [];
     }
   }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts]);

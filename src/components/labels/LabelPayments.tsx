@@ -87,13 +87,10 @@ const LabelPayments = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_purchases")
-        .select("*")
+        .select("vendor_id, total_amount, purchase_date")
         .order("purchase_date", { ascending: false });
-      
-      if (error) {
-        console.error("Error fetching purchases:", error);
-        return [];
-      }
+
+      if (error) throw error;
       
       return data || [];
     },
@@ -104,13 +101,10 @@ const LabelPayments = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_payments")
-        .select("*")
+        .select("id, payment_amount, payment_date, payment_method, vendor_id, description")
         .order("payment_date", { ascending: false });
-      
-      if (error) {
-        console.error("Error fetching payments:", error);
-        return [];
-      }
+
+      if (error) throw error;
       
       return data || [];
     },

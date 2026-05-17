@@ -24,12 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { ColumnFilter } from '@/components/ui/column-filter';
-
-const passesMultiFilter = (value: string, filter: string | string[] | null | undefined): boolean => {
-  if (!filter) return true;
-  const filters = Array.isArray(filter) ? filter : [filter];
-  return filters.length === 0 || filters.some(f => value.toLowerCase().includes(f.toLowerCase()));
-};
+import { passesMultiFilter } from '@/lib/utils';
 
 const FactoryPayables = () => {
   const [paymentForm, setPaymentForm] = useState({

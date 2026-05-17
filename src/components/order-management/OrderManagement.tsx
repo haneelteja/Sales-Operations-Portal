@@ -248,7 +248,7 @@ const OrderManagement: React.FC = () => {
       // Get the order details first
       const { data: orderData } = await supabase
         .from("orders")
-        .select("*")
+        .select("client, dealer_name, branch, area, sku, number_of_cases, quantity, tentative_delivery_date, tentative_delivery_time")
         .eq("id", orderId)
         .single();
 
@@ -375,7 +375,7 @@ const OrderManagement: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from("orders_dispatch")
-          .select("*")
+          .select("id, client, area, branch, sku, cases, delivery_date")
           .order("delivery_date", { ascending: false });
 
         if (error) {

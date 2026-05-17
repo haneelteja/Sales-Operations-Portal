@@ -94,7 +94,7 @@ async function fetchBranchesForClient(dealerName: string): Promise<string[]> {
 async function fetchRowsForPair(dealerName: string, area: string): Promise<Customer[]> {
   const { data, error } = await supabase
     .from("customers")
-    .select("*")
+    .select("sku, price_per_bottle, price_per_case, gst_number, whatsapp_number, bottles_per_case, created_at, pricing_date")
     .eq("dealer_name", dealerName)
     .eq("area", area)
     .eq("is_active", true)

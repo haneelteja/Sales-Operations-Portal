@@ -294,7 +294,7 @@ serve(async (req) => {
       });
     }
 
-    console.log('[payment-reminder-scheduler] results:', JSON.stringify(results));
+    // console.log('[payment-reminder-scheduler] results:', JSON.stringify(results));
 
     // Send summary email — best-effort, non-blocking
     const totalSent = results.reduce((s, r) => s + (r.newlySent ?? 0), 0);

@@ -38,13 +38,10 @@ const LabelAvailability = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_purchases")
-        .select("*")
+        .select("client_id, quantity, total_amount, purchase_date")
         .order("purchase_date", { ascending: false });
-      
-      if (error) {
-        console.error("Error fetching label purchases:", error);
-        return [];
-      }
+
+      if (error) throw error;
       
       return data || [];
     },
@@ -56,14 +53,11 @@ const LabelAvailability = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("*")
+        .select("id, dealer_name")
         .eq("is_active", true)
         .order("dealer_name", { ascending: true });
-      
-      if (error) {
-        console.error("Error fetching customers:", error);
-        return [];
-      }
+
+      if (error) throw error;
       
       return data || [];
     },
@@ -75,14 +69,11 @@ const LabelAvailability = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("sales_transactions")
-        .select("*")
+        .select("customer_id, sku, quantity, transaction_date")
         .not("customer_id", "is", null)
         .not("sku", "is", null);
-      
-      if (error) {
-        console.error("Error fetching sales transactions:", error);
-        return [];
-      }
+
+      if (error) throw error;
       
       return data || [];
     },

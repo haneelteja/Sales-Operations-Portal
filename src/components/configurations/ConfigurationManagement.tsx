@@ -20,6 +20,7 @@ import { ColumnFilter } from "@/components/ui/column-filter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { exportLedger } from '@/lib/ledgerExport';
+import { logger } from '@/lib/logger';
 
 const ConfigurationManagement = () => {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -79,17 +80,17 @@ const ConfigurationManagement = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("*")
+          .select("id, dealer_name, area, sku, price_per_case, price_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, created_at, updated_at")
           .order("dealer_name", { ascending: true });
-        
+
         if (error) {
-          console.error('Error fetching customers:', error);
+          logger.error('Error fetching customers:', error);
           throw new Error(handleSupabaseError(error));
         }
-        
+
         return data || [];
       } catch (error) {
-        console.error('Error fetching customers:', error);
+        logger.error('Error fetching customers:', error);
         toast({
           title: "Error",
           description: error instanceof Error ? error.message : "Failed to fetch customers",
@@ -136,7 +137,7 @@ const ConfigurationManagement = () => {
           .limit(1);
 
         if (checkError) {
-          console.error('Error checking for duplicates:', checkError);
+          logger.error('Error checking for duplicates:', checkError);
         } else if (existingCustomers && existingCustomers.length > 0) {
           throw new Error(`A pricing row for "${data.dealer_name}" / "${data.area}" / "${data.sku}" on ${data.pricing_date} already exists.`);
         }
@@ -164,8 +165,6 @@ const ConfigurationManagement = () => {
       }
       if (data.pricing_date) updateData.pricing_date = data.pricing_date;
 
-      console.log('Updating customer:', { id: data.id, ...updateData });
-
       const { data: updatedData, error } = await supabase
         .from("customers")
         .update(updateData)
@@ -173,18 +172,15 @@ const ConfigurationManagement = () => {
         .select();
 
       if (error) {
-        console.error('Update error:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
-        
+        logger.error('Update error:', error);
+
         // Handle 409 conflict (unique constraint violation)
         if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
           throw new Error(`A customer with client name "${data.dealer_name}" and branch "${data.area}" already exists. Please use different values.`);
         }
-        
+
         throw error;
       }
-
-      console.log('Successfully updated:', updatedData);
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Customer updated successfully!" });

@@ -97,26 +97,18 @@ const UserManagement = () => {
   const { data: userRecords, isLoading } = useQuery({
     queryKey: ["user-management"],
     queryFn: async () => {
-      console.log('Fetching user management records...');
       const { data, error } = await supabase
         .from("user_management")
         .select("*")
         .order("created_at", { ascending: false });
-      
+
       if (error) {
-        console.error('Error fetching user management records:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        console.error('Error details:', error.details);
+        logger.error('Error fetching user management records:', error);
         if (error.code === 'PGRST116' || error.message?.includes('relation "user_management" does not exist')) {
-          console.warn('Table does not exist or is empty');
-          return []; // Return empty array if table doesn't exist
+          return [];
         }
-        // Don't throw error, return empty array to show helpful message
-        console.warn('Query failed, returning empty array');
         return [];
       }
-      console.log('User records fetched:', data?.length || 0, 'users');
       return (data || []) as UserManagementRecord[];
     },
   });
@@ -225,12 +217,6 @@ const UserManagement = () => {
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async (formData: UserForm) => {
-      // Note: The Edge Function will handle checking and deleting existing users
-      // We don't need to check here - let the Edge Function handle it
-      console.log('Creating user - Edge Function will handle existing user cleanup');
-
-      // Use direct database approach with proper error handling (updated)
-      console.log('Using direct database approach for user creation');
       const tempPassword = generateTemporaryPassword();
 
       let associatedClients: string[];
@@ -246,27 +232,23 @@ const UserManagement = () => {
           .not('area', 'eq', '');
 
         if (clientsError) {
-          console.warn('Error fetching all clients for user access:', clientsError);
+          logger.warn('Error fetching all clients for user access:', clientsError);
           associatedClients = [];
           associatedBranches = [];
         } else if (allClients && allClients.length > 0) {
           associatedClients = [...new Set(allClients.map(c => c.dealer_name).filter(Boolean))];
           associatedBranches = [...new Set(allClients.map(c => c.area).filter(Boolean))];
-          console.log('Found clients for user access:', associatedClients.length, 'clients');
         } else {
           associatedClients = [];
           associatedBranches = [];
         }
       } catch (error) {
-        console.error('Exception fetching clients for user access:', error);
+        logger.error('Exception fetching clients for user access:', error);
         associatedClients = [];
         associatedBranches = [];
       }
 
-      // Check if user is authenticated using AuthContext (works with mock auth)
       const user = authUser;
-      console.log('Current user from AuthContext:', user);
-      
       if (!user) {
         throw new Error('User not authenticated. Please log in again.');
       }
@@ -284,19 +266,11 @@ const UserManagement = () => {
         if (!currentUserError) {
           currentUserRecord = data;
         } else if (currentUserError.code !== 'PGRST116') {
-          console.warn('Current user not found in user_management:', currentUserError);
+          logger.warn('Current user not found in user_management:', currentUserError);
         }
       } catch (error) {
-        console.warn('Could not fetch current user record (may be due to RLS):', error);
-        // Continue without currentUserRecord - Edge Function will handle it
+        logger.warn('Could not fetch current user record (may be due to RLS):', error);
       }
-
-      console.log('Current user record in user_management:', currentUserRecord);
-      console.log('Creating user with role:', formData.role);
-      console.log('Role type:', typeof formData.role);
-      console.log('Role value:', JSON.stringify(formData.role));
-      console.log('Associated clients:', associatedClients);
-      console.log('Associated areas:', associatedBranches);
 
       // Validate role before sending
       if (!formData.role || !['admin', 'manager'].includes(formData.role)) {
@@ -314,19 +288,12 @@ const UserManagement = () => {
         createdBy: currentUserRecord?.id || null
       };
       
-      console.log('Sending request to create-user function:', { 
-        ...requestBody, 
-        password: '***',
-        roleType: typeof requestBody.role,
-        roleValue: requestBody.role
-      });
-      
       const { data: createUserResponse, error: createUserError } = await supabase.functions.invoke('create-user', {
         body: requestBody
       });
 
       if (createUserError) {
-        console.error('Create user function error:', createUserError);
+        logger.error('Create user function error:', createUserError);
         throw new Error(`Failed to create user: ${createUserError.message}`);
       }
 
@@ -334,7 +301,6 @@ const UserManagement = () => {
         throw new Error(`Failed to create user: ${createUserResponse?.error || 'Unknown error'}`);
       }
 
-      console.log('User created successfully via function:', createUserResponse.data);
       const userRecord = createUserResponse.data.user;
 
       // Send welcome email
@@ -349,21 +315,14 @@ const UserManagement = () => {
         });
 
         if (emailError) {
-          console.warn('Failed to send welcome email:', emailError);
-        } else {
-          console.log('Welcome email sent successfully');
+          logger.warn('Failed to send welcome email:', emailError);
         }
       } catch (emailError) {
-        console.warn('Email sending failed:', emailError);
+        logger.warn('Email sending failed:', emailError);
       }
 
-      console.log('User created successfully:', userRecord);
-      console.log('Created user role:', userRecord?.role);
-      console.log('Expected role was:', formData.role);
-      
-      // Verify the role matches what was requested
       if (userRecord?.role !== formData.role) {
-        console.error('ROLE MISMATCH! Expected:', formData.role, 'Got:', userRecord?.role);
+        logger.error('Role mismatch after user creation. Expected:', formData.role, 'Got:', userRecord?.role);
       }
       
       return userRecord;
@@ -383,7 +342,7 @@ const UserManagement = () => {
       });
     },
     onError: (error: unknown) => {
-      console.error('User creation error:', error);
+      logger.error('User creation error:', error);
       let errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
       // Provide more helpful error messages
@@ -665,8 +624,6 @@ const UserManagement = () => {
     
     try {
       if (editingUserId) {
-        // Update existing user
-        console.log('Updating user:', editingUserId);
         await updateUserMutation.mutateAsync({
           userId: editingUserId,
           username: userForm.username,
@@ -675,12 +632,8 @@ const UserManagement = () => {
           associated_dealer_areas: userForm.associated_dealer_areas
         });
         setEditingUserId(null);
-        console.log('User updated successfully');
       } else {
-        // Create new user
-        console.log('Creating new user with role:', userForm.role);
         await createUserMutation.mutateAsync(userForm);
-        console.log('User created successfully');
       }
       
       // Reset form only on success
@@ -881,17 +834,13 @@ const UserManagement = () => {
           <form 
             id="create-user-form" 
             onSubmit={async (e) => {
-              console.log('Form onSubmit triggered');
               e.preventDefault();
               e.stopPropagation();
               await handleSubmit(e);
-            }} 
+            }}
             className="space-y-6"
             noValidate
             style={{ pointerEvents: 'auto' }}
-            onFocus={(e) => {
-              console.log('Form focused:', e.target);
-            }}
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
@@ -899,11 +848,7 @@ const UserManagement = () => {
                 <Input
                   id="username"
                   value={userForm.username || ''}
-                  onChange={(e) => {
-                    const newValue = e.target.value;
-                    console.log('Username input changed:', newValue);
-                    setUserForm(prev => ({ ...prev, username: newValue }));
-                  }}
+                  onChange={(e) => setUserForm(prev => ({ ...prev, username: e.target.value }))}
                   placeholder="Enter username"
                   required
                   disabled={isSubmitting}
@@ -916,18 +861,7 @@ const UserManagement = () => {
                   id="email"
                   type="email"
                   value={userForm.email || ''}
-                  onChange={(e) => {
-                    const newValue = e.target.value;
-                    console.log('Email input changed:', newValue);
-                    setUserForm(prev => {
-                      const updated = { ...prev, email: newValue };
-                      console.log('Updated userForm with email:', updated);
-                      return updated;
-                    });
-                  }}
-                  onInput={(e) => {
-                    console.log('Email input event:', e.currentTarget.value);
-                  }}
+                  onChange={(e) => setUserForm(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="Enter email address"
                   required
                   disabled={isSubmitting}
@@ -939,13 +873,7 @@ const UserManagement = () => {
                 <Select
                   value={userForm.role || 'manager'}
                   onValueChange={(value: 'admin' | 'manager') => {
-                    console.log('Role changed to:', value);
-                    setUserForm(prev => {
-                      const updated = { ...prev, role: value };
-                      console.log('Updated userForm with role:', updated);
-                      updated.associated_dealer_areas = [];
-                      return updated;
-                    });
+                    setUserForm(prev => ({ ...prev, role: value, associated_dealer_areas: [] }));
                   }}
                   disabled={isSubmitting}
                 >
@@ -991,16 +919,6 @@ const UserManagement = () => {
                 type="submit"
                 disabled={isSubmitting}
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
-                onClick={(e) => {
-                  // Log button click for debugging
-                  console.log('Submit button clicked');
-                  console.log('Current form state:', userForm);
-                  console.log('Is submitting:', isSubmitting);
-                  console.log('Editing user ID:', editingUserId);
-                  
-                  // Don't prevent default - let form submission proceed
-                  // The form's onSubmit handler will be called automatically
-                }}
               >
                 {isSubmitting 
                   ? (editingUserId ? "Updating User..." : "Creating User...") 
