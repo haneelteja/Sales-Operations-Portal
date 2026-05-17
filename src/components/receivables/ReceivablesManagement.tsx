@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useMemo, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Loader2, Search, TrendingUp, CreditCard, Users, AlertTriangle,
   ChevronDown, MapPin, X, IndianRupee, Package, Calendar,
   Phone, MessageCircle, FileText, Receipt, ArrowUpDown, ChevronUp,
+  StickyNote, Clock, Plus, Send,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -257,6 +258,32 @@ async function fetchLedgerRows(customerId: string): Promise<LedgerRow[]> {
       balance,
     };
   });
+}
+
+// ── Follow-up notes ───────────────────────────────────────────────────────────
+
+interface FollowupNote {
+  id: string;
+  note: string;
+  followup_date: string | null;
+  created_at: string;
+}
+
+async function fetchFollowupNotes(customerId: string): Promise<FollowupNote[]> {
+  const { data, error } = await supabase
+    .from('client_followup_notes')
+    .select('id, note, followup_date, created_at')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as FollowupNote[];
+}
+
+async function saveFollowupNote(customerId: string, note: string, followupDate: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('client_followup_notes')
+    .insert({ customer_id: customerId, note, followup_date: followupDate || null });
+  if (error) throw error;
 }
 
 // ── Summary strip ─────────────────────────────────────────────────────────────
@@ -633,13 +660,198 @@ function LedgerDrawer({ c, open, onClose }: { c: CustomerRow; open: boolean; onC
   );
 }
 
+// ── Followup Notes Drawer ─────────────────────────────────────────────────────
+
+function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [note, setNote] = useState('');
+  const [followupDate, setFollowupDate] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const { data: notes, isLoading } = useQuery({
+    queryKey: ['followup-notes', c.customer_id],
+    queryFn: () => fetchFollowupNotes(c.customer_id),
+    enabled: open,
+    staleTime: 30000,
+  });
+
+  const mutation = useMutation({
+    mutationFn: () => saveFollowupNote(c.customer_id, note.trim(), followupDate || null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['followup-notes', c.customer_id] });
+      setNote('');
+      setFollowupDate('');
+      textareaRef.current?.focus();
+    },
+  });
+
+  const canSave = note.trim().length > 0 && !mutation.isPending;
+  const today = new Date().toISOString().split('T')[0];
+
+  const latestNote = notes?.[0];
+  const nextFollowup = latestNote?.followup_date;
+  const daysUntilFollowup = nextFollowup
+    ? Math.ceil((new Date(nextFollowup).getTime() - Date.now()) / 86400000)
+    : null;
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col p-0 overflow-hidden">
+        {/* Header */}
+        <SheetHeader className="px-6 py-4 border-b bg-card flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`flex-shrink-0 w-10 h-10 rounded-xl ${getAvatarColor(c.customer_id)} flex items-center justify-center text-white text-sm font-bold`}>
+              {initials(c.name)}
+            </div>
+            <div className="min-w-0">
+              <SheetTitle className="text-base font-semibold leading-tight truncate">{c.name}</SheetTitle>
+              <div className="flex items-center gap-2 mt-0.5">
+                {c.area && <span className="text-[10px] text-muted-foreground flex items-center gap-1"><MapPin className="h-2.5 w-2.5" />{c.area}</span>}
+                <span className={`text-[10px] font-semibold ${c.outstanding_balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  {c.outstanding_balance > 0 ? `₹${Math.round(c.outstanding_balance).toLocaleString('en-IN')} outstanding` : 'Cleared'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Next follow-up pill */}
+          {nextFollowup && (
+            <div className={`flex items-center gap-2 mt-2 px-3 py-2 rounded-lg text-xs font-medium ${
+              daysUntilFollowup !== null && daysUntilFollowup < 0
+                ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                : daysUntilFollowup !== null && daysUntilFollowup === 0
+                ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+            }`}>
+              <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>
+                {daysUntilFollowup !== null && daysUntilFollowup < 0
+                  ? `Follow-up overdue by ${Math.abs(daysUntilFollowup)}d`
+                  : daysUntilFollowup === 0
+                  ? 'Follow-up due today'
+                  : `Follow-up in ${daysUntilFollowup}d`}
+                {' — '}{fmtDate(nextFollowup)}
+              </span>
+            </div>
+          )}
+        </SheetHeader>
+
+        {/* Add note form */}
+        <div className="px-5 py-4 border-b bg-muted/30 flex-shrink-0">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Add Note</p>
+          <textarea
+            ref={textareaRef}
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder="e.g. Client confirmed payment in 2 days, will follow up on 20th…"
+            rows={3}
+            className="w-full text-sm border border-border rounded-lg px-3 py-2.5 bg-background resize-none outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder:text-muted-foreground"
+          />
+          <div className="flex items-center gap-3 mt-2">
+            <div className="flex items-center gap-2 flex-1">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              <input
+                type="date"
+                title="Follow-up date"
+                aria-label="Follow-up date"
+                value={followupDate}
+                min={today}
+                onChange={e => setFollowupDate(e.target.value)}
+                className="flex-1 text-sm border border-border rounded-lg px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+              />
+              {followupDate && (
+                <button type="button" aria-label="Clear follow-up date" onClick={() => setFollowupDate('')} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <Button
+              size="sm"
+              onClick={() => mutation.mutate()}
+              disabled={!canSave}
+              className="gap-1.5 text-xs"
+            >
+              {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              Save
+            </Button>
+          </div>
+          {followupDate && (
+            <p className="text-[10px] text-muted-foreground mt-1.5 flex items-center gap-1">
+              <Clock className="h-3 w-3" />Follow-up set for {fmtDate(followupDate)}
+            </p>
+          )}
+        </div>
+
+        {/* Notes timeline */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32 gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+              <span className="text-sm text-muted-foreground">Loading notes…</span>
+            </div>
+          ) : !notes?.length ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-2 text-center">
+              <StickyNote className="h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">No notes yet — add the first one above</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">History ({notes.length})</p>
+              {notes.map((n, i) => {
+                const daysFromNow = n.followup_date
+                  ? Math.ceil((new Date(n.followup_date).getTime() - Date.now()) / 86400000)
+                  : null;
+                const isOverdue = daysFromNow !== null && daysFromNow < 0;
+                const isDueToday = daysFromNow === 0;
+                return (
+                  <div key={n.id} className="relative pl-5">
+                    {/* Timeline line */}
+                    {i < notes.length - 1 && (
+                      <div className="absolute left-[7px] top-5 bottom-0 w-px bg-border" />
+                    )}
+                    {/* Dot */}
+                    <div className={`absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-background flex items-center justify-center ${i === 0 ? 'bg-blue-500' : 'bg-muted-foreground/40'}`} />
+
+                    <div className="bg-card border border-border rounded-xl px-4 py-3 space-y-1.5 shadow-sm">
+                      <p className="text-sm text-foreground leading-snug whitespace-pre-wrap">{n.note}</p>
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {new Date(n.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {n.followup_date && (
+                          <span className={`text-[10px] font-medium flex items-center gap-1 px-2 py-0.5 rounded-full ${
+                            isOverdue ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            : isDueToday ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                          }`}>
+                            <Calendar className="h-2.5 w-2.5" />
+                            Follow-up: {fmtDate(n.followup_date)}
+                            {isOverdue && ` (${Math.abs(daysFromNow!)}d overdue)`}
+                            {isDueToday && ' (today)'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 // ── Customer card ─────────────────────────────────────────────────────────────
 
-function CustomerCard({ c, isExpanded, onToggle, onViewLedger }: {
+function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes }: {
   c: CustomerRow;
   isExpanded: boolean;
   onToggle: () => void;
   onViewLedger: (e: React.MouseEvent) => void;
+  onViewNotes: (e: React.MouseEvent) => void;
 }) {
   const risk = getRisk(c);
   const activeMonths = c.monthly.filter(m => m.revenue > 0).length;
@@ -778,15 +990,23 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger }: {
         />
       </div>
 
-      {/* ── View Ledger button ── */}
-      <div className="px-4 pb-3">
+      {/* ── Action buttons ── */}
+      <div className="px-4 pb-3 flex gap-2">
         <button
           type="button"
           onClick={onViewLedger}
-          className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg py-1.5 transition-colors border border-blue-200 dark:border-blue-800"
+          className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg py-1.5 transition-colors border border-blue-200 dark:border-blue-800"
         >
           <Receipt className="h-3.5 w-3.5" />
-          View Ledger &amp; Transactions
+          Ledger
+        </button>
+        <button
+          type="button"
+          onClick={onViewNotes}
+          className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium text-violet-600 dark:text-violet-400 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg py-1.5 transition-colors border border-violet-200 dark:border-violet-800"
+        >
+          <StickyNote className="h-3.5 w-3.5" />
+          Follow-up Notes
         </button>
       </div>
 
@@ -877,6 +1097,7 @@ const ReceivablesManagement: React.FC = () => {
   const [skuFilter, setSkuFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [ledgerCustomer, setLedgerCustomer] = useState<CustomerRow | null>(null);
+  const [notesCustomer, setNotesCustomer] = useState<CustomerRow | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['receivables-management'],
@@ -1115,6 +1336,7 @@ const ReceivablesManagement: React.FC = () => {
               isExpanded={expandedId === c.customer_id}
               onToggle={() => setExpandedId(expandedId === c.customer_id ? null : c.customer_id)}
               onViewLedger={e => { e.stopPropagation(); setLedgerCustomer(c); }}
+              onViewNotes={e => { e.stopPropagation(); setNotesCustomer(c); }}
             />
           ))
         )}
@@ -1126,6 +1348,15 @@ const ReceivablesManagement: React.FC = () => {
           c={ledgerCustomer}
           open={!!ledgerCustomer}
           onClose={() => setLedgerCustomer(null)}
+        />
+      )}
+
+      {/* Follow-up notes drawer */}
+      {notesCustomer && (
+        <FollowupNotesDrawer
+          c={notesCustomer}
+          open={!!notesCustomer}
+          onClose={() => setNotesCustomer(null)}
         />
       )}
     </div>
