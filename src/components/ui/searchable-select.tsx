@@ -28,8 +28,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const selected = options.find(o => o.value === value);
   const filtered = options.filter(o =>
@@ -38,11 +41,26 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
   useEffect(() => {
     if (open) {
+      const currentIndex = filtered.findIndex(o => o.value === value);
+      setHighlightedIndex(currentIndex >= 0 ? currentIndex : -1);
       setTimeout(() => inputRef.current?.focus(), 0);
     } else {
       setSearch('');
+      setHighlightedIndex(-1);
     }
   }, [open]);
+
+  // Reset highlighted index when filtered list changes (user is typing)
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [search]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (highlightedIndex >= 0 && itemRefs.current[highlightedIndex]) {
+      itemRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex]);
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
@@ -57,6 +75,30 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const handleSelect = (val: string) => {
     onValueChange(val);
     setOpen(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open) return;
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlightedIndex(i => (i < filtered.length - 1 ? i + 1 : i));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlightedIndex(i => (i > 0 ? i - 1 : 0));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+          handleSelect(filtered[highlightedIndex].value);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setOpen(false);
+        break;
+    }
   };
 
   return (
@@ -95,22 +137,24 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 placeholder="Search..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onKeyDown={handleKeyDown}
                 className="w-full pl-7 pr-2 py-1.5 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
           </div>
-          <div className="max-h-52 overflow-y-auto p-1">
+          <div ref={listRef} className="max-h-52 overflow-y-auto p-1">
             {filtered.length === 0 ? (
               <div className="py-3 text-center text-sm text-gray-400">No results found</div>
             ) : (
-              filtered.map(option => (
+              filtered.map((option, index) => (
                 <button
                   key={option.value}
+                  ref={el => { itemRefs.current[index] = el; }}
                   type="button"
                   onClick={() => handleSelect(option.value)}
                   className={cn(
                     'w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground',
-                    option.value === value && 'bg-accent font-medium'
+                    (option.value === value || index === highlightedIndex) && 'bg-accent font-medium'
                   )}
                 >
                   {option.label}
