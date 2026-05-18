@@ -214,6 +214,21 @@ serve(async (req) => {
       }
     }
 
+    // Fetch contacts for all dealers that have outstanding amounts
+    const dealerNamesWithOutstanding = [...dealersWithOutstanding];
+    const { data: contactsData } = await supabase
+      .from('client_contacts')
+      .select('client_name, contact_name, phone, role')
+      .in('client_name', dealerNamesWithOutstanding)
+      .eq('is_active', true);
+
+    // Map dealer name → list of active contacts
+    const dealerContacts = new Map<string, Array<{ contact_name: string; phone: string; role: string }>>();
+    for (const c of (contactsData || [])) {
+      if (!dealerContacts.has(c.client_name)) dealerContacts.set(c.client_name, []);
+      dealerContacts.get(c.client_name)!.push({ contact_name: c.contact_name, phone: c.phone, role: c.role });
+    }
+
     const now = new Date();
     const results = [];
 
@@ -306,49 +321,60 @@ serve(async (req) => {
         );
         const outstandingFormatted = `₹${data.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
+        const placeholders = {
+          customerName: customer.dealer_name,
+          outstandingAmount: outstandingFormatted,
+          daysOverdue: daysOverdueActual.toString(),
+          oldestInvoiceDate: new Date(data.oldestSaleDate!).toLocaleDateString('en-IN'),
+        };
+
+        // Determine recipients: use contacts if any, otherwise fall back to customer's WhatsApp number
+        const contacts = dealerContacts.get(dealerName) || [];
+        const recipients: Array<{ phone?: string; label: string }> =
+          contacts.length > 0
+            ? contacts.map((c) => ({ phone: c.phone, label: `${c.contact_name} (${c.role})` }))
+            : [{ label: 'customer' }]; // no toPhone → whatsapp-send uses customer.whatsapp_number
+
         let whatsappLogId: string | null = null;
         let status: 'sent' | 'failed' = 'sent';
         let failureReason: string | null = null;
 
-        try {
-          const sendResult = await sendWithRateLimitRetry({
-            customerId: customer.id,
-            messageType: 'payment_reminder',
-            triggerType: 'scheduled',
-            placeholders: {
-              customerName: customer.dealer_name, // dealer_name is the local var set from c.client_name above
-              outstandingAmount: outstandingFormatted,
-              daysOverdue: daysOverdueActual.toString(),
-              oldestInvoiceDate: new Date(data.oldestSaleDate!).toLocaleDateString('en-IN'),
-            },
-          });
+        for (const recipient of recipients) {
+          try {
+            const sendResult = await sendWithRateLimitRetry({
+              customerId: customer.id,
+              messageType: 'payment_reminder',
+              triggerType: 'scheduled',
+              placeholders,
+              ...(recipient.phone ? { toPhone: recipient.phone } : {}),
+            });
 
-          if (sendResult.success) {
-            whatsappLogId = sendResult.messageLogId ?? null;
-            sent++;
-          } else {
+            if (sendResult.success) {
+              whatsappLogId = sendResult.messageLogId ?? null;
+              sent++;
+            } else {
+              status = 'failed';
+              failureReason = sendResult.error || 'Unknown error from whatsapp-send';
+              failed++;
+            }
+          } catch (e) {
             status = 'failed';
-            failureReason = sendResult.error || 'Unknown error from whatsapp-send';
+            failureReason = e instanceof Error ? e.message : String(e);
             failed++;
           }
-        } catch (e) {
-          status = 'failed';
-          failureReason = e instanceof Error ? e.message : String(e);
-          failed++;
+
+          await sleep(1000);
         }
 
         await supabase.from('payment_reminder_logs').insert({
           schedule_id: schedule.id,
           customer_id: customer.id,
-          customer_name: customer.dealer_name, // local var set from c.client_name
+          customer_name: customer.dealer_name,
           outstanding_amount: data.outstanding,
           whatsapp_message_log_id: whatsappLogId,
           status,
           failure_reason: failureReason,
         });
-
-        // Brief pause between sends; 429 retry logic handles actual rate limits
-        await sleep(1000);
       }
 
       results.push({

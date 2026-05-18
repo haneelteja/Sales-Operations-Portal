@@ -17,7 +17,9 @@ interface WhatsAppSendRequest {
   /** Google Drive file ID; used to build direct-download URL for sending PDF as document */
   attachmentFileId?: string;
   scheduledFor?: string;
-  placeholders?: Record<string, string>; // Custom placeholder values
+  placeholders?: Record<string, string>;
+  /** Override the recipient phone number (e.g. send to a contact person instead of the customer's WhatsApp number) */
+  toPhone?: string;
 }
 
 serve(async (req) => {
@@ -44,6 +46,7 @@ serve(async (req) => {
       attachmentFileId,
       scheduledFor,
       placeholders = {},
+      toPhone,
     }: WhatsAppSendRequest = await req.json();
 
     // Do NOT pass Google Drive uc?export=download URL to the API: it often returns an HTML virus-scan
@@ -118,14 +121,17 @@ serve(async (req) => {
     }
 
 
-    if (!customer.whatsapp_number) {
+    // toPhone overrides the customer's WhatsApp number (e.g. for contact persons)
+    const recipientPhone = toPhone?.trim() || recipientPhone;
+
+    if (!recipientPhone) {
       throw new Error(`Customer ${customer.dealer_name} does not have a WhatsApp number`);
     }
 
     // Validate WhatsApp number format
     const whatsappRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!whatsappRegex.test(customer.whatsapp_number.replace(/\s/g, ''))) {
-      throw new Error(`Invalid WhatsApp number format: ${customer.whatsapp_number}`);
+    if (!whatsappRegex.test(recipientPhone.replace(/\s/g, ''))) {
+      throw new Error(`Invalid WhatsApp number format: ${recipientPhone}`);
     }
 
     // Step 3: Get template or use custom message
@@ -177,7 +183,7 @@ serve(async (req) => {
       .insert({
         customer_id: customerId,
         customer_name: customer.dealer_name,
-        whatsapp_number: customer.whatsapp_number,
+        whatsapp_number: recipientPhone,
         message_type: messageType,
         trigger_type: triggerType,
         status: 'pending',
@@ -207,9 +213,9 @@ serve(async (req) => {
         const endpoint = `/sendMessage/${apiKey}`;
         const fullUrl = `${apiUrl}${endpoint}`;
         // console.log(`📤 Sending WhatsApp message via 360Messenger API: ${fullUrl}`);
-        // console.log(`📱 To: ${customer.whatsapp_number}, Message length: ${messageContent.length} chars`);
+        // console.log(`📱 To: ${recipientPhone}, Message length: ${messageContent.length} chars`);
         const formData = new URLSearchParams();
-        formData.append('phonenumber', customer.whatsapp_number);
+        formData.append('phonenumber', recipientPhone);
         formData.append('text', messageContent);
         formData.append('360notify-medium', 'wordpress_order_notification');
         const textResponse = await fetch(fullUrl, {
@@ -395,7 +401,7 @@ serve(async (req) => {
                   endpoint: `/sendMessage/${apiKey}`,
                   headers: { 'Content-Type': 'application/json' },
                   body: {
-                    phonenumber: customer.whatsapp_number,
+                    phonenumber: recipientPhone,
                     type: 'document',
                     document: { link: documentUrlToSend, filename: pdfFileName, caption },
                   },
@@ -406,7 +412,7 @@ serve(async (req) => {
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                   body: {
                     messaging_product: 'whatsapp',
-                    to: customer.whatsapp_number,
+                    to: recipientPhone,
                     type: 'document',
                     document: { link: documentUrlToSend, filename: pdfFileName, caption },
                   },
@@ -416,7 +422,7 @@ serve(async (req) => {
                   endpoint: `/sendMessage/${apiKey}`,
                   headers: { 'Content-Type': 'application/json' },
                   body: {
-                    to: customer.whatsapp_number,
+                    to: recipientPhone,
                     messaging_product: 'whatsapp',
                     type: 'document',
                     document: { link: documentUrlToSend, filename: pdfFileName, caption },
@@ -448,7 +454,7 @@ serve(async (req) => {
                   const res = await fetch(`${apiUrl}/sendMessage/${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ phonenumber: customer.whatsapp_number, text: caption, [param]: documentUrlToSend, filename: pdfFileName }).toString(),
+                    body: new URLSearchParams({ phonenumber: recipientPhone, text: caption, [param]: documentUrlToSend, filename: pdfFileName }).toString(),
                   });
                   if (res.ok) {
                     // console.log(`✅ Document (PDF) sent via form-urlencoded param ${param}`);
@@ -464,7 +470,7 @@ serve(async (req) => {
             // Final fallback: multipart binary upload
             try {
               const form = new FormData();
-              form.append('phonenumber', customer.whatsapp_number);
+              form.append('phonenumber', recipientPhone);
               form.append('text', caption);
               form.append('360notify-medium', 'wordpress_order_notification');
               form.append('file', new Blob([pdfBytes], { type: 'application/pdf' }), pdfFileName);
@@ -490,7 +496,7 @@ serve(async (req) => {
         for (const param of formParamNames) {
           try {
             const formParams: Record<string, string> = {
-              phonenumber: customer.whatsapp_number,
+              phonenumber: recipientPhone,
               text: (messageContent || '').slice(0, 1024),
               '360notify-medium': 'wordpress_order_notification',
               [param]: docUrl,
@@ -509,7 +515,7 @@ serve(async (req) => {
             // console.log(`Document /sendMessage ${param} failed:`, err instanceof Error ? err.message : err);
           }
         }
-        const chatId = customer.whatsapp_number.replace(/\D/g, '') + '@c.us';
+        const chatId = recipientPhone.replace(/\D/g, '') + '@c.us';
         const v2SendPaths = ['/v2/message/send', '/v2/message/sendMessage'];
         for (const path of v2SendPaths) {
           try {
@@ -529,13 +535,13 @@ serve(async (req) => {
         }
         const docEndpoints = [
           { path: '/sendDocument/' + apiKey, body: (): string => new URLSearchParams({
-            phonenumber: customer.whatsapp_number,
+            phonenumber: recipientPhone,
             document: docUrl,
             caption: (messageContent || '').slice(0, 1024),
             '360notify-medium': 'wordpress_order_notification',
           }).toString() },
           { path: '/sendDocument/' + apiKey, body: (): string => new URLSearchParams({
-            phonenumber: customer.whatsapp_number,
+            phonenumber: recipientPhone,
             file_url: docUrl,
             '360notify-medium': 'wordpress_order_notification',
           }).toString() },
