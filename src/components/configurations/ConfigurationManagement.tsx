@@ -30,8 +30,8 @@ const ConfigurationManagement = () => {
   
   // Additional state for advanced customer management
   const [editForm, setEditForm] = useState({
-    dealer_name: "",
-    area: "",
+    client_name: "",
+    branch: "",
     sku: "",
     price_per_case: "",
     price_per_bottle: "",
@@ -43,16 +43,16 @@ const ConfigurationManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState({
-    dealer_name: "",
-    area: "",
+    client_name: "",
+    branch: "",
     sku: "",
     pricing_date: "",
     price_per_case: "",
     price_per_bottle: ""
   });
   const [columnSorts, setColumnSorts] = useState<Record<string, "asc" | "desc" | null>>({
-    dealer_name: null,
-    area: null,
+    client_name: null,
+    branch: null,
     sku: null,
     pricing_date: null,
     price_per_case: null,
@@ -80,8 +80,8 @@ const ConfigurationManagement = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, dealer_name, area, sku, price_per_case, price_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, created_at, updated_at")
-          .order("dealer_name", { ascending: true });
+          .select("id, client_name, branch, sku, price_per_case, price_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, created_at, updated_at")
+          .order("client_name", { ascending: true });
 
         if (error) {
           logger.error('Error fetching customers:', error);
@@ -125,12 +125,12 @@ const ConfigurationManagement = () => {
   const updateCustomerMutation = useMutation({
     mutationFn: async (data: { id: string } & typeof editForm) => {
       // Check if the 4-column unique key would conflict with another row
-      if (data.dealer_name && data.area && data.sku && data.pricing_date) {
+      if (data.client_name && data.branch && data.sku && data.pricing_date) {
         const { data: existingCustomers, error: checkError } = await supabase
           .from("customers")
           .select("id")
-          .eq("dealer_name", data.dealer_name)
-          .eq("area", data.area)
+          .eq("client_name", data.client_name)
+          .eq("branch", data.branch)
           .eq("sku", data.sku)
           .eq("pricing_date", data.pricing_date)
           .neq("id", data.id)
@@ -139,13 +139,13 @@ const ConfigurationManagement = () => {
         if (checkError) {
           logger.error('Error checking for duplicates:', checkError);
         } else if (existingCustomers && existingCustomers.length > 0) {
-          throw new Error(`A pricing row for "${data.dealer_name}" / "${data.area}" / "${data.sku}" on ${data.pricing_date} already exists.`);
+          throw new Error(`A pricing row for "${data.client_name}" / "${data.branch}" / "${data.sku}" on ${data.pricing_date} already exists.`);
         }
       }
 
       const updateData: Partial<{
-        dealer_name: string;
-        area: string;
+        client_name: string;
+        branch: string;
         sku: string | null;
         price_per_bottle: number | null;
         whatsapp_number: string | null;
@@ -153,8 +153,8 @@ const ConfigurationManagement = () => {
       }> = {};
       
       // Only include fields that are provided
-      if (data.dealer_name) updateData.dealer_name = data.dealer_name;
-      if (data.area !== undefined) updateData.area = data.area;
+      if (data.client_name) updateData.client_name = data.client_name;
+      if (data.branch !== undefined) updateData.branch = data.branch;
       if (data.sku !== undefined) updateData.sku = data.sku;
       // price_per_case is a generated column — never include it in UPDATE
       if (data.price_per_bottle !== undefined) {
@@ -176,7 +176,7 @@ const ConfigurationManagement = () => {
 
         // Handle 409 conflict (unique constraint violation)
         if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
-          throw new Error(`A customer with client name "${data.dealer_name}" and branch "${data.area}" already exists. Please use different values.`);
+          throw new Error(`A customer with client name "${data.client_name}" and branch "${data.branch}" already exists. Please use different values.`);
         }
 
         throw error;
@@ -273,8 +273,8 @@ const ConfigurationManagement = () => {
     if (!customers) return [];
     
     return customers.filter((customer) => {
-    const clientName = customer.dealer_name || '';
-    const area = customer.area || '';
+    const clientName = customer.client_name || '';
+    const area = customer.branch || '';
     const sku = customer.sku || '';
     const pricingDate = customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '';
     const pricePerCase = customer.price_per_case?.toString() || '';
@@ -297,8 +297,8 @@ const ConfigurationManagement = () => {
     }
     
     // Column-specific filters
-    if (columnFilters.dealer_name && !clientName.toLowerCase().includes(columnFilters.dealer_name.toLowerCase())) return false;
-    if (columnFilters.area && !area.toLowerCase().includes(columnFilters.area.toLowerCase())) return false;
+    if (columnFilters.client_name && !clientName.toLowerCase().includes(columnFilters.client_name.toLowerCase())) return false;
+    if (columnFilters.branch && !area.toLowerCase().includes(columnFilters.branch.toLowerCase())) return false;
     if (columnFilters.sku && !sku.toLowerCase().includes(columnFilters.sku.toLowerCase())) return false;
     if (columnFilters.pricing_date && pricingDate !== columnFilters.pricing_date) return false;
     if (columnFilters.price_per_case && !pricePerCase.includes(columnFilters.price_per_case)) return false;
@@ -306,26 +306,26 @@ const ConfigurationManagement = () => {
     
     return true;
   }).sort((a, b) => {
-    // Default sorting: Active first, then Dealer Name → Area → SKU → Pricing Date
+    // Default sorting: Active first, then Client Name → Branch → SKU → Pricing Date
     const activeSort = Object.entries(columnSorts).find(([_, direction]) => direction !== null);
-    
+
     // If no manual sort is applied, use default sorting
     if (!activeSort) {
       // 1. Sort by is_active (active first)
       if (a.is_active !== b.is_active) {
         return a.is_active ? -1 : 1; // Active customers first
       }
-      
-      // 2. Sort by dealer_name
-      const clientNameA = (a.dealer_name || '').toLowerCase();
-      const clientNameB = (b.dealer_name || '').toLowerCase();
+
+      // 2. Sort by client_name
+      const clientNameA = (a.client_name || '').toLowerCase();
+      const clientNameB = (b.client_name || '').toLowerCase();
       if (clientNameA !== clientNameB) {
         return clientNameA < clientNameB ? -1 : 1;
       }
-      
-      // 3. Sort by area
-      const areaA = (a.area || '').toLowerCase();
-      const areaB = (b.area || '').toLowerCase();
+
+      // 3. Sort by branch
+      const areaA = (a.branch || '').toLowerCase();
+      const areaB = (b.branch || '').toLowerCase();
       if (areaA !== areaB) {
         return areaA < areaB ? -1 : 1;
       }
@@ -348,13 +348,13 @@ const ConfigurationManagement = () => {
     let valueA: string | number, valueB: string | number;
 
     switch (columnKey) {
-      case 'dealer_name':
-        valueA = (a.dealer_name || '').toLowerCase();
-        valueB = (b.dealer_name || '').toLowerCase();
+      case 'client_name':
+        valueA = (a.client_name || '').toLowerCase();
+        valueB = (b.client_name || '').toLowerCase();
         break;
-      case 'area':
-        valueA = (a.area || '').toLowerCase();
-        valueB = (b.area || '').toLowerCase();
+      case 'branch':
+        valueA = (a.branch || '').toLowerCase();
+        valueB = (b.branch || '').toLowerCase();
         break;
       case 'sku':
         valueA = (a.sku || '').toLowerCase();
@@ -409,16 +409,16 @@ const ConfigurationManagement = () => {
   const clearAllFilters = () => {
     setSearchTerm("");
     setColumnFilters({
-      dealer_name: "",
-      area: "",
+      client_name: "",
+      branch: "",
       sku: "",
       pricing_date: "",
       price_per_case: "",
       price_per_bottle: ""
     });
     setColumnSorts({
-      dealer_name: null,
-      area: null,
+      client_name: null,
+      branch: null,
       sku: null,
       pricing_date: null,
       price_per_case: null,
@@ -432,18 +432,18 @@ const ConfigurationManagement = () => {
     try {
       const { data, error } = await supabase
         .from('sales_transactions')
-        .select('transaction_date, transaction_type, sku, quantity, amount, description, customers(dealer_name, area, branch)')
+        .select('transaction_date, transaction_type, sku, quantity, amount, description, customers(client_name, branch)')
         .eq('customer_id', customer.id)
         .order('transaction_date', { ascending: true });
 
       if (error) throw error;
 
       const rows = (data || []).map((tx) => {
-        const c = tx.customers as { dealer_name?: string; area?: string; branch?: string } | null;
+        const c = tx.customers as { client_name?: string; branch?: string } | null;
         return {
           date: tx.transaction_date,
-          clientName: c?.dealer_name || customer.dealer_name || 'Unknown',
-          branch: c?.branch || c?.area || customer.area || '',
+          clientName: c?.client_name || customer.client_name || 'Unknown',
+          branch: c?.branch || customer.branch || '',
           type: tx.transaction_type || 'sale',
           sku: tx.sku,
           cases: tx.quantity,
@@ -453,13 +453,13 @@ const ConfigurationManagement = () => {
       });
 
       if (rows.length === 0) {
-        toast({ title: 'No transactions', description: `No transactions found for ${customer.dealer_name}.` });
+        toast({ title: 'No transactions', description: `No transactions found for ${customer.client_name}.` });
         return;
       }
 
-      const clientLabel = customer.area ? `${customer.dealer_name} — ${customer.area}` : customer.dealer_name;
+      const clientLabel = customer.branch ? `${customer.client_name} — ${customer.branch}` : customer.client_name;
       const dateStr = new Date().toISOString().split('T')[0];
-      const safeName = (customer.dealer_name || 'client').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeName = (customer.client_name || 'client').replace(/[^a-zA-Z0-9_-]/g, '_');
       await exportLedger(rows, `Ledger_${safeName}_${dateStr}.xlsx`, `Client Ledger — ${clientLabel}`);
     } catch (err) {
       toast({ title: 'Export failed', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
@@ -471,8 +471,8 @@ const ConfigurationManagement = () => {
   // Export filtered data to Excel
   const exportCustomersToExcel = async () => {
     const exportData = filteredAndSortedCustomers?.map((customer) => ({
-      'Client name': customer.dealer_name || '',
-      'Branch': customer.area || '',
+      'Client name': customer.client_name || '',
+      'Branch': customer.branch || '',
       'SKU': customer.sku || '',
       'Pricing Date': customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '',
       'Price per Case': customer.price_per_case ? `₹${customer.price_per_case}` : '',
@@ -486,8 +486,8 @@ const ConfigurationManagement = () => {
   const handleEditClick = (customer: Customer) => {
     setEditingCustomer(customer);
     setEditForm({
-      dealer_name: customer.dealer_name || "",
-      area: customer.area || "",
+      client_name: customer.client_name || "",
+      branch: customer.branch || "",
       sku: customer.sku || "",
       price_per_case: customer.price_per_case?.toString() || "",
       price_per_bottle: customer.price_per_bottle?.toString() || "",
@@ -579,11 +579,11 @@ const ConfigurationManagement = () => {
                         <div className="flex items-center gap-2">
                           Client name
                         <ColumnFilter
-                          columnKey="dealer_name"
+                          columnKey="client_name"
                           columnName="Client name"
-                          filterValue={columnFilters.dealer_name}
-                          onFilterChange={(value) => handleColumnFilterChange('dealer_name', value)}
-                          onSortChange={(direction) => handleColumnSortChange('dealer_name', direction)}
+                          filterValue={columnFilters.client_name}
+                          onFilterChange={(value) => handleColumnFilterChange('client_name', value)}
+                          onSortChange={(direction) => handleColumnSortChange('client_name', direction)}
                           dataType="text"
                         />
                       </div>
@@ -592,11 +592,11 @@ const ConfigurationManagement = () => {
                         <div className="flex items-center gap-2">
                           Branch
                         <ColumnFilter
-                          columnKey="area"
+                          columnKey="branch"
                           columnName="Branch"
-                          filterValue={columnFilters.area}
-                          onFilterChange={(value) => handleColumnFilterChange('area', value)}
-                          onSortChange={(direction) => handleColumnSortChange('area', direction)}
+                          filterValue={columnFilters.branch}
+                          onFilterChange={(value) => handleColumnFilterChange('branch', value)}
+                          onSortChange={(direction) => handleColumnSortChange('branch', direction)}
                           dataType="text"
                         />
                       </div>
@@ -665,8 +665,8 @@ const ConfigurationManagement = () => {
                     {filteredAndSortedCustomers?.length > 0 ? (
                       filteredAndSortedCustomers.map((customer) => (
                       <TableRow key={customer.id}>
-                        <TableCell className="font-medium">{customer.dealer_name}</TableCell>
-                        <TableCell>{customer.area}</TableCell>
+                        <TableCell className="font-medium">{customer.client_name}</TableCell>
+                        <TableCell>{customer.branch}</TableCell>
                         <TableCell>{customer.sku || '-'}</TableCell>
                         <TableCell>{customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '-'}</TableCell>
                         <TableCell className="text-right">
@@ -755,8 +755,8 @@ const ConfigurationManagement = () => {
                 <Label htmlFor="edit-client-name">Client name *</Label>
                 <Input
                   id="edit-client-name"
-                  value={editForm.dealer_name}
-                  onChange={(e) => setEditForm({...editForm, dealer_name: e.target.value})}
+                  value={editForm.client_name}
+                  onChange={(e) => setEditForm({...editForm, client_name: e.target.value})}
                   placeholder="Customer company name"
                 />
               </div>
@@ -775,8 +775,8 @@ const ConfigurationManagement = () => {
                 <Label htmlFor="edit-area">Branch</Label>
                 <Input
                   id="edit-area"
-                  value={editForm.area}
-                  onChange={(e) => setEditForm({...editForm, area: e.target.value})}
+                  value={editForm.branch}
+                  onChange={(e) => setEditForm({...editForm, branch: e.target.value})}
                   placeholder="Branch or location"
                 />
               </div>

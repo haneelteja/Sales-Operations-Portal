@@ -85,7 +85,7 @@ export const EditTransactionDialog = memo(({
               <Label htmlFor="edit-customer">Client</Label>
               <SearchableSelect
                 options={getUniqueCustomers.map((customerName) => ({ value: customerName, label: customerName }))}
-                value={customers?.find(c => c.id === editForm.customer_id)?.dealer_name ?? ""}
+                value={customers?.find(c => c.id === editForm.customer_id)?.client_name ?? ""}
                 onValueChange={onCustomerChange}
                 placeholder="Select client"
               />

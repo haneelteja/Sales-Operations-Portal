@@ -14,7 +14,7 @@ const PAGE_SIZE = 5;
 
 interface ClientLabelSummary {
   client_id: string;
-  dealer_name: string;
+  client_name: string;
   total_labels_purchased: number;
   labels_used: number;
   labels_available: number;
@@ -26,7 +26,7 @@ const LabelAvailability = () => {
   // State for filtering and sorting
   const [searchTerm, setSearchTerm] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("all");
-  const [sortField, setSortField] = React.useState<keyof ClientLabelSummary>("dealer_name");
+  const [sortField, setSortField] = React.useState<keyof ClientLabelSummary>("client_name");
 
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc");
   const [page, setPage] = React.useState(1);
@@ -53,9 +53,9 @@ const LabelAvailability = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, dealer_name")
+        .select("id, client_name")
         .eq("is_active", true)
-        .order("dealer_name", { ascending: true });
+        .order("client_name", { ascending: true });
 
       if (error) throw error;
       
@@ -111,19 +111,19 @@ const LabelAvailability = () => {
     
     // Get all unique SKUs from customers table
     const seenSKUs = new Set<string>();
-    const uniqueSKUs: { sku: string; dealer_name: string; area: string }[] = [];
-    
+    const uniqueSKUs: { sku: string; client_name: string; branch: string }[] = [];
+
     customers.forEach(customer => {
       if (customer.sku && customer.sku.trim() !== '') {
         const trimmedSKU = customer.sku.trim();
-        const skuKey = `${customer.dealer_name}_${customer.area}_${trimmedSKU}`;
-        
+        const skuKey = `${customer.client_name}_${customer.branch}_${trimmedSKU}`;
+
         if (!seenSKUs.has(skuKey)) {
           seenSKUs.add(skuKey);
           uniqueSKUs.push({
             sku: trimmedSKU,
-            dealer_name: customer.dealer_name,
-            area: customer.area || ''
+            client_name: customer.client_name,
+            branch: customer.branch || ''
           });
         }
       }
@@ -148,7 +148,7 @@ const LabelAvailability = () => {
       const customer = customers?.find(c => c.id === purchase.client_id);
       if (!customer) return;
 
-      const key = customer.dealer_name;
+      const key = customer.client_name;
       const existing = summaryMap.get(key);
 
       if (existing) {
@@ -160,7 +160,7 @@ const LabelAvailability = () => {
       } else {
         summaryMap.set(key, {
           client_id: purchase.client_id,
-          dealer_name: customer.dealer_name,
+          client_name: customer.client_name,
           total_labels_purchased: purchase.quantity || 0,
           labels_used: 0,
           labels_available: 0,
@@ -179,7 +179,7 @@ const LabelAvailability = () => {
 
         const bottlesPerCase = factoryPricing?.get(sale.sku) || 1;
         const labelsUsed = (sale.quantity || 0) * bottlesPerCase;
-        const key = customer.dealer_name;
+        const key = customer.client_name;
         const existing = summaryMap.get(key);
 
         if (existing) {
@@ -187,7 +187,7 @@ const LabelAvailability = () => {
         } else {
           summaryMap.set(key, {
             client_id: sale.customer_id,
-            dealer_name: customer.dealer_name,
+            client_name: customer.client_name,
             total_labels_purchased: 0,
             labels_used: labelsUsed,
             labels_available: -labelsUsed,
@@ -201,7 +201,7 @@ const LabelAvailability = () => {
     // Compute labels_available and sort by client name
     return Array.from(summaryMap.values())
       .map(s => ({ ...s, labels_available: s.total_labels_purchased - s.labels_used }))
-      .sort((a, b) => a.dealer_name.localeCompare(b.dealer_name));
+      .sort((a, b) => a.client_name.localeCompare(b.client_name));
   }, [labelPurchases, customers, salesTransactions, factoryPricing]);
 
   // Filter and sort the data
@@ -209,7 +209,7 @@ const LabelAvailability = () => {
     const filtered = clientSummaries.filter((summary) => {
       // Search filter
       const matchesSearch =
-        summary.dealer_name.toLowerCase().includes(searchTerm.toLowerCase());
+        summary.client_name.toLowerCase().includes(searchTerm.toLowerCase());
       
       // Status filter
       let matchesStatus = true;
@@ -261,7 +261,7 @@ const LabelAvailability = () => {
   // Export to Excel
   const handleExport = async () => {
     const exportData = filteredAndSortedData.map(item => ({
-      'Client': item.dealer_name,
+      'Client': item.client_name,
       'Labels Purchased': item.total_labels_purchased,
       'Labels Used': item.labels_used,
       'Labels Available': item.labels_available,
@@ -344,11 +344,11 @@ const LabelAvailability = () => {
                 <TableRow>
                   <TableHead
                     className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                    onClick={() => handleSort('dealer_name')}
+                    onClick={() => handleSort('client_name')}
                   >
                     <div className="flex items-center gap-2">
                       Client
-                      {sortField === 'dealer_name' && (
+                      {sortField === 'client_name' && (
                         <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </div>
@@ -403,8 +403,8 @@ const LabelAvailability = () => {
               <TableBody>
                 {filteredAndSortedData.length > 0 ? (
                   pageRows.map((summary, index) => (
-                    <TableRow key={`${summary.dealer_name}_${index}`}>
-                      <TableCell className="font-medium">{summary.dealer_name}</TableCell>
+                    <TableRow key={`${summary.client_name}_${index}`}>
+                      <TableCell className="font-medium">{summary.client_name}</TableCell>
                       <TableCell className="font-medium">{summary.total_labels_purchased.toLocaleString()}</TableCell>
                       <TableCell>{summary.labels_used.toLocaleString()}</TableCell>
                       <TableCell className={`font-medium ${summary.labels_available > 0 ? 'text-green-600' : summary.labels_available < 0 ? 'text-red-600' : 'text-gray-600'}`}>

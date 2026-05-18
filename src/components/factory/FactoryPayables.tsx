@@ -56,7 +56,7 @@ const FactoryPayables = () => {
   const [columnFilters, setColumnFilters] = useState<{
     date: string | string[];
     client: string | string[];
-    area: string | string[];
+    branch: string | string[];
     sku: string | string[];
     quantity: string | string[];
     price_per_case: string | string[];
@@ -65,7 +65,7 @@ const FactoryPayables = () => {
   }>({
     date: "",
     client: "",
-    area: "",
+    branch: "",
     sku: "",
     quantity: "",
     price_per_case: "",
@@ -75,7 +75,7 @@ const FactoryPayables = () => {
   const [columnSorts, setColumnSorts] = useState<{[key: string]: 'asc' | 'desc' | null}>({
     date: null,
     client: null,
-    area: null,
+    branch: null,
     sku: null,
     quantity: null,
     price_per_case: null,
@@ -121,9 +121,9 @@ const FactoryPayables = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("id, dealer_name, area, sku")
+        .select("id, client_name, branch, sku")
         .eq("is_active", true)
-        .order("dealer_name", { ascending: true });
+        .order("client_name", { ascending: true });
       return data || [];
     },
   });
@@ -131,7 +131,7 @@ const FactoryPayables = () => {
   // Unique client names (deduped)
   const uniqueClientNames = useMemo(() => {
     if (!customers) return [];
-    return [...new Set(customers.map(c => c.dealer_name))].sort();
+    return [...new Set(customers.map(c => c.client_name))].sort();
   }, [customers]);
 
   // Branches for selected client in production form
@@ -140,7 +140,7 @@ const FactoryPayables = () => {
     const selected = customers.find(c => c.id === productionForm.customer_id);
     if (!selected) return [];
     return [...new Set(
-      customers.filter(c => c.dealer_name === selected.dealer_name).map(c => c.area).filter(Boolean)
+      customers.filter(c => c.client_name === selected.client_name).map(c => c.branch).filter(Boolean)
     )].sort() as string[];
   }, [customers, productionForm.customer_id]);
 
@@ -151,7 +151,7 @@ const FactoryPayables = () => {
     if (!selected) return availableSKUs ?? [];
     const skus = [...new Set(
       customers
-        .filter(c => c.dealer_name === selected.dealer_name && c.area === productionForm.area && c.sku)
+        .filter(c => c.client_name === selected.client_name && c.branch === productionForm.area && c.sku)
         .map(c => c.sku as string)
     )].sort();
     return skus.length > 0 ? skus : (availableSKUs ?? []);
@@ -162,13 +162,13 @@ const FactoryPayables = () => {
     const selected = customers?.find(c => c.id === clientId);
     if (!selected) { setProductionForm(f => ({ ...f, customer_id: "", area: "", sku: "" })); return; }
     const branches = [...new Set(
-      customers!.filter(c => c.dealer_name === selected.dealer_name).map(c => c.area).filter(Boolean)
+      customers!.filter(c => c.client_name === selected.client_name).map(c => c.branch).filter(Boolean)
     )] as string[];
     const autoArea = branches.length === 1 ? branches[0] : "";
     let autoSku = "";
     if (autoArea) {
       const skus = [...new Set(
-        customers!.filter(c => c.dealer_name === selected.dealer_name && c.area === autoArea && c.sku).map(c => c.sku as string)
+        customers!.filter(c => c.client_name === selected.client_name && c.branch === autoArea && c.sku).map(c => c.sku as string)
       )];
       autoSku = skus.length === 1 ? skus[0] : "";
     }
@@ -181,7 +181,7 @@ const FactoryPayables = () => {
     let autoSku = "";
     if (selected) {
       const skus = [...new Set(
-        customers!.filter(c => c.dealer_name === selected.dealer_name && c.area === area && c.sku).map(c => c.sku as string)
+        customers!.filter(c => c.client_name === selected.client_name && c.branch === area && c.sku).map(c => c.sku as string)
       )];
       autoSku = skus.length === 1 ? skus[0] : "";
     }
@@ -199,8 +199,8 @@ const FactoryPayables = () => {
           *,
           customers (
             id,
-            dealer_name,
-            area
+            client_name,
+            branch
           )
         `)
         .order("created_at", { ascending: false });
@@ -247,8 +247,8 @@ const FactoryPayables = () => {
     const type = transaction.transaction_type || '';
     const clientName = transaction.transaction_type === 'payment' 
       ? (transaction.description || 'Elma Payment')
-      : (transaction.customers?.dealer_name || '');
-    const area = transaction.customers?.area || '';
+      : (transaction.customers?.client_name || '');
+    const area = transaction.customers?.branch || '';
     const quantity = transaction.quantity?.toString() || '';
     const pricePerCase = getDisplayPricePerCase(transaction.sku, transaction.transaction_date, transaction.transaction_type, transaction.amount, transaction.quantity);
     const pricePerCaseStr = pricePerCase?.toString() || '';
@@ -285,8 +285,8 @@ const FactoryPayables = () => {
     }
     
     // Branch filter (multi-select)
-    if (columnFilters.area) {
-      const areaFilter = Array.isArray(columnFilters.area) ? columnFilters.area : [columnFilters.area];
+    if (columnFilters.branch) {
+      const areaFilter = Array.isArray(columnFilters.branch) ? columnFilters.branch : [columnFilters.branch];
       if (areaFilter.length > 0 && !areaFilter.some(filter => 
         area.toLowerCase().includes(filter.toLowerCase())
       )) return false;
@@ -344,14 +344,14 @@ const FactoryPayables = () => {
       case 'client':
         valueA = a.transaction_type === 'payment' 
           ? (a.description || 'Elma Payment')
-          : (a.customers?.dealer_name || '');
+          : (a.customers?.client_name || '');
         valueB = b.transaction_type === 'payment' 
           ? (b.description || 'Elma Payment')
-          : (b.customers?.dealer_name || '');
+          : (b.customers?.client_name || '');
         break;
-      case 'area':
-        valueA = a.customers?.area || '';
-        valueB = b.customers?.area || '';
+      case 'branch':
+        valueA = a.customers?.branch || '';
+        valueB = b.customers?.branch || '';
         break;
       case 'sku':
         valueA = a.sku || '';
@@ -416,11 +416,11 @@ const FactoryPayables = () => {
     transactions.forEach(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.dealer_name || '');
-      const area = t.customers?.area || '';
+        : (t.customers?.client_name || '');
+      const area = t.customers?.branch || '';
       const sku = t.sku || '';
       const type = t.transaction_type || '';
-      if (!passesMultiFilter(area, columnFilters.area)) return;
+      if (!passesMultiFilter(area, columnFilters.branch)) return;
       if (!passesMultiFilter(sku, columnFilters.sku)) return;
       if (!passesMultiFilter(type, columnFilters.type)) return;
       if (clientName) unique.add(clientName);
@@ -434,8 +434,8 @@ const FactoryPayables = () => {
     transactions.forEach(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.dealer_name || '');
-      const area = t.customers?.area || '';
+        : (t.customers?.client_name || '');
+      const area = t.customers?.branch || '';
       const sku = t.sku || '';
       const type = t.transaction_type || '';
       if (!passesMultiFilter(clientName, columnFilters.client)) return;
@@ -464,9 +464,9 @@ const FactoryPayables = () => {
     return [...new Set(transactions.filter(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.dealer_name || '');
+        : (t.customers?.client_name || '');
       if (!passesMultiFilter(clientName, columnFilters.client)) return false;
-      if (!passesMultiFilter(t.customers?.area || '', columnFilters.area)) return false;
+      if (!passesMultiFilter(t.customers?.branch || '', columnFilters.branch)) return false;
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return false;
       return true;
     }).map(t => t.transaction_type).filter(Boolean))].sort();
@@ -477,9 +477,9 @@ const FactoryPayables = () => {
     return [...new Set(transactions.filter(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.dealer_name || '');
+        : (t.customers?.client_name || '');
       if (!passesMultiFilter(clientName, columnFilters.client)) return false;
-      if (!passesMultiFilter(t.customers?.area || '', columnFilters.area)) return false;
+      if (!passesMultiFilter(t.customers?.branch || '', columnFilters.branch)) return false;
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return false;
       return true;
     }).map(t => t.sku).filter(Boolean))].sort();
@@ -490,13 +490,13 @@ const FactoryPayables = () => {
     const exportData = filteredAndSortedTransactions.map((transaction) => {
       const clientName = transaction.transaction_type === 'payment' 
         ? (transaction.description || 'Elma Payment')
-        : (transaction.customers?.dealer_name || '');
+        : (transaction.customers?.client_name || '');
       const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
 
       return {
         'Date': new Date(transaction.transaction_date).toLocaleDateString(),
         'Client': clientName,
-        'Branch': transaction.customers?.area || '',
+        'Branch': transaction.customers?.branch || '',
         'SKU': transaction.sku || '',
         'Quantity': transaction.quantity || 0,
         'Price per case': pricePerCase || '',
@@ -834,7 +834,7 @@ const FactoryPayables = () => {
                   <Label htmlFor="production-client">Client *</Label>
                   <SearchableSelect
                     options={uniqueClientNames.flatMap((name) => {
-                      const c = customers?.find(c => c.dealer_name === name);
+                      const c = customers?.find(c => c.client_name === name);
                       return c ? [{ value: c.id, label: name }] : [];
                     })}
                     value={productionForm.customer_id || ""}
@@ -1022,13 +1022,13 @@ const FactoryPayables = () => {
                 <div className="flex items-center justify-between">
                   <span>Branch</span>
                   <ColumnFilter
-                    columnKey="area"
+                    columnKey="branch"
                     columnName="Branch"
-                    filterValue={columnFilters.area}
-                    onFilterChange={(value) => handleColumnFilterChange('area', value)}
-                    onClearFilter={() => handleClearColumnFilter('area')}
-                    sortDirection={columnSorts.area}
-                    onSortChange={(direction) => handleColumnSortChange('area', direction)}
+                    filterValue={columnFilters.branch}
+                    onFilterChange={(value) => handleColumnFilterChange('branch', value)}
+                    onClearFilter={() => handleClearColumnFilter('branch')}
+                    sortDirection={columnSorts.branch}
+                    onSortChange={(direction) => handleColumnSortChange('branch', direction)}
                     dataType="multiselect"
                     options={getUniqueBranches}
                   />
@@ -1133,7 +1133,7 @@ const FactoryPayables = () => {
               paginatedTransactions.map((transaction) => {
                 const clientName = transaction.transaction_type === 'payment'
                   ? (transaction.description || 'Elma Payment')
-                  : (transaction.customers?.dealer_name || '-');
+                  : (transaction.customers?.client_name || '-');
                 const pricePerCase = getDisplayPricePerCase(transaction.sku, transaction.transaction_date, transaction.transaction_type, transaction.amount, transaction.quantity);
 
                 return (
@@ -1145,7 +1145,7 @@ const FactoryPayables = () => {
                   {clientName}
                 </TableCell>
                 <TableCell>
-                  {transaction.customers?.area || '-'}
+                  {transaction.customers?.branch || '-'}
                 </TableCell>
                 <TableCell>
                   {transaction.sku || '-'}

@@ -210,7 +210,7 @@ export const updatePasswordSchema = z.object({
 export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>;
 
 // ---------------------------------------------------------------------------
-// Client / branch (Configurations) validation — DB column remains dealer_name
+// Client / branch (Configurations) validation
 // ---------------------------------------------------------------------------
 
 /** GSTIN: 15 characters — 2 digit state, 10 char PAN (5 alpha + 4 digit + 1 alpha), 1 entity, 1 Z, 1 checksum */
@@ -249,8 +249,8 @@ export const dealerSkuPricingRowSchema = z.object({
 /** Add-client form: main fields + at least one SKU pricing row */
 export const dealerFormSchema = z.object({
   date: z.string().min(1, 'Date is required').regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date'),
-  dealer_name: z.string().min(1, 'Client name is required').max(200).trim(),
-  area: z.string().min(1, 'Branch is required').max(200).trim(),
+  client_name: z.string().min(1, 'Client name is required').max(200).trim(),
+  branch: z.string().min(1, 'Branch is required').max(200).trim(),
   gst_number: gstinSchema,
   whatsapp_number: indiaWhatsAppSchema,
   sku_rows: z.array(dealerSkuPricingRowSchema).min(1, 'Add at least one SKU pricing row'),

@@ -7,9 +7,7 @@ import type { Customer, PaymentForm, SaleForm, SalesTransaction } from '@/types'
 
 type CustomerDirectoryRecord = {
   id: string;
-  dealer_name?: string | null;
   client_name?: string | null;
-  area?: string | null;
   branch?: string | null;
 };
 

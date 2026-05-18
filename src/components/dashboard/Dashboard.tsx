@@ -51,7 +51,7 @@ const Dashboard = memo(() => {
   // Inventory table state
   const [inventorySearch, setInventorySearch] = useState("");
   const debouncedInventorySearch = useDebouncedValue(inventorySearch, 200);
-  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'area' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
+  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
 
   // Fetch profit data for Profitability Summary
   const { data: profitData } = useQuery({
@@ -135,26 +135,26 @@ const Dashboard = memo(() => {
       const [{ data: prodRows }, { data: salesRows }] = await Promise.all([
         supabase
           .from("factory_payables")
-          .select("customer_id, sku, quantity, customers(dealer_name, area)")
+          .select("customer_id, sku, quantity, customers(client_name, branch)")
           .eq("transaction_type", "production")
           .not("customer_id", "is", null),
         supabase
           .from("sales_transactions")
-          .select("customer_id, sku, quantity, customers(dealer_name, area)")
+          .select("customer_id, sku, quantity, customers(client_name, branch)")
           .eq("transaction_type", "sale"),
       ]);
 
       // Sum production per (customer_id, sku)
-      const prodMap = new Map<string, { clientName: string; area: string; sku: string; qty: number }>();
+      const prodMap = new Map<string, { clientName: string; branch: string; sku: string; qty: number }>();
       for (const r of prodRows ?? []) {
         const key = `${r.customer_id}|||${r.sku ?? ""}`;
         const existing = prodMap.get(key);
-        const clientName = (r.customers as { dealer_name?: string } | null)?.dealer_name ?? "";
-        const area = (r.customers as { area?: string } | null)?.area ?? "";
+        const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
+        const area = (r.customers as { branch?: string } | null)?.branch ?? "";
         if (existing) {
           existing.qty += r.quantity ?? 0;
         } else {
-          prodMap.set(key, { clientName, area, sku: r.sku ?? "", qty: r.quantity ?? 0 });
+          prodMap.set(key, { clientName, branch: area, sku: r.sku ?? "", qty: r.quantity ?? 0 });
         }
       }
 
@@ -166,12 +166,12 @@ const Dashboard = memo(() => {
       }
 
       // Compute inventory; only return rows where stock > 0
-      const result: { clientName: string; area: string; sku: string; stock: number }[] = [];
+      const result: { clientName: string; branch: string; sku: string; stock: number }[] = [];
       for (const [key, prod] of prodMap.entries()) {
         const sold = salesMap.get(key) ?? 0;
         const stock = prod.qty - sold;
         if (stock > 0) {
-          result.push({ clientName: prod.clientName, area: prod.area, sku: prod.sku, stock });
+          result.push({ clientName: prod.clientName, branch: prod.branch, sku: prod.sku, stock });
         }
       }
       return result.sort((a, b) => a.clientName.localeCompare(b.clientName));
@@ -202,8 +202,8 @@ const Dashboard = memo(() => {
           created_at,
           customers (
             id,
-            dealer_name,
-            area
+            client_name,
+            branch
           )
         `)
         .gte("created_at", ninetyDaysAgo.toISOString())
@@ -378,8 +378,8 @@ const Dashboard = memo(() => {
       if (debouncedReceivablesSearchTerm) {
         const searchLower = debouncedReceivablesSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
-          receivable.customer.dealer_name?.toLowerCase().includes(searchLower) ||
-          receivable.customer.area?.toLowerCase().includes(searchLower) ||
+          receivable.customer.client_name?.toLowerCase().includes(searchLower) ||
+          receivable.customer.branch?.toLowerCase().includes(searchLower) ||
           receivable.totalSales?.toString().includes(searchLower) ||
           receivable.totalPayments?.toString().includes(searchLower) ||
           receivable.outstanding?.toString().includes(searchLower) ||
@@ -389,8 +389,8 @@ const Dashboard = memo(() => {
       }
 
       // Column filters
-      if (receivablesColumnFilters.client && !receivable.customer.dealer_name?.toLowerCase().includes(receivablesColumnFilters.client.toLowerCase())) return false;
-      if (receivablesColumnFilters.area && !receivable.customer.area?.toLowerCase().includes(receivablesColumnFilters.area.toLowerCase())) return false;
+      if (receivablesColumnFilters.client && !receivable.customer.client_name?.toLowerCase().includes(receivablesColumnFilters.client.toLowerCase())) return false;
+      if (receivablesColumnFilters.area && !receivable.customer.branch?.toLowerCase().includes(receivablesColumnFilters.area.toLowerCase())) return false; // filter key stays 'area' for UI compat
       if (receivablesColumnFilters.totalSales && receivable.totalSales?.toString() !== receivablesColumnFilters.totalSales) return false;
       if (receivablesColumnFilters.payments && receivable.totalPayments?.toString() !== receivablesColumnFilters.payments) return false;
       if (receivablesColumnFilters.outstanding && receivable.outstanding?.toString() !== receivablesColumnFilters.outstanding) return false;
@@ -413,12 +413,12 @@ const Dashboard = memo(() => {
 
       switch (columnKey) {
         case 'client':
-          aValue = a.customer.dealer_name || '';
-          bValue = b.customer.dealer_name || '';
+          aValue = a.customer.client_name || '';
+          bValue = b.customer.client_name || '';
           break;
         case 'area':
-          aValue = a.customer.area || '';
-          bValue = b.customer.area || '';
+          aValue = a.customer.branch || '';
+          bValue = b.customer.branch || '';
           break;
         case 'totalSales':
           aValue = a.totalSales || 0;
@@ -472,8 +472,8 @@ const Dashboard = memo(() => {
     }
 
     const exportData = filteredAndSortedReceivables.map(receivable => ({
-      'Client': receivable.customer.dealer_name || '',
-      'Branch': receivable.customer.area || 'N/A',
+      'Client': receivable.customer.client_name || '',
+      'Branch': receivable.customer.branch || 'N/A', // branch from customers table
       'Total Sales': receivable.totalSales || 0,
       'Payments': receivable.totalPayments || 0,
       'Outstanding': receivable.outstanding || 0,
@@ -670,7 +670,7 @@ const Dashboard = memo(() => {
         const filtered = inventoryRows.filter(r =>
           !q ||
           r.clientName.toLowerCase().includes(q) ||
-          r.area.toLowerCase().includes(q) ||
+          r.branch.toLowerCase().includes(q) ||
           r.sku.toLowerCase().includes(q) ||
           r.stock.toString().includes(q)
         );
@@ -715,13 +715,13 @@ const Dashboard = memo(() => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {(['clientName', 'area', 'sku', 'stock'] as const).map(col => (
+                    {(['clientName', 'branch', 'sku', 'stock'] as const).map(col => (
                       <TableHead
                         key={col}
                         className={`cursor-pointer select-none hover:bg-muted/50 ${col === 'stock' ? 'text-right' : ''}`}
                         onClick={() => toggleSort(col)}
                       >
-                        {col === 'clientName' ? 'Client' : col === 'area' ? 'Branch' : col === 'sku' ? 'SKU' : 'Stock (Cases)'}
+                        {col === 'clientName' ? 'Client' : col === 'branch' ? 'Branch' : col === 'sku' ? 'SKU' : 'Stock (Cases)'}
                         <SortIcon col={col} />
                       </TableHead>
                     ))}
@@ -735,7 +735,7 @@ const Dashboard = memo(() => {
                   ) : sorted.map((row, i) => (
                     <TableRow key={i}>
                       <TableCell>{row.clientName}</TableCell>
-                      <TableCell>{row.area}</TableCell>
+                      <TableCell>{row.branch}</TableCell>
                       <TableCell>{row.sku}</TableCell>
                       <TableCell className="text-right font-medium">{row.stock}</TableCell>
                     </TableRow>

@@ -119,21 +119,21 @@ const UserManagement = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("dealer_name, area")
+        .select("client_name, branch")
         .eq("is_active", true)
-        .order("dealer_name", { ascending: true });
-      
+        .order("client_name", { ascending: true });
+
       if (error) throw error;
       return data;
     },
   });
 
-  /** All distinct client + area (branch) pairs from customers — used for access checks */
+  /** All distinct client + branch pairs from customers — used for access checks */
   const getUniqueClientBranchPairs = () => {
     if (!customers) return [];
     const combinations = customers
-      .filter(c => c.dealer_name && c.area)
-      .map(c => `${c.dealer_name} / ${c.area}`)
+      .filter(c => c.client_name && c.branch)
+      .map(c => `${c.client_name} / ${c.branch}`)
       .filter(Boolean);
     return [...new Set(combinations)].sort();
   };
@@ -225,19 +225,19 @@ const UserManagement = () => {
       try {
         const { data: allClients, error: clientsError } = await supabase
           .from('customers')
-          .select('dealer_name, area')
-          .not('dealer_name', 'is', null)
-          .not('dealer_name', 'eq', '')
-          .not('area', 'is', null)
-          .not('area', 'eq', '');
+          .select('client_name, branch')
+          .not('client_name', 'is', null)
+          .not('client_name', 'eq', '')
+          .not('branch', 'is', null)
+          .not('branch', 'eq', '');
 
         if (clientsError) {
           logger.warn('Error fetching all clients for user access:', clientsError);
           associatedClients = [];
           associatedBranches = [];
         } else if (allClients && allClients.length > 0) {
-          associatedClients = [...new Set(allClients.map(c => c.dealer_name).filter(Boolean))];
-          associatedBranches = [...new Set(allClients.map(c => c.area).filter(Boolean))];
+          associatedClients = [...new Set(allClients.map(c => c.client_name).filter(Boolean))];
+          associatedBranches = [...new Set(allClients.map(c => c.branch).filter(Boolean))];
         } else {
           associatedClients = [];
           associatedBranches = [];
@@ -548,15 +548,15 @@ const UserManagement = () => {
 
       const { data: allClients } = await supabase
         .from('customers')
-        .select('dealer_name, area')
-        .not('dealer_name', 'is', null)
-        .not('dealer_name', 'eq', '')
-        .not('area', 'is', null)
-        .not('area', 'eq', '');
+        .select('client_name, branch')
+        .not('client_name', 'is', null)
+        .not('client_name', 'eq', '')
+        .not('branch', 'is', null)
+        .not('branch', 'eq', '');
 
       if (allClients) {
-        associatedClients = [...new Set(allClients.map(c => c.dealer_name).filter(Boolean))];
-        associatedBranches = [...new Set(allClients.map(c => c.area).filter(Boolean))];
+        associatedClients = [...new Set(allClients.map(c => c.client_name).filter(Boolean))];
+        associatedBranches = [...new Set(allClients.map(c => c.branch).filter(Boolean))];
       } else {
         associatedClients = [];
         associatedBranches = [];

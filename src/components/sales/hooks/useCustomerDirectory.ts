@@ -1,17 +1,13 @@
 import { useCallback, useMemo } from 'react';
 import type { Customer } from '@/types';
 
-type CustomerDirectoryRecord = Customer & {
-  client_name?: string | null;
-  branch?: string | null;
-};
+type CustomerDirectoryRecord = Customer;
 
 type TransactionLike = {
   branch?: string | null;
   area?: string | null;
   customers?: {
     branch?: string | null;
-    area?: string | null;
   } | null;
 };
 
@@ -25,8 +21,8 @@ type CustomerLookupParams = {
 type AvailableSku = {
   id: string;
   sku: string;
-  dealer_name: string;
-  area: string | null;
+  client_name: string;
+  branch: string | null;
   price_per_case: number;
 };
 
@@ -52,11 +48,11 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
   }, [customers]);
 
   const getCustomerName = useCallback((customer?: CustomerDirectoryRecord | null) => {
-    return customer?.client_name || customer?.dealer_name || '';
+    return customer?.client_name || '';
   }, []);
 
   const getCustomerBranch = useCallback((customer?: CustomerDirectoryRecord | null) => {
-    return customer?.branch || customer?.area || '';
+    return customer?.branch || '';
   }, []);
 
   const getTransactionBranch = useCallback((transaction?: TransactionLike | null) => {
@@ -64,7 +60,6 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
       transaction?.branch ||
       transaction?.area ||
       transaction?.customers?.branch ||
-      transaction?.customers?.area ||
       ''
     );
   }, []);
@@ -177,8 +172,8 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
     return Array.from(skuMap.values()).map((customer) => ({
       id: `sku-${customer.sku}`,
       sku: customer.sku ?? '',
-      dealer_name: customer.dealer_name,
-      area: customer.area,
+      client_name: customer.client_name,
+      branch: customer.branch,
       price_per_case: customer.price_per_case || 0,
     }));
   }, [customers, findCustomerById, getCustomerBranch, getCustomerName]);

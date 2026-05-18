@@ -8,7 +8,7 @@
  *   sales_transactions.customer_id — consistent
  *   branch_id does not exist in any table; area/branch is plain text everywhere
  *   → PRIMARY join: customer_id UUID where available
- *   → FALLBACK: dealer_name + area text match (known tech debt — silent mismatch risk on spelling)
+ *   → FALLBACK: client_name + branch text match (known tech debt — silent mismatch risk on spelling)
  */
 
 import { useState, useMemo, useCallback } from "react";
@@ -154,9 +154,9 @@ function processData(
   transport: RawTransport[],
   labels: RawLabel[],
   months: Array<{ monthKey: string; label: string }>,
-  customers: Array<{ id: string; dealer_name: string; area: string }>,
+  customers: Array<{ id: string; client_name: string; branch: string }>,
 ): MonthData[] {
-  // Build customer lookup id → { dealer_name, area }
+  // Build customer lookup id → { client_name, branch }
   const custById = new Map(customers.map(c => [c.id, c]));
 
   // Only production-type factory records count as cost
@@ -176,8 +176,8 @@ function processData(
     const clientMap = new Map<string, ClientRow>();
     monthSales.forEach(sale => {
       const cust = custById.get(sale.customer_id);
-      const name = cust?.dealer_name ?? "Unknown";
-      const area = cust?.area ?? "";
+      const name = cust?.client_name ?? "Unknown";
+      const area = cust?.branch ?? "";
       const key = clientKey(sale.customer_id, name, area);
       if (!clientMap.has(key)) {
         clientMap.set(key, {
@@ -203,7 +203,7 @@ function processData(
         if (!f.customer_id) return;
         const cust = custById.get(f.customer_id);
         if (!cust) return;
-        const key = clientKey(f.customer_id, cust.dealer_name, cust.area);
+        const key = clientKey(f.customer_id, cust.client_name, cust.branch);
         if (clientMap.has(key)) {
           clientMap.get(key)!.productionCost += f.amount ?? 0;
         }
@@ -218,7 +218,7 @@ function processData(
         // Lookup customer by client_id
         const cust = custById.get(t.client_id!);
         if (!cust) return;
-        const key = clientKey(t.client_id, cust.dealer_name, cust.area);
+        const key = clientKey(t.client_id, cust.client_name, cust.branch);
         if (clientMap.has(key)) {
           clientMap.get(key)!.transportCost += t.amount ?? 0;
         }
@@ -230,7 +230,7 @@ function processData(
       .forEach(l => {
         const cust = custById.get(l.client_id!);
         if (!cust) return;
-        const key = clientKey(l.client_id, cust.dealer_name, cust.area);
+        const key = clientKey(l.client_id, cust.client_name, cust.branch);
         if (clientMap.has(key)) {
           clientMap.get(key)!.labelsCost += l.total_amount ?? 0;
         }
@@ -510,7 +510,7 @@ export default function ProfitReport() {
           .lte("purchase_date", end),
         supabase
           .from("customers")
-          .select("id, dealer_name, area"),
+          .select("id, client_name, branch"),
       ]);
 
       // Surface any Supabase errors so they appear in the UI via isError
@@ -526,7 +526,7 @@ export default function ProfitReport() {
         factory: (factoryRes.data ?? []) as RawFactory[],
         transport: (transportRes.data ?? []) as RawTransport[],
         labels: (labelsRes.data ?? []) as RawLabel[],
-        customers: (customersRes.data ?? []) as Array<{ id: string; dealer_name: string; area: string }>,
+        customers: (customersRes.data ?? []) as Array<{ id: string; client_name: string; branch: string }>,
       };
     },
   });

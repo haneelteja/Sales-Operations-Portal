@@ -76,11 +76,11 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
       .select('customer_id, transaction_type, amount, transaction_date'),
     supabase
       .from('customers')
-      .select('id, dealer_name, client_name, branch, area'),
+      .select('id, client_name, branch'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('client_followups')
-      .select('dealer_name, branch, comments, next_followup_date'),
+      .select('client_name, branch, comments, next_followup_date'),
   ]);
 
   if (txResult.error) throw txResult.error;
@@ -89,7 +89,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
   const transactions = txResult.data ?? [];
   const customers = custResult.data ?? [];
   const followups = (followupResult.data ?? []) as Array<{
-    dealer_name: string;
+    client_name: string;
     branch: string;
     comments: string | null;
     next_followup_date: string | null;
@@ -98,14 +98,14 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
   const customerMap = new Map<string, { dealerName: string; branch: string }>();
   for (const c of customers) {
     customerMap.set(c.id, {
-      dealerName: (c.dealer_name || c.client_name || 'Unknown') as string,
-      branch: (c.branch || c.area || '') as string,
+      dealerName: (c.client_name || 'Unknown') as string,
+      branch: (c.branch || '') as string,
     });
   }
 
   const followupMap = new Map<string, { comments: string; nextFollowupDate: string }>();
   for (const f of followups) {
-    followupMap.set(`${f.dealer_name}|||${f.branch}`, {
+    followupMap.set(`${f.client_name}|||${f.branch}`, {
       comments: f.comments ?? '',
       nextFollowupDate: f.next_followup_date ?? '',
     });
@@ -234,13 +234,13 @@ function FollowupNotesDrawer({
         .from('client_followups')
         .upsert(
           {
-            dealer_name: dealerName,
+            client_name: dealerName,
             branch,
             comments: trimmed,
             ...(followupDate ? { next_followup_date: followupDate } : {}),
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'dealer_name,branch' }
+          { onConflict: 'client_name,branch' }
         );
 
       queryClient.invalidateQueries({ queryKey: ['followup-notes', customerId] });

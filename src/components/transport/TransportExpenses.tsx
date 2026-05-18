@@ -47,7 +47,7 @@ const TransportExpenses = () => {
     group: "",
     amount: "",
     client: "",
-    area: ""
+    branch: ""
   });
   const [columnSorts, setColumnSorts] = useState<{[key: string]: 'asc' | 'desc' | null}>({
     date: null,
@@ -55,7 +55,7 @@ const TransportExpenses = () => {
     group: null,
     amount: null,
     client: null,
-    area: null
+    branch: null
   });
 
   const { toast } = useToast();
@@ -69,7 +69,7 @@ const TransportExpenses = () => {
         .from("customers")
         .select("*")
         .eq("is_active", true)
-        .order("dealer_name", { ascending: true });
+        .order("client_name", { ascending: true });
       return data || [];
     },
   });
@@ -80,8 +80,8 @@ const TransportExpenses = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("id, dealer_name, area")
-        .order("dealer_name", { ascending: true });
+        .select("id, client_name, branch")
+        .order("client_name", { ascending: true });
       return data || [];
     },
   });
@@ -368,10 +368,10 @@ const TransportExpenses = () => {
     const uniqueCustomers: typeof customers = [];
     
     customers.forEach(customer => {
-      if (customer.dealer_name && customer.dealer_name.trim() !== '') {
-        const trimmedName = customer.dealer_name.trim();
+      if (customer.client_name && customer.client_name.trim() !== '') {
+        const trimmedName = customer.client_name.trim();
         const lowerCaseName = trimmedName.toLowerCase();
-        
+
         // Only add if we haven't seen this customer name (case-insensitive) before
         if (!seenCustomers.has(lowerCaseName)) {
           seenCustomers.add(lowerCaseName);
@@ -379,21 +379,21 @@ const TransportExpenses = () => {
         }
       }
     });
-    
-    return uniqueCustomers.sort((a, b) => a.dealer_name.localeCompare(b.dealer_name));
+
+    return uniqueCustomers.sort((a, b) => a.client_name.localeCompare(b.client_name));
   };
 
   // Get available areas for a selected customer.
-  // A dealer has multiple rows (one per branch/pricing period, active or inactive),
-  // so we match by dealer_name across ALL rows (customersForLookup includes inactive).
+  // A customer has multiple rows (one per branch/pricing period, active or inactive),
+  // so we match by client_name across ALL rows (customersForLookup includes inactive).
   const getAvailableAreas = (customerId: string) => {
     const allRows = customersForLookup ?? customers ?? [];
     const selected = allRows.find(c => c.id === customerId);
     if (!selected) return [];
-    const dealerName = selected.dealer_name.trim().toLowerCase();
+    const clientName = selected.client_name.trim().toLowerCase();
     const areas = allRows
-      .filter(c => c.dealer_name.trim().toLowerCase() === dealerName)
-      .map(c => c.area)
+      .filter(c => c.client_name.trim().toLowerCase() === clientName)
+      .map(c => c.branch)
       .filter((a): a is string => Boolean(a) && a.trim() !== "");
     return [...new Set(areas)];
   };
@@ -428,7 +428,7 @@ const TransportExpenses = () => {
     setColumnFilters(prev => ({ ...prev, [column]: "" }));
   }, []);
 
-  // Enrich expenses with dealer_name from customers (use customersForLookup to include inactive/historical)
+  // Enrich expenses with client_name from customers (use customersForLookup to include inactive/historical)
   const enrichedExpenses = useMemo(() => {
     if (!expenses) return [];
     const lookup = customersForLookup || customers || [];
@@ -438,8 +438,8 @@ const TransportExpenses = () => {
         : null;
       return {
         ...expense,
-        dealer_name: customer?.dealer_name ?? expense.dealer_name ?? null,
-        area: expense.area ?? customer?.area ?? null,
+        client_name: customer?.client_name ?? expense.client_name ?? null,
+        area: expense.area ?? customer?.branch ?? null,
       };
     });
   }, [expenses, customersForLookup, customers]);
@@ -457,7 +457,7 @@ const TransportExpenses = () => {
     const transportVendor = (expense as { transport_vendor?: string }).transport_vendor?.toLowerCase() || '';
     
     // Get client and area names for filtering
-    const clientName = expense.dealer_name?.toLowerCase() || '';
+    const clientName = expense.client_name?.toLowerCase() || '';
     const areaName = expense.area?.toLowerCase() || '';
     
     // Global search filter (using debounced value)
@@ -481,7 +481,7 @@ const TransportExpenses = () => {
     if (columnFilters.group && !expenseGroup.toLowerCase().includes(columnFilters.group.toLowerCase())) return false;
     if (columnFilters.amount && !amount.includes(columnFilters.amount)) return false;
     if (columnFilters.client && !clientName.includes(columnFilters.client.toLowerCase())) return false;
-    if (columnFilters.area && !areaName.includes(columnFilters.area.toLowerCase())) return false;
+    if (columnFilters.branch && !areaName.includes(columnFilters.branch.toLowerCase())) return false;
     if (columnFilters.transport_vendor && !transportVendor.includes(columnFilters.transport_vendor.toLowerCase())) return false;
     
     return true;
@@ -511,10 +511,10 @@ const TransportExpenses = () => {
         valueB = b.amount || 0;
         break;
       case 'client':
-        valueA = a.dealer_name || '';
-        valueB = b.dealer_name || '';
+        valueA = a.client_name || '';
+        valueB = b.client_name || '';
         break;
-      case 'area':
+      case 'branch':
         valueA = a.area || '';
         valueB = b.area || '';
         break;
@@ -539,7 +539,7 @@ const TransportExpenses = () => {
       return {
         'Date': new Date(expense.expense_date).toLocaleDateString(),
         'Transport Vendor': (expense as { transport_vendor?: string }).transport_vendor || '',
-        'Client': expense.dealer_name || '',
+        'Client': expense.client_name || '',
         'Branch': expense.area || '',
         'Group': expense.expense_group || '',
         'Amount (₹)': expense.amount || 0,
@@ -581,7 +581,7 @@ const TransportExpenses = () => {
           <div className="space-y-2">
             <Label htmlFor="client">Client</Label>
             <SearchableSelect
-              options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.dealer_name }))}
+              options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.client_name }))}
               value={form.client_id || ""}
               onValueChange={(value) => setForm({ ...form, client_id: value, area: "" })}
               placeholder="Select client"
@@ -699,7 +699,7 @@ const TransportExpenses = () => {
                 setColumnSorts({
                   date: null,
                   client: null,
-                  area: null,
+                  branch: null,
                   group: null,
                   amount: null,
                   description: null,
@@ -751,13 +751,13 @@ const TransportExpenses = () => {
               <div className="flex items-center justify-between">
                 <span>Branch</span>
                 <ColumnFilter
-                  columnKey="area"
+                  columnKey="branch"
                   columnName="Branch"
-                  filterValue={columnFilters.area || ""}
-                  onFilterChange={(value) => handleColumnFilterChange('area', value)}
-                  onClearFilter={() => handleClearColumnFilter('area')}
-                  sortDirection={columnSorts.area || null}
-                  onSortChange={(direction) => handleColumnSortChange('area', direction)}
+                  filterValue={columnFilters.branch || ""}
+                  onFilterChange={(value) => handleColumnFilterChange('branch', value)}
+                  onClearFilter={() => handleClearColumnFilter('branch')}
+                  sortDirection={columnSorts.branch || null}
+                  onSortChange={(direction) => handleColumnSortChange('branch', direction)}
                   dataType="text"
                 />
               </div>
@@ -833,7 +833,7 @@ const TransportExpenses = () => {
             filteredAndSortedExpenses.map((expense) => (
               <TableRow key={expense.id}>
                 <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
-                <TableCell>{expense.dealer_name || 'N/A'}</TableCell>
+                <TableCell>{expense.client_name || 'N/A'}</TableCell>
                 <TableCell>{expense.area || 'N/A'}</TableCell>
                 <TableCell>{(expense as { transport_vendor?: string }).transport_vendor || 'N/A'}</TableCell>
                 <TableCell>{expense.expense_group || 'N/A'}</TableCell>
@@ -941,7 +941,7 @@ const TransportExpenses = () => {
               <div className="space-y-2">
                 <Label htmlFor="edit-client">Client</Label>
                 <SearchableSelect
-                  options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.dealer_name }))}
+                  options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.client_name }))}
                   value={editForm.client_id || ""}
                   onValueChange={(value) => setEditForm({ ...editForm, client_id: value, area: "" })}
                   placeholder="Select client"

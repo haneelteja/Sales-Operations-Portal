@@ -330,19 +330,19 @@ async function sendInvoiceWhatsAppMessage(
     if (!customer.whatsapp_number) {
       const { data: fresh } = await supabase
         .from('customers')
-        .select('id, dealer_name, whatsapp_number')
+        .select('id, client_name, whatsapp_number')
         .eq('id', customer.id)
         .maybeSingle();
       if (fresh?.whatsapp_number) customerWithWhatsApp = { ...customer, whatsapp_number: fresh.whatsapp_number };
     }
     if (!customerWithWhatsApp.whatsapp_number) {
-      logger.info(`Customer ${customer.dealer_name} does not have WhatsApp number, skipping...`);
+      logger.info(`Customer ${customer.client_name} does not have WhatsApp number, skipping...`);
       return;
     }
 
     // Prepare placeholders for template (amount without ₹ - template already has "for ₹{amount}")
     const placeholders: Record<string, string> = {
-      customerName: customerWithWhatsApp.dealer_name,
+      customerName: customerWithWhatsApp.client_name,
       invoiceNumber: invoice.invoice_number,
       invoiceDate: new Date(invoice.invoice_date).toLocaleDateString('en-IN'),
       amount: transaction.amount != null ? String(transaction.amount.toLocaleString('en-IN')) : '0',

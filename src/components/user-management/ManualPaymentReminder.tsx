@@ -39,7 +39,7 @@ export const ManualPaymentReminder: React.FC = () => {
         .from('customers')
         .select('*')
         .eq('is_active', true)
-        .order('dealer_name');
+        .order('client_name');
       
       if (error) throw error;
       return (data || []) as Customer[];
@@ -108,7 +108,7 @@ export const ManualPaymentReminder: React.FC = () => {
 
       // Prepare placeholders for payment reminder template
       const placeholders: Record<string, string> = {
-        customerName: selectedCustomer.customer.dealer_name,
+        customerName: selectedCustomer.customer.client_name,
         outstandingAmount: outstandingAmount,
         invoiceCount: selectedCustomer.invoiceCount.toString(),
         daysOverdue: daysOverdue > 0 ? daysOverdue.toString() : '0',
@@ -183,7 +183,7 @@ export const ManualPaymentReminder: React.FC = () => {
           <SearchableSelect
             options={(receivables ?? []).map(r => ({
               value: r.customer.id,
-              label: `${r.customer.dealer_name}${r.customer.area ? ` - ${r.customer.area}` : ''} (Outstanding: ₹${r.outstanding.toLocaleString('en-IN')})`
+              label: `${r.customer.client_name}${r.customer.branch ? ` - ${r.customer.branch}` : ''} (Outstanding: ₹${r.outstanding.toLocaleString('en-IN')})`
             }))}
             value={selectedCustomerId}
             onValueChange={setSelectedCustomerId}
@@ -197,12 +197,12 @@ export const ManualPaymentReminder: React.FC = () => {
           <div className="p-4 bg-muted rounded-lg space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Customer:</span>
-              <span className="text-sm">{selectedCustomer.customer.dealer_name}</span>
+              <span className="text-sm">{selectedCustomer.customer.client_name}</span>
             </div>
-            {selectedCustomer.customer.area && (
+            {selectedCustomer.customer.branch && (
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Branch:</span>
-                <span className="text-sm">{selectedCustomer.customer.area}</span>
+                <span className="text-sm">{selectedCustomer.customer.branch}</span>
               </div>
             )}
             <div className="flex items-center justify-between">

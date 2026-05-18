@@ -162,9 +162,9 @@ const LabelPurchases = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("id, dealer_name, area")
+        .select("id, client_name, branch")
         .eq("is_active", true)
-        .order("dealer_name", { ascending: true });
+        .order("client_name", { ascending: true });
       return data || [];
     },
   });
@@ -185,9 +185,9 @@ const LabelPurchases = () => {
     if (!clientId || !customers) return skuConfigs ?? [];
     const selected = customers.find(c => c.id === clientId);
     if (!selected) return [];
-    const dealerName = selected.dealer_name.trim().toLowerCase();
+    const dealerName = selected.client_name.trim().toLowerCase();
     const skus = customers
-      .filter(c => c.dealer_name.trim().toLowerCase() === dealerName && c.sku)
+      .filter(c => c.client_name.trim().toLowerCase() === dealerName && c.sku)
       .map(c => c.sku as string);
     return [...new Set(skus)].sort();
   }, [customers, skuConfigs]);
@@ -482,13 +482,13 @@ const LabelPurchases = () => {
     const seen = new Set<string>();
     const result: ComboboxOption[] = [];
     [...customers]
-      .sort((a, b) => a.dealer_name.localeCompare(b.dealer_name))
+      .sort((a, b) => a.client_name.localeCompare(b.client_name))
       .forEach(c => {
-        if (c.dealer_name?.trim()) {
-          const key = c.dealer_name.trim().toLowerCase();
+        if (c.client_name?.trim()) {
+          const key = c.client_name.trim().toLowerCase();
           if (!seen.has(key)) {
             seen.add(key);
-            result.push({ id: c.id, label: c.dealer_name.trim() });
+            result.push({ id: c.id, label: c.client_name.trim() });
           }
         }
       });
@@ -504,7 +504,7 @@ const LabelPurchases = () => {
         const searchLower = debouncedSearchTerm.toLowerCase();
         const vendorName = purchase.vendor_id?.toLowerCase() || '';
         const customer = customers?.find(c => c.id === purchase.client_id);
-        const clientName = customer?.dealer_name?.toLowerCase() || '';
+        const clientName = customer?.client_name?.toLowerCase() || '';
         const description = purchase.description?.toLowerCase() || '';
         if (!vendorName.includes(searchLower) && !clientName.includes(searchLower) && !description.includes(searchLower)) {
           return false;
@@ -516,7 +516,7 @@ const LabelPurchases = () => {
       }
       if (columnFilters.client) {
         const customer = customers?.find(c => c.id === purchase.client_id);
-        if (!(customer?.dealer_name?.toLowerCase() || '').includes(columnFilters.client.toLowerCase())) return false;
+        if (!(customer?.client_name?.toLowerCase() || '').includes(columnFilters.client.toLowerCase())) return false;
       }
       if (columnFilters.quantity && purchase.quantity.toString() !== columnFilters.quantity) return false;
       if (columnFilters.cost_per_label && purchase.cost_per_label.toString() !== columnFilters.cost_per_label) return false;
@@ -540,7 +540,7 @@ const LabelPurchases = () => {
           case 'client': {
             const ca = customers?.find(c => c.id === a.client_id);
             const cb = customers?.find(c => c.id === b.client_id);
-            aValue = ca?.dealer_name || ''; bValue = cb?.dealer_name || ''; break;
+            aValue = ca?.client_name || ''; bValue = cb?.client_name || ''; break;
           }
           case 'quantity': aValue = a.quantity || 0; bValue = b.quantity || 0; break;
           case 'cost_per_label': aValue = a.cost_per_label || 0; bValue = b.cost_per_label || 0; break;
@@ -588,7 +588,7 @@ const LabelPurchases = () => {
       const customer = customers?.find(c => c.id === purchase.client_id);
       return {
         'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
-        'Client': customer?.dealer_name || 'N/A',
+        'Client': customer?.client_name || 'N/A',
         'SKU': purchase.sku || '',
         'Quantity': purchase.quantity,
         'Cost per Label': purchase.cost_per_label,
@@ -813,7 +813,7 @@ const LabelPurchases = () => {
                 filteredAndSortedPurchases.map((purchase) => (
                   <TableRow key={purchase.id}>
                     <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
-                    <TableCell>{customers?.find(c => c.id === purchase.client_id)?.dealer_name || 'N/A'}</TableCell>
+                    <TableCell>{customers?.find(c => c.id === purchase.client_id)?.client_name || 'N/A'}</TableCell>
                     <TableCell>{purchase.sku || '—'}</TableCell>
                     <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
                     <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>

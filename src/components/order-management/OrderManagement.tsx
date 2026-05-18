@@ -164,9 +164,9 @@ const OrderManagement: React.FC = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, dealer_name, area, sku")
+        .select("id, client_name, branch, sku")
         .eq("is_active", true)
-        .order("dealer_name", { ascending: true });
+        .order("client_name", { ascending: true });
 
       if (error) throw error;
       return data || [];
@@ -285,9 +285,9 @@ const OrderManagement: React.FC = () => {
           if (clientName && area) {
             const { data: customerRows } = await supabase
               .from("customers")
-              .select("id, dealer_name, whatsapp_number")
-              .eq("dealer_name", clientName)
-              .eq("area", area)
+              .select("id, client_name, whatsapp_number")
+              .eq("client_name", clientName)
+              .eq("branch", area)
               .not("whatsapp_number", "is", null)
               .limit(1);
 
@@ -302,7 +302,7 @@ const OrderManagement: React.FC = () => {
                 messageType: "stock_delivered",
                 triggerType: "auto",
                 placeholders: {
-                  customerName: customerRow.dealer_name || clientName,
+                  customerName: customerRow.client_name || clientName,
                   orderNumber: orderId.slice(0, 8),
                   deliveryDate,
                   items,
@@ -426,8 +426,8 @@ const OrderManagement: React.FC = () => {
     if (!selectedCustomer) return [];
     
     const areas = customers
-      .filter(c => c.dealer_name === selectedCustomer.dealer_name)
-      .map(c => c.area)
+      .filter(c => c.client_name === selectedCustomer.client_name)
+      .map(c => c.branch)
       .filter((a): a is string => !!a && String(a).trim() !== "")
       .filter((a, index, self) => self.indexOf(a) === index)
       .sort();
@@ -442,8 +442,8 @@ const OrderManagement: React.FC = () => {
     if (!selectedCustomer) return [];
     return customers
       .filter(c =>
-        c.dealer_name === selectedCustomer.dealer_name &&
-        c.area === orderForm.area &&
+        c.client_name === selectedCustomer.client_name &&
+        c.branch === orderForm.area &&
         c.sku &&
         c.sku.trim() !== ""
       )
@@ -470,8 +470,8 @@ const OrderManagement: React.FC = () => {
     if (!selectedCustomer) return [];
     const allSkus = customers
       .filter(c =>
-        c.dealer_name === selectedCustomer.dealer_name &&
-        c.area === orderForm.area &&
+        c.client_name === selectedCustomer.client_name &&
+        c.branch === orderForm.area &&
         c.sku &&
         c.sku.trim() !== ""
       )
@@ -546,7 +546,7 @@ const OrderManagement: React.FC = () => {
     }
 
     const newOrders = validRows.map((row) => ({
-      client: selectedCustomer.dealer_name,
+      client: selectedCustomer.client_name,
       area: orderForm.area,
       sku: row.sku.trim(),
       number_of_cases: parseInt(row.number_of_cases),
@@ -666,20 +666,20 @@ const OrderManagement: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tentativeDeliveryDays]);
 
-  // Get unique customers for form dropdown (by dealer_name, not by id)
+  // Get unique customers for form dropdown (by client_name, not by id)
   const getUniqueCustomers = useCallback(() => {
     if (!customers) return [];
     const seenNames = new Set<string>();
     const unique = [];
-    
+
     for (const customer of customers) {
-      if (!seenNames.has(customer.dealer_name)) {
-        seenNames.add(customer.dealer_name);
+      if (!seenNames.has(customer.client_name)) {
+        seenNames.add(customer.client_name);
         unique.push(customer);
       }
     }
-    
-    return unique.sort((a, b) => a.dealer_name.localeCompare(b.dealer_name));
+
+    return unique.sort((a, b) => a.client_name.localeCompare(b.client_name));
   }, [customers]);
 
   // Close client dropdown on outside click
@@ -698,7 +698,7 @@ const OrderManagement: React.FC = () => {
     const unique = getUniqueCustomers();
     if (!clientSearch.trim()) return unique;
     return unique.filter(c =>
-      c.dealer_name.toLowerCase().includes(clientSearch.toLowerCase())
+      c.client_name.toLowerCase().includes(clientSearch.toLowerCase())
     );
   }, [getUniqueCustomers, clientSearch]);
 
@@ -1015,10 +1015,10 @@ const OrderManagement: React.FC = () => {
                           ].join(" ")}
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            handleClientSelect(customer.id, customer.dealer_name);
+                            handleClientSelect(customer.id, customer.client_name);
                           }}
                         >
-                          {customer.dealer_name}
+                          {customer.client_name}
                         </button>
                       ))}
                     </div>

@@ -37,8 +37,8 @@ const Reports = memo(() => {
           *,
           customers (
             id,
-            dealer_name,
-            area
+            client_name,
+            branch
           )
         `)
         .order("created_at", { ascending: false });
@@ -116,8 +116,8 @@ const Reports = memo(() => {
     if (!searchTerm) return true;
     
     const searchLower = searchTerm.toLowerCase();
-    const customerName = receivable.customer.dealer_name || '';
-    const area = receivable.customer.area || '';
+    const customerName = receivable.customer.client_name || '';
+    const area = receivable.customer.branch || '';
     const totalSales = receivable.totalSales?.toString() || '';
     const totalPayments = receivable.totalPayments?.toString() || '';
     const outstanding = receivable.outstanding?.toString() || '';
@@ -135,8 +135,8 @@ const Reports = memo(() => {
   const exportReceivablesToExcel = async () => {
     const exportData = filteredReceivables.map((receivable) => {
       return {
-        'Customer': receivable.customer.dealer_name || 'N/A',
-        'Branch': receivable.customer.area || 'N/A',
+        'Customer': receivable.customer.client_name || 'N/A',
+        'Branch': receivable.customer.branch || 'N/A',
         'Total Sales (₹)': receivable.totalSales || 0,
         'Payments Received (₹)': receivable.totalPayments || 0,
         'Outstanding (₹)': receivable.outstanding || 0,
@@ -187,7 +187,7 @@ const Reports = memo(() => {
         .from("sales_transactions")
         .select(`
           id, customer_id, amount, transaction_type, transaction_date, sku, description, quantity,
-          customers (dealer_name, area)
+          customers (client_name, branch)
         `)
         .order("transaction_date", { ascending: false });
       
@@ -343,7 +343,7 @@ const Reports = memo(() => {
                   {clientReport?.transactions.slice(0, 10).map((transaction) => (
                     <TableRow key={transaction.id}>
                       <TableCell>{new Date(transaction.transaction_date).toLocaleDateString()}</TableCell>
-                      <TableCell>{transaction.customers?.dealer_name}</TableCell>
+                      <TableCell>{transaction.customers?.client_name}</TableCell>
                       <TableCell>{transaction.transaction_type}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
                       <TableCell className="text-right border-r border-green-200/50">₹{transaction.amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
@@ -422,9 +422,9 @@ const Reports = memo(() => {
                       filteredReceivables.map((receivable) => (
                       <TableRow key={receivable.customer.id}>
                         <TableCell className="font-medium">
-                          {receivable.customer.dealer_name}
+                          {receivable.customer.client_name}
                         </TableCell>
-                        <TableCell>{receivable.customer.area}</TableCell>
+                        <TableCell>{receivable.customer.branch}</TableCell>
                         <TableCell className="text-right">
                           ₹{receivable.totalSales.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                         </TableCell>

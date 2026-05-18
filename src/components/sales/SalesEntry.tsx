@@ -269,9 +269,9 @@ const SalesEntry = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, dealer_name, client_name, area, branch, sku, price_per_case, pricing_date, created_at, whatsapp_number")
+          .select("id, client_name, branch, sku, price_per_case, pricing_date, created_at, whatsapp_number")
           .eq("is_active", true)
-          .order("dealer_name", { ascending: true });
+          .order("client_name", { ascending: true });
         
         if (error) {
           logger.error('Error fetching customers:', error);
@@ -597,7 +597,7 @@ const SalesEntry = () => {
             description,
             branch,
             created_at,
-            customers (dealer_name, client_name, area, branch)
+            customers (client_name, branch)
           `, { count: 'exact' })
           .gte("created_at", ninetyDaysAgo.toISOString())
           .order("transaction_date", { ascending: false })
@@ -747,7 +747,7 @@ const SalesEntry = () => {
       
       return transactionsWithOutstanding.filter((transaction) => {
         try {
-          const customerName = transaction.customers?.client_name || transaction.customers?.dealer_name || '';
+          const customerName = transaction.customers?.client_name || '';
           const area = getTransactionBranch(transaction);
           const sku = transaction.sku || '';
           const description = transaction.description || '';
@@ -795,8 +795,8 @@ const SalesEntry = () => {
           }
           
           // Branch filter (multi-select)
-          if (columnFilters.area) {
-            const areaFilter = Array.isArray(columnFilters.area) ? columnFilters.area : [columnFilters.area];
+          if (columnFilters.branch) {
+            const areaFilter = Array.isArray(columnFilters.branch) ? columnFilters.branch : [columnFilters.branch];
             if (areaFilter.length > 0 && !areaFilter.some(filter => 
               area.toLowerCase().includes(filter.toLowerCase())
             )) return false;
@@ -856,10 +856,10 @@ const SalesEntry = () => {
               if (isNaN(valueA) || isNaN(valueB)) return 0;
               break;
             case 'customer':
-              valueA = a.customers?.client_name || a.customers?.dealer_name || '';
-              valueB = b.customers?.client_name || b.customers?.dealer_name || '';
+              valueA = a.customers?.client_name || '';
+              valueB = b.customers?.client_name || '';
               break;
-            case 'area':
+            case 'branch':
               valueA = getTransactionBranch(a);
               valueB = getTransactionBranch(b);
               break;
@@ -920,17 +920,17 @@ const SalesEntry = () => {
   const getUniqueCustomers = useMemo(() => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
-      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
+      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.branch)) return;
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
-      const name = t.customers?.client_name || t.customers?.dealer_name;
+      const name = t.customers?.client_name;
       if (name) unique.add(name);
     });
     return Array.from(unique).sort();
   }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const getClientName = (t: typeof recentTransactions[0]) =>
-    t.customers?.client_name || t.customers?.dealer_name || '';
+    t.customers?.client_name || '';
 
   const getUniqueBranches = useMemo(() => {
     const unique = new Set<string>();
@@ -948,7 +948,7 @@ const SalesEntry = () => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
       if (!passesMultiFilter(getClientName(t), columnFilters.customer)) return;
-      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
+      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.branch)) return;
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return;
       if (t.sku) unique.add(t.sku);
     });
@@ -959,7 +959,7 @@ const SalesEntry = () => {
     const unique = new Set<string>();
     recentTransactions?.forEach(t => {
       if (!passesMultiFilter(getClientName(t), columnFilters.customer)) return;
-      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.area)) return;
+      if (!passesMultiFilter(getTransactionBranch(t), columnFilters.branch)) return;
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return;
       if (t.transaction_type) unique.add(t.transaction_type);
     });
@@ -977,7 +977,7 @@ const SalesEntry = () => {
       const customer = customers?.find(c => c.id === transaction.customer_id);
       return {
         'Date': new Date(transaction.transaction_date).toLocaleDateString(),
-        'Client': transaction.customers?.client_name || transaction.customers?.dealer_name || 'N/A',
+        'Client': transaction.customers?.client_name || 'N/A',
         'Branch': getTransactionBranch(transaction) || 'N/A',
         'Type': transaction.transaction_type || '',
         'SKU': transaction.sku || '',
@@ -1001,7 +1001,7 @@ const SalesEntry = () => {
   const exportTransactionsAsLedger = async () => {
     const rows = filteredAndSortedRecentTransactions.map((tx) => ({
       date: tx.transaction_date,
-      clientName: tx.customers?.client_name || tx.customers?.dealer_name || 'Unknown',
+      clientName: tx.customers?.client_name || 'Unknown',
       branch: getTransactionBranch(tx) || '',
       type: tx.transaction_type || 'sale',
       sku: tx.sku,
@@ -1719,13 +1719,13 @@ const SalesEntry = () => {
                   <div className="flex items-center justify-between">
                 <span>Branch</span>
                 <ColumnFilter
-                  columnKey="area"
+                  columnKey="branch"
                   columnName="Branch"
-                      filterValue={columnFilters.area}
-                      onFilterChange={(value) => handleColumnFilterChange('area', value)}
-                      onClearFilter={() => handleClearColumnFilter('area')}
-                      sortDirection={columnSorts.area}
-                      onSortChange={(direction) => handleColumnSortChange('area', direction)}
+                      filterValue={columnFilters.branch}
+                      onFilterChange={(value) => handleColumnFilterChange('branch', value)}
+                      onClearFilter={() => handleClearColumnFilter('branch')}
+                      sortDirection={columnSorts.branch}
+                      onSortChange={(direction) => handleColumnSortChange('branch', direction)}
                       dataType="multiselect"
                       options={getUniqueBranches}
                     />
@@ -1836,7 +1836,7 @@ const SalesEntry = () => {
                   <TableRow key={transaction.id}>
                     <TableCell className="whitespace-nowrap">{new Date(transaction.transaction_date).toLocaleDateString()}</TableCell>
                     <TableCell className="truncate max-w-[100px]">
-                      {transaction.customers?.client_name || transaction.customers?.dealer_name}
+                      {transaction.customers?.client_name}
                     </TableCell>
                     <TableCell className="truncate max-w-[80px]">
                       {getTransactionBranch(transaction) || '-'}

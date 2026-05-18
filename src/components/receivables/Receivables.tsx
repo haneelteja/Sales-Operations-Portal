@@ -34,8 +34,8 @@ const Receivables = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const receivables: ReceivableTransaction[] = salesTransactions?.map(transaction => ({
     id: transaction.id,
-    customer_name: transaction.customers?.dealer_name || 'Unknown Customer',
-    area: transaction.customers?.area || 'Unknown Branch',
+    customer_name: transaction.customers?.client_name || 'Unknown Customer',
+    area: transaction.customers?.branch || 'Unknown Branch',
     sku: transaction.sku,
     quantity: transaction.quantity,
     total_amount: transaction.total_amount,

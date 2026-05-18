@@ -37,9 +37,9 @@ export const useCustomers = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, dealer_name, area, sku, price_per_case, price_per_bottle, contact_person, phone, email, address, is_active, created_at, updated_at")
+        .select("id, client_name, branch, sku, price_per_case, price_per_bottle, contact_person, phone, email, address, is_active, created_at, updated_at")
         .eq("is_active", true)
-        .order("dealer_name", { ascending: true });
+        .order("client_name", { ascending: true });
       
       if (error) throw error;
       return data as Customer[];
@@ -71,8 +71,8 @@ export const useSalesTransactions = () => {
           updated_at,
           customers (
             id,
-            dealer_name,
-            area
+            client_name,
+            branch
           )
         `)
         .order("created_at", { ascending: false });

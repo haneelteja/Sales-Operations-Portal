@@ -65,12 +65,12 @@ async function fetchSkuConfigurations(): Promise<SkuOption[]> {
 async function fetchDistinctClientNames(): Promise<string[]> {
   const { data, error } = await supabase
     .from("customers")
-    .select("dealer_name")
+    .select("client_name")
     .eq("is_active", true);
   if (error) throw new Error(handleSupabaseError(error));
   const set = new Set<string>();
   (data || []).forEach((r) => {
-    const n = r.dealer_name?.trim();
+    const n = r.client_name?.trim();
     if (n) set.add(n);
   });
   return [...set].sort((a, b) => a.localeCompare(b));
@@ -79,13 +79,13 @@ async function fetchDistinctClientNames(): Promise<string[]> {
 async function fetchBranchesForClient(dealerName: string): Promise<string[]> {
   const { data, error } = await supabase
     .from("customers")
-    .select("area")
-    .eq("dealer_name", dealerName)
+    .select("branch")
+    .eq("client_name", dealerName)
     .eq("is_active", true);
   if (error) throw new Error(handleSupabaseError(error));
   const set = new Set<string>();
   (data || []).forEach((r) => {
-    const a = r.area?.trim();
+    const a = r.branch?.trim();
     if (a) set.add(a);
   });
   return [...set].sort((a, b) => a.localeCompare(b));
@@ -95,8 +95,8 @@ async function fetchRowsForPair(dealerName: string, area: string): Promise<Custo
   const { data, error } = await supabase
     .from("customers")
     .select("sku, price_per_bottle, price_per_case, gst_number, whatsapp_number, bottles_per_case, created_at, pricing_date")
-    .eq("dealer_name", dealerName)
-    .eq("area", area)
+    .eq("client_name", dealerName)
+    .eq("branch", area)
     .eq("is_active", true)
     .order("pricing_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -128,7 +128,7 @@ async function fetchSampleContactForClient(
   const { data, error } = await supabase
     .from("customers")
     .select("gst_number, whatsapp_number")
-    .eq("dealer_name", dealerName)
+    .eq("client_name", dealerName)
     .eq("is_active", true)
     .order("pricing_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -318,15 +318,15 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     if (!date?.trim()) errors.date = "Date is required";
 
     if (isExistingClient) {
-      if (!selectedExistingClient.trim()) errors.dealer_name = "Select a client";
+      if (!selectedExistingClient.trim()) errors.client_name = "Select a client";
     } else {
-      if (!dealerNameInput?.trim()) errors.dealer_name = "Client name is required";
+      if (!dealerNameInput?.trim()) errors.client_name = "Client name is required";
     }
 
     if (isExistingClient && isExistingBranch) {
-      if (!selectedExistingBranch.trim()) errors.area = "Select a branch";
+      if (!selectedExistingBranch.trim()) errors.branch = "Select a branch";
     } else {
-      if (!branchInput?.trim()) errors.area = "Branch is required";
+      if (!branchInput?.trim()) errors.branch = "Branch is required";
     }
 
     const trimmedGst = gstNumber?.trim().toUpperCase();
@@ -394,8 +394,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       if (rowsToInsert.length === 0) throw new Error("Add at least one SKU pricing row with valid values.");
 
       const inserts = rowsToInsert.map((row) => ({
-        dealer_name: resolvedDealerName,
-        area: resolvedArea,
+        client_name: resolvedDealerName,
+        branch: resolvedArea,
         pricing_date: date,
         gst_number: gst || null,
         whatsapp_number: wa || null,
@@ -415,8 +415,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                 price_per_bottle: row.price_per_bottle,
                 bottles_per_case: row.bottles_per_case,
               })
-              .eq("dealer_name", row.dealer_name)
-              .eq("area", row.area)
+              .eq("client_name", row.client_name)
+              .eq("branch", row.branch)
               .eq("sku", row.sku)
               .eq("pricing_date", row.pricing_date)
               .select("id");
@@ -430,8 +430,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   bottles_per_case: row.bottles_per_case,
                   pricing_date: row.pricing_date,
                 })
-                .eq("dealer_name", row.dealer_name)
-                .eq("area", row.area)
+                .eq("client_name", row.client_name)
+                .eq("branch", row.branch)
                 .eq("sku", row.sku);
               if (fallbackErr) throw new Error(handleSupabaseError(fallbackErr));
             }
@@ -445,8 +445,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       const { error: syncErr } = await supabase
         .from("customers")
         .update({ gst_number: gst || null, whatsapp_number: wa || null })
-        .eq("dealer_name", resolvedDealerName)
-        .eq("area", resolvedArea);
+        .eq("client_name", resolvedDealerName)
+        .eq("branch", resolvedArea);
       if (syncErr) throw new Error(handleSupabaseError(syncErr));
     },
     onSuccess: () => {
@@ -560,7 +560,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   placeholder={clientsLoading ? "Loading..." : "Select client"}
                   disabled={clientsLoading}
                 />
-                {fieldErrors.dealer_name && <p className="text-sm text-destructive">{fieldErrors.dealer_name}</p>}
+                {fieldErrors.client_name && <p className="text-sm text-destructive">{fieldErrors.client_name}</p>}
               </div>
             ) : (
               <div className="space-y-2">
@@ -571,7 +571,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   onChange={(e) => setDealerNameInput(e.target.value)}
                   placeholder="Client name"
                 />
-                {fieldErrors.dealer_name && <p className="text-sm text-destructive">{fieldErrors.dealer_name}</p>}
+                {fieldErrors.client_name && <p className="text-sm text-destructive">{fieldErrors.client_name}</p>}
               </div>
             )}
 
@@ -585,7 +585,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   placeholder={branchesLoading ? "Loading..." : "Select branch"}
                   disabled={!selectedExistingClient || branchesLoading}
                 />
-                {fieldErrors.area && <p className="text-sm text-destructive">{fieldErrors.area}</p>}
+                {fieldErrors.branch && <p className="text-sm text-destructive">{fieldErrors.branch}</p>}
               </div>
             ) : (
               <div className="space-y-2">
@@ -596,7 +596,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                   onChange={(e) => setBranchInput(e.target.value)}
                   placeholder="Branch"
                 />
-                {fieldErrors.area && <p className="text-sm text-destructive">{fieldErrors.area}</p>}
+                {fieldErrors.branch && <p className="text-sm text-destructive">{fieldErrors.branch}</p>}
               </div>
             )}
 

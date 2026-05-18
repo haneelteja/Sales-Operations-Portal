@@ -40,8 +40,8 @@ type CurrentItemState = {
 type AvailableSku = {
   id: string;
   sku: string;
-  dealer_name: string;
-  area: string | null;
+  client_name: string;
+  branch: string | null;
   price_per_case: number;
 };
 

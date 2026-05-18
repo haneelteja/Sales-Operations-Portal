@@ -8,7 +8,7 @@ import type { Customer, SalesTransaction } from '@/types';
 import type { SaleForm } from '@/types';
 import type { SalesItem } from '@/components/sales/hooks/useSalesItemsManager';
 
-type CustomerDirectoryRecord = Customer & { client_name?: string | null; branch?: string | null };
+type CustomerDirectoryRecord = Customer;
 
 type InvoiceGenerationArgs = {
   transactionId: string;
@@ -56,7 +56,7 @@ export function useMultiSaleSubmission({
 
       const { data: customerData } = await supabase
         .from('customers')
-        .select('dealer_name, area')
+        .select('client_name, branch')
         .eq('id', saleForm.customer_id)
         .single();
 
@@ -117,7 +117,7 @@ export function useMultiSaleSubmission({
           sku: item.sku || null,
           amount: Math.max(0, finalFactoryAmount),
           quantity: quantity || null,
-          description: customerData?.dealer_name || 'Unknown Client',
+          description: customerData?.client_name || 'Unknown Client',
           transaction_date: saleForm.transaction_date,
           customer_id: saleForm.customer_id,
         };

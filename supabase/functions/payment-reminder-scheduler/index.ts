@@ -163,22 +163,22 @@ serve(async (req) => {
     // that are now is_active=false, so filtering to is_active=true would hide those customers.
     const { data: allCustomers, error: custError } = await supabase
       .from('customers')
-      .select('id, dealer_name, whatsapp_number, is_active');
+      .select('id, client_name, whatsapp_number, is_active');
 
     if (custError) throw new Error(`Failed to fetch customers: ${custError.message}`);
 
-    // Map every customer row ID → dealer_name (covers all pricing periods)
+    // Map every customer row ID → client_name (covers all pricing periods)
     const idToDealerName = new Map<string, string>(
-      (allCustomers || []).map((c) => [c.id, c.dealer_name])
+      (allCustomers || []).map((c) => [c.id, c.client_name])
     );
 
-    // Map dealer_name → the best row to use for sending (active row preferred, must have WhatsApp number)
+    // Map client_name → the best row to use for sending (active row preferred, must have WhatsApp number)
     const dealerInfo = new Map<string, { id: string; dealer_name: string; whatsapp_number: string }>();
     for (const c of (allCustomers || [])) {
       if (!c.whatsapp_number) continue;
-      const existing = dealerInfo.get(c.dealer_name);
+      const existing = dealerInfo.get(c.client_name);
       if (!existing || (!existing.is_active && c.is_active)) {
-        dealerInfo.set(c.dealer_name, { id: c.id, dealer_name: c.dealer_name, whatsapp_number: c.whatsapp_number });
+        dealerInfo.set(c.client_name, { id: c.id, dealer_name: c.client_name, whatsapp_number: c.whatsapp_number });
       }
     }
 
@@ -316,7 +316,7 @@ serve(async (req) => {
             messageType: 'payment_reminder',
             triggerType: 'scheduled',
             placeholders: {
-              customerName: customer.dealer_name,
+              customerName: customer.dealer_name, // dealer_name is the local var set from c.client_name above
               outstandingAmount: outstandingFormatted,
               daysOverdue: daysOverdueActual.toString(),
               oldestInvoiceDate: new Date(data.oldestSaleDate!).toLocaleDateString('en-IN'),
@@ -340,7 +340,7 @@ serve(async (req) => {
         await supabase.from('payment_reminder_logs').insert({
           schedule_id: schedule.id,
           customer_id: customer.id,
-          customer_name: customer.dealer_name,
+          customer_name: customer.dealer_name, // local var set from c.client_name
           outstanding_amount: data.outstanding,
           whatsapp_message_log_id: whatsappLogId,
           status,

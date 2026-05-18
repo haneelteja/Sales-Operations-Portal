@@ -105,7 +105,7 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
   const [txRes, fpRes, custRes, invRes] = await Promise.all([
     supabase
       .from('sales_transactions')
-      .select('customer_id, transaction_type, amount, quantity, transaction_date, customers(id, dealer_name, area)')
+      .select('customer_id, transaction_type, amount, quantity, transaction_date, customers(id, client_name, branch)')
       .order('transaction_date', { ascending: true }),
     supabase
       .from('factory_payables')
@@ -159,8 +159,8 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
   for (const tx of txRows) {
     const cid = tx.customer_id;
     if (!cid) continue;
-    const cust = tx.customers as { id: string; dealer_name: string; area: string } | null;
-    const name = cust?.dealer_name ?? cid;
+    const cust = tx.customers as { id: string; client_name: string; branch: string } | null;
+    const name = cust?.client_name ?? cid;
     const area = cust?.area ?? null;
     if (!map[cid]) map[cid] = { customer_id: cid, name, area, sales: [], payments: [] };
     if (tx.transaction_type === 'sale') {

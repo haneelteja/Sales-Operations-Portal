@@ -1,8 +1,8 @@
 // Database table types
 export interface Customer {
   id: string;
-  dealer_name: string;
-  area: string | null;
+  client_name: string;
+  branch: string | null;
   sku: string | null;
   price_per_case: number | null;
   price_per_bottle: number | null;
@@ -29,8 +29,7 @@ export interface SalesTransaction {
   created_at: string;
   updated_at: string;
   customers?: {
-    dealer_name: string;
-    area: string | null;
+    client_name: string;
     branch?: string | null;
   };
 }
@@ -42,16 +41,16 @@ export interface FactoryPayable {
   sku: string | null;
   description: string | null;
   customer_id?: string | null;
-  dealer_name?: string | null;
-  area?: string | null;
+  client_name?: string | null;
+  branch?: string | null;
   transaction_date: string;
   transaction_type: string;
   created_at: string;
   updated_at: string;
   customers?: {
     id: string;
-    dealer_name: string;
-    area: string;
+    client_name: string;
+    branch: string;
   };
 }
 
@@ -85,8 +84,8 @@ export interface TransportExpense {
   expense_group: string | null;
   transport_vendor?: string | null;
   client_id?: string | null;
-  dealer_name?: string | null;
-  area?: string | null;
+  client_name?: string | null;
+  branch?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -163,8 +162,8 @@ export interface PaymentForm {
 }
 
 export interface CustomerForm {
-  dealer_name: string;
-  area: string;
+  client_name: string;
+  branch: string;
   sku: string;
   price_per_case: string;
   price_per_bottle: string;

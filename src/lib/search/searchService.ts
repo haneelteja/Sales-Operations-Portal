@@ -303,7 +303,7 @@ export class SearchService {
     const commonTextFields: Record<SearchModule, string[]> = {
       sales_transactions: ['sku', 'description'],
       orders: ['client', 'area', 'sku'],
-      customers: ['dealer_name', 'area', 'contact_person', 'email', 'phone'],
+      customers: ['client_name', 'branch', 'contact_person', 'email', 'phone'],
       user_management: ['username', 'email'],
       factory_payables: ['description', 'sku'],
       transport_expenses: ['expense_group', 'description'],

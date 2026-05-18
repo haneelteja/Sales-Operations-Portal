@@ -140,7 +140,7 @@ export function useSaleSubmission({
 
         const { data: customerData } = await supabase
           .from('customers')
-          .select('dealer_name')
+          .select('client_name')
           .eq('id', data.customer_id)
           .single();
 
@@ -154,7 +154,7 @@ export function useSaleSubmission({
             sku: data.sku || null,
             quantity: shortfall,
             amount: Math.max(0, shortfallAmount),
-            description: `Shortfall from sale — ${customerData?.dealer_name ?? 'Unknown Client'}`,
+            description: `Shortfall from sale — ${customerData?.client_name ?? 'Unknown Client'}`,
             transaction_date: data.transaction_date,
             customer_id: data.customer_id,
           });
