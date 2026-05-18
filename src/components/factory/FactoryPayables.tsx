@@ -25,6 +25,7 @@ import { Pencil, Trash2, Download } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { passesMultiFilter } from '@/lib/utils';
+import { PageSizeSelector } from '@/components/ui/page-size-selector';
 
 const FactoryPayables = () => {
   const [paymentForm, setPaymentForm] = useState({
@@ -84,7 +85,8 @@ const FactoryPayables = () => {
   });
 
   const [currentPage, setCurrentPage] = useState(1);
-  const PAGE_SIZE = 50;
+  const [pageSize, setPageSize] = useState(20);
+  const [monthFilter, setMonthFilter] = useState('');
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -235,11 +237,23 @@ const FactoryPayables = () => {
     return null;
   };
 
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    (transactions || []).forEach(t => {
+      if (t.transaction_date) months.add(t.transaction_date.slice(0, 7));
+    });
+    return [...months].sort().reverse();
+  }, [transactions]);
+
   // Filter and sort transactions (memoized for performance)
   const filteredAndSortedTransactions = useMemo(() => {
     if (!transactions) return [];
-    
-    return transactions.filter((transaction) => {
+
+    const baseList = monthFilter
+      ? transactions.filter(t => (t.transaction_date || '').startsWith(monthFilter))
+      : transactions;
+
+    return baseList.filter((transaction) => {
     const sku = transaction.sku || '';
     const amount = transaction.amount?.toString() || '';
     const date = new Date(transaction.transaction_date).toLocaleDateString();
@@ -382,15 +396,15 @@ const FactoryPayables = () => {
     return 0;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing]);
+  }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing, monthFilter]);
 
   // Paginated slice of filtered+sorted transactions
   const paginatedTransactions = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredAndSortedTransactions.slice(start, start + PAGE_SIZE);
-  }, [filteredAndSortedTransactions, currentPage]);
+    const start = (currentPage - 1) * pageSize;
+    return filteredAndSortedTransactions.slice(start, start + pageSize);
+  }, [filteredAndSortedTransactions, currentPage, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredAndSortedTransactions.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedTransactions.length / pageSize));
 
   // Reset to page 1 whenever filters/search change
   const handleColumnFilterChange = useCallback((columnKey: string, value: string | string[]) => {
@@ -943,19 +957,36 @@ const FactoryPayables = () => {
           </div>
           
           {/* Search Filter */}
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               placeholder="Search transactions by SKU, description, amount, date, or type..."
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               className="max-w-md"
             />
-            {(searchTerm || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
+            {availableMonths.length > 0 && (
+              <select
+                aria-label="Filter by month"
+                value={monthFilter}
+                onChange={e => { setMonthFilter(e.target.value); setCurrentPage(1); }}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+              >
+                <option value="">All Months</option>
+                {availableMonths.map(m => {
+                  const [y, mo] = m.split('-');
+                  const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            )}
+            {(searchTerm || monthFilter || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
                   setSearchTerm("");
+                  setMonthFilter("");
+                  setCurrentPage(1);
                   setColumnFilters({
                     date: "",
                     client: "",
@@ -1284,32 +1315,37 @@ const FactoryPayables = () => {
         </div>
 
         {/* Pagination controls */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200/50">
+        <div className="flex items-center justify-between pt-4 border-t border-slate-200/50">
+          <PageSizeSelector
+            pageSize={pageSize}
+            onPageSizeChange={(s) => { setPageSize(s); setCurrentPage(1); }}
+            totalRecords={filteredAndSortedTransactions.length}
+          />
+          <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
-              Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filteredAndSortedTransactions.length)} of {filteredAndSortedTransactions.length}
+              {filteredAndSortedTransactions.length > 0
+                ? `${((currentPage - 1) * pageSize) + 1}–${Math.min(currentPage * pageSize, filteredAndSortedTransactions.length)} of ${filteredAndSortedTransactions.length}`
+                : '0 records'}
             </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                ← Prev
-              </Button>
-              <span className="text-sm font-medium px-2">{currentPage} / {totalPages}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                Next →
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              ← Prev
+            </Button>
+            <span className="text-sm font-medium px-2">{currentPage} / {totalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next →
+            </Button>
           </div>
-        )}
+        </div>
       </div>}
 
     </div>

@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { ColumnFilter } from '@/components/ui/column-filter';
+import { PageSizeSelector } from '@/components/ui/page-size-selector';
 
 const TransportExpenses = () => {
   const [form, setForm] = useState({
@@ -39,6 +40,9 @@ const TransportExpenses = () => {
     transport_vendor: ""
   });
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [monthFilter, setMonthFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState({
@@ -444,11 +448,25 @@ const TransportExpenses = () => {
     });
   }, [expenses, customersForLookup, customers]);
 
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    (enrichedExpenses || []).forEach(t => {
+      if (t.expense_date) months.add(t.expense_date.slice(0, 7));
+    });
+    return [...months].sort().reverse();
+  }, [enrichedExpenses]);
+
   // Filter and sort expenses (memoized for performance)
   const filteredAndSortedExpenses = useMemo(() => {
     if (!enrichedExpenses || enrichedExpenses.length === 0) return [];
-    
-    return enrichedExpenses.filter((expense) => {
+
+    let filtered = enrichedExpenses as typeof enrichedExpenses;
+
+    if (monthFilter) {
+      filtered = filtered.filter(t => (t.expense_date || '').startsWith(monthFilter));
+    }
+
+    return filtered.filter((expense) => {
     const expenseGroup = expense.expense_group || '';
     const amount = expense.amount?.toString() || '';
     const date = new Date(expense.expense_date).toLocaleDateString();
@@ -526,11 +544,17 @@ const TransportExpenses = () => {
     if (valueA > valueB) return direction === 'asc' ? 1 : -1;
     return 0;
     });
-  }, [enrichedExpenses, debouncedSearchTerm, columnFilters, columnSorts]);
+  }, [enrichedExpenses, debouncedSearchTerm, columnFilters, columnSorts, monthFilter]);
 
   const totalExpenses = useMemo(() => {
     return filteredAndSortedExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
   }, [filteredAndSortedExpenses]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedExpenses.length / pageSize));
+  const paginatedExpenses = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredAndSortedExpenses.slice(start, start + pageSize);
+  }, [filteredAndSortedExpenses, currentPage, pageSize]);
 
 
   // Export filtered data to Excel (memoized)
@@ -674,19 +698,36 @@ const TransportExpenses = () => {
         </div>
         
         {/* Search Filter */}
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Input
             placeholder="Search transactions by client, area, group, amount, or date..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="max-w-md"
           />
-          {(searchTerm || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
+          {availableMonths.length > 0 && (
+            <select
+              aria-label="Filter by month"
+              value={monthFilter}
+              onChange={e => { setMonthFilter(e.target.value); setCurrentPage(1); }}
+              className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+            >
+              <option value="">All Months</option>
+              {availableMonths.map(m => {
+                const [y, mo] = m.split('-');
+                const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+                return <option key={m} value={m}>{label}</option>;
+              })}
+            </select>
+          )}
+          {(searchTerm || monthFilter || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
                 setSearchTerm("");
+                setMonthFilter("");
+                setCurrentPage(1);
                 setColumnFilters({
                   date: "",
                   client: "",
@@ -830,7 +871,7 @@ const TransportExpenses = () => {
         </TableHeader>
         <TableBody>
           {filteredAndSortedExpenses.length > 0 ? (
-            filteredAndSortedExpenses.map((expense) => (
+            paginatedExpenses.map((expense) => (
               <TableRow key={expense.id}>
                 <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
                 <TableCell>{expense.client_name || 'N/A'}</TableCell>
@@ -870,6 +911,39 @@ const TransportExpenses = () => {
           )}
         </TableBody>
       </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between px-1 py-2 border-t">
+        <PageSizeSelector
+          pageSize={pageSize}
+          onPageSizeChange={(s) => { setPageSize(s); setCurrentPage(1); }}
+          totalRecords={filteredAndSortedExpenses.length}
+        />
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {filteredAndSortedExpenses.length > 0
+              ? `${((currentPage - 1) * pageSize) + 1}–${Math.min(currentPage * pageSize, filteredAndSortedExpenses.length)} of ${filteredAndSortedExpenses.length}`
+              : '0 records'}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(p => p - 1)}
+          >
+            ←
+          </Button>
+          <span className="text-sm font-medium px-2">{currentPage} / {totalPages}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(p => p + 1)}
+          >
+            →
+          </Button>
+        </div>
       </div>
 
       {/* Edit Dialog */}

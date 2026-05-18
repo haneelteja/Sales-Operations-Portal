@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download, Search, Filter } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
+import { PageSizeSelector } from '@/components/ui/page-size-selector';
 
 interface LabelPayment {
   id: string;
@@ -45,6 +46,11 @@ const LabelPayments = () => {
     vendor_id: "",
     description: ""
   });
+
+  // Pagination and month filter state for payments table
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const [paymentsPageSize, setPaymentsPageSize] = useState(20);
+  const [paymentsMonthFilter, setPaymentsMonthFilter] = useState('');
 
   // State for filtering and sorting
   const [vendorOutstandingSearch, setVendorOutstandingSearch] = useState("");
@@ -359,11 +365,23 @@ const LabelPayments = () => {
     return filtered;
   }, [vendorOutstanding, vendorOutstandingSearch, vendorOutstandingSortField, vendorOutstandingSortDirection]);
 
+  const availablePaymentMonths = useMemo(() => {
+    const months = new Set<string>();
+    (payments || []).forEach(p => {
+      if (p.payment_date) months.add(p.payment_date.slice(0, 7));
+    });
+    return [...months].sort().reverse();
+  }, [payments]);
+
   // Filter and sort payments data
   const filteredAndSortedPayments = React.useMemo(() => {
     if (!payments) return [];
 
-    const filtered = payments.filter((payment) => {
+    const baseList = paymentsMonthFilter
+      ? payments.filter(p => (p.payment_date || '').startsWith(paymentsMonthFilter))
+      : payments;
+
+    const filtered = baseList.filter((payment) => {
       return (
         payment.vendor_id.toLowerCase().includes(paymentsSearch.toLowerCase()) ||
         payment.payment_method.toLowerCase().includes(paymentsSearch.toLowerCase()) ||
@@ -407,7 +425,7 @@ const LabelPayments = () => {
     });
 
     return filtered;
-  }, [payments, paymentsSearch, paymentsSortField, paymentsSortDirection]);
+  }, [payments, paymentsSearch, paymentsSortField, paymentsSortDirection, paymentsMonthFilter]);
 
   // Handle sort functions
   const handleVendorOutstandingSort = (field: "vendor_name" | "total_purchased" | "total_paid" | "outstanding") => {
@@ -427,6 +445,12 @@ const LabelPayments = () => {
       setPaymentsSortDirection('asc');
     }
   };
+
+  const paymentsTotalPages = Math.max(1, Math.ceil(filteredAndSortedPayments.length / paymentsPageSize));
+  const paginatedPayments = useMemo(() => {
+    const start = (paymentsPage - 1) * paymentsPageSize;
+    return filteredAndSortedPayments.slice(start, start + paymentsPageSize);
+  }, [filteredAndSortedPayments, paymentsPage, paymentsPageSize]);
 
   // Export functions
   const handleExportVendorOutstanding = async () => {
@@ -622,18 +646,33 @@ const LabelPayments = () => {
       </div>
 
       <div className="space-y-4">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-wrap justify-between items-center gap-2">
           <h3 className="text-lg font-semibold">Label Payments</h3>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
                 placeholder="Search payments..."
                 value={paymentsSearch}
-                onChange={(e) => setPaymentsSearch(e.target.value)}
+                onChange={(e) => { setPaymentsSearch(e.target.value); setPaymentsPage(1); }}
                 className="pl-10 w-64"
               />
             </div>
+            {availablePaymentMonths.length > 0 && (
+              <select
+                aria-label="Filter by month"
+                value={paymentsMonthFilter}
+                onChange={e => { setPaymentsMonthFilter(e.target.value); setPaymentsPage(1); }}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+              >
+                <option value="">All Months</option>
+                {availablePaymentMonths.map(m => {
+                  const [y, mo] = m.split('-');
+                  const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            )}
             <Button onClick={handleExportPayments} variant="outline" size="sm">
               <Download className="h-4 w-4 mr-2" />
               Export Excel
@@ -694,7 +733,7 @@ const LabelPayments = () => {
             </TableHeader>
             <TableBody>
               {filteredAndSortedPayments && filteredAndSortedPayments.length > 0 ? (
-                filteredAndSortedPayments.map((payment) => (
+                paginatedPayments.map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
                     <TableCell>
@@ -735,6 +774,39 @@ const LabelPayments = () => {
               )}
             </TableBody>
           </Table>
+        </div>
+      </div>
+
+      {/* Payments Pagination */}
+      <div className="flex items-center justify-between pt-2">
+        <PageSizeSelector
+          pageSize={paymentsPageSize}
+          onPageSizeChange={(s) => { setPaymentsPageSize(s); setPaymentsPage(1); }}
+          totalRecords={filteredAndSortedPayments.length}
+        />
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {filteredAndSortedPayments.length > 0
+              ? `${((paymentsPage - 1) * paymentsPageSize) + 1}–${Math.min(paymentsPage * paymentsPageSize, filteredAndSortedPayments.length)} of ${filteredAndSortedPayments.length}`
+              : '0 records'}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={paymentsPage === 1}
+            onClick={() => setPaymentsPage(p => p - 1)}
+          >
+            ←
+          </Button>
+          <span className="text-sm font-medium px-2">{paymentsPage} / {paymentsTotalPages}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={paymentsPage === paymentsTotalPages}
+            onClick={() => setPaymentsPage(p => p + 1)}
+          >
+            →
+          </Button>
         </div>
       </div>
 

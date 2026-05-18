@@ -20,6 +20,7 @@ export interface FilterState {
   };
   currentPage: number;
   pageSize: number;
+  monthFilter: string;
 }
 
 type FilterAction =
@@ -28,6 +29,8 @@ type FilterAction =
   | { type: 'CLEAR_COLUMN_FILTER'; payload: string }
   | { type: 'SET_COLUMN_SORT'; payload: { column: string; direction: 'asc' | 'desc' | null } }
   | { type: 'SET_PAGE'; payload: number }
+  | { type: 'SET_PAGE_SIZE'; payload: number }
+  | { type: 'SET_MONTH_FILTER'; payload: string }
   | { type: 'RESET_FILTERS' }
   | { type: 'RESET_PAGE' };
 
@@ -50,7 +53,8 @@ const initialState: FilterState = {
     amount: null,
   },
   currentPage: 1,
-  pageSize: 50,
+  pageSize: 20,
+  monthFilter: '',
 };
 
 function filterReducer(state: FilterState, action: FilterAction): FilterState {
@@ -97,6 +101,20 @@ function filterReducer(state: FilterState, action: FilterAction): FilterState {
         currentPage: action.payload,
       };
 
+    case 'SET_PAGE_SIZE':
+      return {
+        ...state,
+        pageSize: action.payload,
+        currentPage: 1,
+      };
+
+    case 'SET_MONTH_FILTER':
+      return {
+        ...state,
+        monthFilter: action.payload,
+        currentPage: 1,
+      };
+
     case 'RESET_FILTERS':
       return {
         ...state,
@@ -104,6 +122,7 @@ function filterReducer(state: FilterState, action: FilterAction): FilterState {
         columnFilters: initialState.columnFilters,
         columnSorts: initialState.columnSorts,
         currentPage: 1,
+        monthFilter: '',
       };
 
     case 'RESET_PAGE':
@@ -117,7 +136,7 @@ function filterReducer(state: FilterState, action: FilterAction): FilterState {
   }
 }
 
-export function useTransactionFilters(initialPageSize: number = 50) {
+export function useTransactionFilters(initialPageSize: number = 20) {
   const [state, dispatch] = useReducer(filterReducer, {
     ...initialState,
     pageSize: initialPageSize,
@@ -151,6 +170,14 @@ export function useTransactionFilters(initialPageSize: number = 50) {
     dispatch({ type: 'RESET_PAGE' });
   }, []);
 
+  const setPageSize = useCallback((size: number) => {
+    dispatch({ type: 'SET_PAGE_SIZE', payload: size });
+  }, []);
+
+  const setMonthFilter = useCallback((month: string) => {
+    dispatch({ type: 'SET_MONTH_FILTER', payload: month });
+  }, []);
+
   return {
     // State
     searchTerm: state.searchTerm,
@@ -158,13 +185,16 @@ export function useTransactionFilters(initialPageSize: number = 50) {
     columnSorts: state.columnSorts,
     currentPage: state.currentPage,
     pageSize: state.pageSize,
-    
+    monthFilter: state.monthFilter,
+
     // Actions
     setSearchTerm,
     setColumnFilter,
     clearColumnFilter,
     setColumnSort,
     setPage,
+    setPageSize,
+    setMonthFilter,
     resetFilters,
     resetPage,
   };

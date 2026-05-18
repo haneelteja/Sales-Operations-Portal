@@ -19,6 +19,7 @@ import { exportJsonToExcel } from "@/services/export/excelExport";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Pagination } from "@/components/ui/pagination";
+import { PageSizeSelector } from "@/components/ui/page-size-selector";
 
 interface OrderRow {
   id: string;
@@ -89,7 +90,8 @@ const OrderManagement: React.FC = () => {
 
   // Pagination state for Current Orders
   const [ordersPage, setOrdersPage] = useState(1);
-  const ordersPageSize = 7;
+  const [ordersPageSize, setOrdersPageSize] = useState(20);
+  const [ordersMonthFilter, setOrdersMonthFilter] = useState('');
 
   // Filter and sort states for Orders Dispatched table
   const [dispatchSearchTerm, setDispatchSearchTerm] = useState("");
@@ -113,7 +115,8 @@ const OrderManagement: React.FC = () => {
 
   // Pagination state for Orders Dispatched
   const [dispatchPage, setDispatchPage] = useState(1);
-  const dispatchPageSize = 7;
+  const [dispatchPageSize, setDispatchPageSize] = useState(20);
+  const [dispatchMonthFilter, setDispatchMonthFilter] = useState('');
 
   const { data: tentativeDeliveryDays = 5 } = useQuery({
     queryKey: ["tentative-delivery-days"],
@@ -702,11 +705,29 @@ const OrderManagement: React.FC = () => {
     );
   }, [getUniqueCustomers, clientSearch]);
 
+  const availableOrderMonths = useMemo(() => {
+    const months = new Set<string>();
+    (normalizedOrders || []).forEach(o => {
+      if (o.expense_date) months.add(o.expense_date.slice(0, 7));
+    });
+    return [...months].sort().reverse();
+  }, [normalizedOrders]);
+
+  const availableDispatchMonths = useMemo(() => {
+    const months = new Set<string>();
+    ((dispatchData as DispatchRow[]) || []).forEach(o => {
+      if (o.delivery_date) months.add(o.delivery_date.slice(0, 7));
+    });
+    return [...months].sort().reverse();
+  }, [dispatchData]);
+
   // Filtered and sorted Current Orders
   const filteredAndSortedOrders = useMemo(() => {
     if (!normalizedOrders) return [];
 
     return normalizedOrders.filter(order => {
+      // Month filter
+      if (ordersMonthFilter && !(order.expense_date || '').startsWith(ordersMonthFilter)) return false;
       // Global search
       if (debouncedOrdersSearchTerm) {
         const searchLower = debouncedOrdersSearchTerm.toLowerCase();
@@ -779,13 +800,16 @@ const OrderManagement: React.FC = () => {
       if (aValue > bValue) return direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [normalizedOrders, debouncedOrdersSearchTerm, ordersColumnFilters, ordersColumnSorts]);
+  }, [normalizedOrders, debouncedOrdersSearchTerm, ordersColumnFilters, ordersColumnSorts, ordersMonthFilter]);
 
   // Filtered and sorted Orders Dispatched
   const filteredAndSortedDispatch = useMemo(() => {
     if (!dispatchData) return [];
 
     return (dispatchData as DispatchRow[]).filter(order => {
+      // Month filter
+      if (dispatchMonthFilter && !(order.delivery_date || '').startsWith(dispatchMonthFilter)) return false;
+
       // Global search
       if (debouncedDispatchSearchTerm) {
         const searchLower = debouncedDispatchSearchTerm.toLowerCase();
@@ -852,7 +876,7 @@ const OrderManagement: React.FC = () => {
       if (aValue > bValue) return direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [dispatchData, debouncedDispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts]);
+  }, [dispatchData, debouncedDispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts, dispatchMonthFilter]);
 
   // Export functions (defined after filteredAndSortedOrders and filteredAndSortedDispatch)
   const exportOrdersToExcel = useCallback(async () => {
@@ -1156,6 +1180,21 @@ const OrderManagement: React.FC = () => {
                 className="w-full"
               />
             </div>
+            {availableOrderMonths.length > 0 && (
+              <select
+                aria-label="Filter by month"
+                value={ordersMonthFilter}
+                onChange={e => { setOrdersMonthFilter(e.target.value); setOrdersPage(1); }}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+              >
+                <option value="">All Months</option>
+                {availableOrderMonths.map(m => {
+                  const [y, mo] = m.split('-');
+                  const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            )}
             <div className="hidden md:block ml-auto">
               <Button
                 variant="outline"
@@ -1342,19 +1381,26 @@ const OrderManagement: React.FC = () => {
                 </TableBody>
               </Table>
               </div>
-              <Pagination
-                page={ordersPage}
-                totalPages={Math.max(1, Math.ceil(filteredAndSortedOrders.length / ordersPageSize))}
-                total={filteredAndSortedOrders.length}
-                pageSize={ordersPageSize}
-                onNextPage={() => setOrdersPage(p => Math.min(p + 1, Math.ceil(filteredAndSortedOrders.length / ordersPageSize)))}
-                onPreviousPage={() => setOrdersPage(p => Math.max(p - 1, 1))}
-                onFirstPage={() => setOrdersPage(1)}
-                onLastPage={() => setOrdersPage(Math.ceil(filteredAndSortedOrders.length / ordersPageSize))}
-                onPageChange={setOrdersPage}
-                hasNextPage={ordersPage < Math.ceil(filteredAndSortedOrders.length / ordersPageSize)}
-                hasPreviousPage={ordersPage > 1}
-              />
+              <div className="flex items-center justify-between pt-2">
+                <PageSizeSelector
+                  pageSize={ordersPageSize}
+                  onPageSizeChange={(s) => { setOrdersPageSize(s); setOrdersPage(1); }}
+                  totalRecords={filteredAndSortedOrders.length}
+                />
+                <Pagination
+                  page={ordersPage}
+                  totalPages={Math.max(1, Math.ceil(filteredAndSortedOrders.length / ordersPageSize))}
+                  total={filteredAndSortedOrders.length}
+                  pageSize={ordersPageSize}
+                  onNextPage={() => setOrdersPage(p => Math.min(p + 1, Math.ceil(filteredAndSortedOrders.length / ordersPageSize)))}
+                  onPreviousPage={() => setOrdersPage(p => Math.max(p - 1, 1))}
+                  onFirstPage={() => setOrdersPage(1)}
+                  onLastPage={() => setOrdersPage(Math.ceil(filteredAndSortedOrders.length / ordersPageSize))}
+                  onPageChange={setOrdersPage}
+                  hasNextPage={ordersPage < Math.ceil(filteredAndSortedOrders.length / ordersPageSize)}
+                  hasPreviousPage={ordersPage > 1}
+                />
+              </div>
             </>
           )}
         </CardContent>
@@ -1372,6 +1418,21 @@ const OrderManagement: React.FC = () => {
                 className="w-full"
               />
             </div>
+            {availableDispatchMonths.length > 0 && (
+              <select
+                aria-label="Filter by month"
+                value={dispatchMonthFilter}
+                onChange={e => { setDispatchMonthFilter(e.target.value); setDispatchPage(1); }}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+              >
+                <option value="">All Months</option>
+                {availableDispatchMonths.map(m => {
+                  const [y, mo] = m.split('-');
+                  const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            )}
             <div className="hidden md:block ml-auto">
               <Button
                 variant="outline"
@@ -1512,19 +1573,26 @@ const OrderManagement: React.FC = () => {
                 </TableBody>
               </Table>
               </div>
-              <Pagination
-                page={dispatchPage}
-                totalPages={Math.max(1, Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize))}
-                total={filteredAndSortedDispatch.length}
-                pageSize={dispatchPageSize}
-                onNextPage={() => setDispatchPage(p => Math.min(p + 1, Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize)))}
-                onPreviousPage={() => setDispatchPage(p => Math.max(p - 1, 1))}
-                onFirstPage={() => setDispatchPage(1)}
-                onLastPage={() => setDispatchPage(Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize))}
-                onPageChange={setDispatchPage}
-                hasNextPage={dispatchPage < Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize)}
-                hasPreviousPage={dispatchPage > 1}
-              />
+              <div className="flex items-center justify-between pt-2">
+                <PageSizeSelector
+                  pageSize={dispatchPageSize}
+                  onPageSizeChange={(s) => { setDispatchPageSize(s); setDispatchPage(1); }}
+                  totalRecords={filteredAndSortedDispatch.length}
+                />
+                <Pagination
+                  page={dispatchPage}
+                  totalPages={Math.max(1, Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize))}
+                  total={filteredAndSortedDispatch.length}
+                  pageSize={dispatchPageSize}
+                  onNextPage={() => setDispatchPage(p => Math.min(p + 1, Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize)))}
+                  onPreviousPage={() => setDispatchPage(p => Math.max(p - 1, 1))}
+                  onFirstPage={() => setDispatchPage(1)}
+                  onLastPage={() => setDispatchPage(Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize))}
+                  onPageChange={setDispatchPage}
+                  hasNextPage={dispatchPage < Math.ceil(filteredAndSortedDispatch.length / dispatchPageSize)}
+                  hasPreviousPage={dispatchPage > 1}
+                />
+              </div>
             </>
           )}
         </CardContent>

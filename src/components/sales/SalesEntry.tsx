@@ -36,6 +36,7 @@ import { useInvoiceGeneration, useInvoiceDownload } from "@/hooks/useInvoiceGene
 import { isAutoInvoiceEnabled } from "@/services/invoiceConfigService";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 import { exportLedger } from "@/lib/ledgerExport";
+import { PageSizeSelector } from "@/components/ui/page-size-selector";
 import { useCustomerDirectory } from "@/components/sales/hooks/useCustomerDirectory";
 import { useSaleSubmission } from "@/components/sales/hooks/useSaleSubmission";
 import { useSalesItemsManager } from "@/components/sales/hooks/useSalesItemsManager";
@@ -89,13 +90,16 @@ const SalesEntry = () => {
     columnSorts,
     currentPage,
     pageSize,
+    monthFilter,
     setSearchTerm,
     setColumnFilter,
     clearColumnFilter,
     setColumnSort,
     setPage,
+    setPageSize,
+    setMonthFilter,
     resetFilters,
-  } = useTransactionFilters(50);
+  } = useTransactionFilters(20);
   
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
 
@@ -625,6 +629,14 @@ const SalesEntry = () => {
   const recentTransactions = useMemo(() => allTransactions?.data || [], [allTransactions]);
   const totalTransactions = allTransactions?.total || 0;
 
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    (recentTransactions || []).forEach(t => {
+      if (t.transaction_date) months.add(t.transaction_date.slice(0, 7));
+    });
+    return [...months].sort().reverse();
+  }, [recentTransactions]);
+
   // Calculate cumulative outstanding for a specific customer up to a given transaction
   const calculateCumulativeOutstanding = useCallback((customerId: string, transactionDate: string, transactionId: string) => {
     try {
@@ -744,8 +756,12 @@ const SalesEntry = () => {
         ...transaction,
         outstanding: transaction.total_amount ?? 0,
       }));
-      
-      return transactionsWithOutstanding.filter((transaction) => {
+
+      const monthFiltered = monthFilter
+        ? transactionsWithOutstanding.filter(t => (t.transaction_date || '').startsWith(monthFilter))
+        : transactionsWithOutstanding;
+
+      return monthFiltered.filter((transaction) => {
         try {
           const customerName = transaction.customers?.client_name || '';
           const area = getTransactionBranch(transaction);
@@ -895,7 +911,7 @@ const SalesEntry = () => {
       logger.error('Critical error filtering and sorting transactions:', error);
       return [];
     }
-  }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts]);
+  }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts, monthFilter]);
 
   // Paginate the filtered results
   const totalFilteredTransactions = filteredAndSortedRecentTransactions.length;
@@ -1662,7 +1678,22 @@ const SalesEntry = () => {
               }}
               className="flex-1 min-w-[200px]"
             />
-            {(searchTerm || Object.values(columnFilters).some(filter => {
+            {availableMonths.length > 0 && (
+              <select
+                aria-label="Filter by month"
+                value={monthFilter}
+                onChange={e => setMonthFilter(e.target.value)}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+              >
+                <option value="">All Months</option>
+                {availableMonths.map(m => {
+                  const [y, mo] = m.split('-');
+                  const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            )}
+            {(searchTerm || monthFilter || Object.values(columnFilters).some(filter => {
               if (Array.isArray(filter)) return filter.length > 0;
               return filter && filter !== "";
             }) || Object.values(columnSorts).some(sort => sort !== null)) && (
@@ -1916,11 +1947,13 @@ const SalesEntry = () => {
           </div>
           
           {/* Pagination Controls */}
-          {totalPages > 1 && (
+          {(totalPages > 1 || filteredAndSortedRecentTransactions.length > 0) && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <div className="text-sm text-muted-foreground">
-                Page {currentPage} of {totalPages}
-              </div>
+              <PageSizeSelector
+                pageSize={pageSize}
+                onPageSizeChange={(s) => setPageSize(s)}
+                totalRecords={totalFilteredTransactions}
+              />
               <div className="flex items-center space-x-2">
                 <Button
                   variant="outline"
