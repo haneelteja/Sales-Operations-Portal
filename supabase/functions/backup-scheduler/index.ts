@@ -86,22 +86,23 @@ serve(async (req) => {
       );
     }
 
-    // Trigger the backup
-    const backupRes = await fetch(`${supabaseUrl}/functions/v1/database-backup`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ trigger: 'automatic' }),
+    // Trigger the backup using supabase.functions.invoke (handles auth correctly)
+    const { data: backupResult, error: invokeError } = await supabase.functions.invoke('database-backup', {
+      body: { trigger: 'automatic' },
     });
 
-    const backupResult = await backupRes.json().catch(() => ({}));
-
-    if (!backupRes.ok) {
-      console.error('[backup-scheduler] database-backup failed:', backupRes.status, backupResult);
+    if (invokeError) {
+      console.error('[backup-scheduler] database-backup invocation error:', invokeError);
       return new Response(
-        JSON.stringify({ triggered: true, success: false, error: backupResult.error || backupRes.statusText }),
+        JSON.stringify({ triggered: true, success: false, error: invokeError.message || String(invokeError) }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!backupResult?.success) {
+      console.error('[backup-scheduler] database-backup returned failure:', backupResult);
+      return new Response(
+        JSON.stringify({ triggered: true, success: false, error: backupResult?.error || 'Backup failed' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

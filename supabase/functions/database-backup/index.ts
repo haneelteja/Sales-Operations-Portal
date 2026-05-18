@@ -20,7 +20,7 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!; // used for email notifications
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -120,26 +120,21 @@ serve(async (req) => {
       // Step 2: Upload to Google Drive
       const base64Data = btoa(String.fromCharCode(...compressed));
 
-      const uploadResponse = await fetch(`${supabaseUrl}/functions/v1/google-drive-upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data: uploadResult, error: uploadInvokeError } = await supabase.functions.invoke('google-drive-upload', {
+        body: {
           fileName,
           fileData: base64Data,
           folderPath: backupFolderPath,
           mimeType: 'application/gzip',
-        }),
+        },
       });
 
-      if (!uploadResponse.ok) {
-        const uploadError = await uploadResponse.json().catch(() => ({ error: 'Upload failed' }));
-        throw new Error(`Google Drive upload failed: ${uploadError.error || uploadResponse.statusText}`);
+      if (uploadInvokeError) {
+        throw new Error(`Google Drive upload failed: ${uploadInvokeError.message || String(uploadInvokeError)}`);
       }
-
-      const uploadResult = await uploadResponse.json();
+      if (!uploadResult || uploadResult.error) {
+        throw new Error(`Google Drive upload failed: ${uploadResult?.error || 'Unknown error'}`);
+      }
 
       // Step 3: Update backup log with success and execution duration
       const fileId = uploadResult.id || uploadResult.fileId;
