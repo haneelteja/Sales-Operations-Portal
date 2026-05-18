@@ -14,6 +14,8 @@ const invalidationMap: Record<string, string[]> = {
     'sales-transactions',
     'recent-transactions',
     'receivables',
+    'receivables-management',
+    'customer-receivables',
     'dashboard-metrics',
     'dashboard-profit',
     'client-report',

@@ -161,7 +161,7 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
     if (!cid) continue;
     const cust = tx.customers as { id: string; client_name: string; branch: string } | null;
     const name = cust?.client_name ?? cid;
-    const area = cust?.area ?? null;
+    const area = cust?.branch ?? null;
     if (!map[cid]) map[cid] = { customer_id: cid, name, area, sales: [], payments: [] };
     if (tx.transaction_type === 'sale') {
       map[cid].sales.push({ amount: tx.amount ?? 0, cases: tx.quantity ?? 0, date: tx.transaction_date, ym: toYYYYMM(tx.transaction_date) });

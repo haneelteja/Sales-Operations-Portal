@@ -98,6 +98,8 @@ export function useTransactionMutations({
       queryClient.invalidateQueries({ queryKey: ['customers-for-availability'] });
       queryClient.invalidateQueries({ queryKey: ['sales-transactions-for-availability'] });
       queryClient.invalidateQueries({ queryKey: ['sku-configurations-for-availability'] });
+      queryClient.invalidateQueries({ queryKey: ['receivables-management'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-receivables'] });
     },
     onError: (error) => {
       toast({
