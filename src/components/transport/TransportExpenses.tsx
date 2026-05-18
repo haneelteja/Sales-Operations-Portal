@@ -50,7 +50,7 @@ const TransportExpenses = () => {
     branch: ""
   });
   const [columnSorts, setColumnSorts] = useState<{[key: string]: 'asc' | 'desc' | null}>({
-    date: null,
+    date: 'desc',
     description: null,
     group: null,
     amount: null,

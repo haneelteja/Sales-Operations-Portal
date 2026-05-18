@@ -73,7 +73,7 @@ const FactoryPayables = () => {
     amount: ""
   });
   const [columnSorts, setColumnSorts] = useState<{[key: string]: 'asc' | 'desc' | null}>({
-    date: null,
+    date: 'desc',
     client: null,
     branch: null,
     sku: null,

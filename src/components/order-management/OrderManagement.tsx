@@ -83,7 +83,7 @@ const OrderManagement: React.FC = () => {
     area: null,
     sku: null,
     number_of_cases: null,
-    expense_date: null,
+    expense_date: 'desc',
     tentative_delivery_date: null,
   });
 
@@ -108,7 +108,7 @@ const OrderManagement: React.FC = () => {
     area: null,
     sku: null,
     cases: null,
-    delivery_date: null,
+    delivery_date: 'desc',
   });
 
   // Pagination state for Orders Dispatched

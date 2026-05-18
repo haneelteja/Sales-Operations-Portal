@@ -42,7 +42,7 @@ const initialState: FilterState = {
     amount: '',
   },
   columnSorts: {
-    date: null,
+    date: 'desc' as 'asc' | 'desc' | null,
     customer: null,
     branch: null,
     type: null,
