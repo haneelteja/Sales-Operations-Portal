@@ -234,19 +234,24 @@ serve(async (req) => {
         continue;
       }
 
-      // Dedup: skip dealers already reminded by this schedule within days_overdue days
-      // Use the active customer ID for dedup lookup
-      const dedupWindowAgo = new Date(now.getTime() - daysOverdueMs).toISOString();
-      const eligibleActiveIds = eligibleDealers.map((name) => dealerInfo.get(name)!.id);
-      const { data: recentLogs } = await supabase
-        .from('payment_reminder_logs')
-        .select('customer_id')
-        .eq('schedule_id', schedule.id)
-        .in('customer_id', eligibleActiveIds)
-        .gte('triggered_at', dedupWindowAgo);
+      // Dedup: skip dealers already reminded by this schedule within days_overdue days.
+      // Bypassed when force=true (manual trigger) so the button always re-sends to all eligible customers.
+      let newDealers = eligibleDealers;
+      let dedupSkippedCount = 0;
+      if (!force) {
+        const dedupWindowAgo = new Date(now.getTime() - daysOverdueMs).toISOString();
+        const eligibleActiveIds = eligibleDealers.map((name) => dealerInfo.get(name)!.id);
+        const { data: recentLogs } = await supabase
+          .from('payment_reminder_logs')
+          .select('customer_id')
+          .eq('schedule_id', schedule.id)
+          .in('customer_id', eligibleActiveIds)
+          .gte('triggered_at', dedupWindowAgo);
 
-      const recentIds = new Set((recentLogs || []).map((l: { customer_id: string }) => l.customer_id));
-      const newDealers = eligibleDealers.filter((name) => !recentIds.has(dealerInfo.get(name)!.id));
+        const recentIds = new Set((recentLogs || []).map((l: { customer_id: string }) => l.customer_id));
+        newDealers = eligibleDealers.filter((name) => !recentIds.has(dealerInfo.get(name)!.id));
+        dedupSkippedCount = eligibleDealers.length - newDealers.length;
+      }
 
       let sent = 0;
       let failed = 0;
@@ -345,7 +350,7 @@ serve(async (req) => {
         scheduleName: schedule.name,
         daysOverdue: schedule.days_overdue,
         eligible: eligibleDealers.length,
-        alreadySentInWindow: recentIds.size,
+        alreadySentInWindow: dedupSkippedCount,
         newlySent: sent,
         failed,
       });
