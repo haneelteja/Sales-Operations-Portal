@@ -383,13 +383,19 @@ const TransportExpenses = () => {
     return uniqueCustomers.sort((a, b) => a.dealer_name.localeCompare(b.dealer_name));
   };
 
-  // Get available areas for a selected customer (filter empty - SelectItem value cannot be "")
+  // Get available areas for a selected customer.
+  // A dealer can have multiple active rows (one per branch/pricing period), so we
+  // match by dealer_name across all active rows — not just the single selected ID.
   const getAvailableAreas = (customerId: string) => {
     if (!customers) return [];
-    return customers
-      .filter(c => c.id === customerId)
+    const selected = customers.find(c => c.id === customerId);
+    if (!selected) return [];
+    const dealerName = selected.dealer_name.trim().toLowerCase();
+    const areas = customers
+      .filter(c => c.dealer_name.trim().toLowerCase() === dealerName)
       .map(c => c.area)
       .filter((a): a is string => Boolean(a) && a.trim() !== "");
+    return [...new Set(areas)];
   };
 
   // Expense group options: config first, then any from existing expenses
