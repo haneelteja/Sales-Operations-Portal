@@ -46,48 +46,26 @@ export const ManualPaymentReminder: React.FC = () => {
     },
   });
 
-  // Fetch customer receivables (outstanding amounts)
+  // Fetch customer receivables (outstanding amounts) — aggregated server-side to avoid full table scan
   const { data: receivables, isLoading: receivablesLoading } = useQuery({
     queryKey: ['customer-receivables'],
     queryFn: async () => {
-      const { data: transactions, error } = await supabase
-        .from('sales_transactions')
-        .select('customer_id, transaction_type, amount, transaction_date')
-        .order('transaction_date', { ascending: true });
+      const { data: rows, error } = await supabase.rpc('get_customer_outstanding');
 
       if (error) throw error;
 
-      // Calculate outstanding per customer
-      const customerMap = new Map<string, CustomerReceivable>();
-
-      transactions?.forEach((tx) => {
-        if (!customerMap.has(tx.customer_id)) {
-          const customer = customers?.find((c) => c.id === tx.customer_id);
-          if (!customer) return;
-
-          customerMap.set(tx.customer_id, {
+      return (rows || [])
+        .map((row) => {
+          const customer = customers?.find((c) => c.id === row.customer_id);
+          if (!customer) return null;
+          return {
             customer,
-            outstanding: 0,
-            invoiceCount: 0,
-            oldestInvoiceDate: null,
-          });
-        }
-
-        const receivable = customerMap.get(tx.customer_id)!;
-        if (tx.transaction_type === 'sale') {
-          receivable.outstanding += tx.amount || 0;
-          receivable.invoiceCount++;
-          if (!receivable.oldestInvoiceDate || tx.transaction_date < receivable.oldestInvoiceDate) {
-            receivable.oldestInvoiceDate = tx.transaction_date;
-          }
-        } else if (tx.transaction_type === 'payment') {
-          receivable.outstanding -= tx.amount || 0;
-        }
-      });
-
-      // Filter only customers with outstanding > 0
-      return Array.from(customerMap.values())
-        .filter((r) => r.outstanding > 0)
+            outstanding: Number(row.outstanding) || 0,
+            invoiceCount: Number(row.invoice_count) || 0,
+            oldestInvoiceDate: row.oldest_sale_date ?? null,
+          } satisfies CustomerReceivable;
+        })
+        .filter((r): r is CustomerReceivable => r !== null && r.outstanding > 0)
         .sort((a, b) => b.outstanding - a.outstanding);
     },
     enabled: !!customers,
