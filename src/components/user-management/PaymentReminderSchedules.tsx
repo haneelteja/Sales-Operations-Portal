@@ -260,35 +260,46 @@ export const PaymentReminderSchedules: React.FC = () => {
     saveMutation.mutate(form);
   };
 
-  const handleSendReminders = async () => {
+  const handleSendReminders = () => {
     setIsSendingManual(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('payment-reminder-scheduler', {
-        body: { force: true },
-      });
-      if (error) throw error;
 
-      const totalSent = (data?.results ?? []).reduce((sum: number, r: { newlySent?: number }) => sum + (r.newlySent ?? 0), 0);
-      const totalSchedules = data?.scheduleCount ?? 0;
+    // Fire-and-forget: the scheduler runs for 2–3 minutes (8s delay per customer).
+    // We return immediately so the 30s Supabase client timeout never fires.
+    supabase.functions.invoke('payment-reminder-scheduler', { body: { force: true } })
+      .then(({ data, error }) => {
+        if (error) return;
+        const totalSent = (data?.results ?? []).reduce(
+          (sum: number, r: { newlySent?: number }) => sum + (r.newlySent ?? 0), 0
+        );
+        const totalSchedules = data?.scheduleCount ?? 0;
+        toast({
+          title: 'Payment Reminders Sent',
+          description: totalSchedules === 0
+            ? 'No enabled schedules found.'
+            : `Processed ${totalSchedules} schedule(s). ${totalSent} reminder(s) sent.`,
+        });
+        setLogsPage(1);
+        queryClient.invalidateQueries({ queryKey: ['payment-reminder-logs'] });
+        queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
+      })
+      .catch(() => {});
 
-      toast({
-        title: 'Payment Reminders Sent',
-        description: totalSchedules === 0
-          ? 'No enabled schedules found.'
-          : `Processed ${totalSchedules} schedule(s). ${totalSent} reminder(s) sent.`,
-      });
-      setLogsPage(1);
-      queryClient.invalidateQueries({ queryKey: ['payment-reminder-logs'] });
-      queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
-    } catch (err) {
-      toast({
-        title: 'Error',
-        description: err instanceof Error ? err.message : 'Failed to send reminders',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSendingManual(false);
-    }
+    // Give immediate feedback and unlock the button after 10s so it isn't stuck
+    toast({
+      title: 'Sending Payment Reminders',
+      description: 'Reminders are being sent in the background. Logs will refresh automatically.',
+    });
+
+    // Refresh logs periodically while the run is in progress
+    const refreshAt = [30000, 60000, 120000, 180000];
+    refreshAt.forEach((delay) => {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['payment-reminder-logs'] });
+        queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
+      }, delay);
+    });
+
+    setTimeout(() => setIsSendingManual(false), 10000);
   };
 
   return (

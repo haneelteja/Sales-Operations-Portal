@@ -146,29 +146,16 @@ serve(async (req) => {
       );
     }
 
-    // Fetch all transactions to compute outstanding per customer
-    const { data: transactions, error: txError } = await supabase
-      .from('sales_transactions')
-      .select('customer_id, transaction_type, amount, transaction_date')
-      .order('transaction_date', { ascending: true });
+    // Fetch aggregated outstanding per customer via RPC (avoids full table scan)
+    const { data: outstandingRows, error: rpcError } = await supabase.rpc('get_customer_outstanding');
+    if (rpcError) throw new Error(`Failed to fetch outstanding: ${rpcError.message}`);
 
-    if (txError) throw new Error(`Failed to fetch transactions: ${txError.message}`);
-
-    // Compute outstanding + oldest sale date per customer
     const customerData = new Map<string, { outstanding: number; oldestSaleDate: string | null }>();
-    for (const tx of transactions || []) {
-      if (!customerData.has(tx.customer_id)) {
-        customerData.set(tx.customer_id, { outstanding: 0, oldestSaleDate: null });
-      }
-      const entry = customerData.get(tx.customer_id)!;
-      if (tx.transaction_type === 'sale') {
-        entry.outstanding += tx.amount || 0;
-        if (!entry.oldestSaleDate || tx.transaction_date < entry.oldestSaleDate) {
-          entry.oldestSaleDate = tx.transaction_date;
-        }
-      } else if (tx.transaction_type === 'payment') {
-        entry.outstanding -= tx.amount || 0;
-      }
+    for (const row of outstandingRows || []) {
+      customerData.set(row.customer_id, {
+        outstanding: Number(row.outstanding) || 0,
+        oldestSaleDate: row.oldest_sale_date ?? null,
+      });
     }
 
     // Fetch ALL customer rows (active + inactive) — the customers table has multiple rows
