@@ -347,8 +347,8 @@ serve(async (req) => {
           failure_reason: failureReason,
         });
 
-        // Space out calls to stay within Supabase function invocation limits
-        await sleep(8000);
+        // Brief pause between sends; 429 retry logic handles actual rate limits
+        await sleep(1000);
       }
 
       results.push({
