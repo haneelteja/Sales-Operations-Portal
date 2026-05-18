@@ -272,11 +272,30 @@ export const PaymentReminderSchedules: React.FC = () => {
           (sum: number, r: { newlySent?: number }) => sum + (r.newlySent ?? 0), 0
         );
         const totalSchedules = data?.scheduleCount ?? 0;
+        const noWhatsapp: string[] = data?.noWhatsappDealers ?? [];
+
+        // Collect customers not yet overdue for any schedule
+        const notYetOverdueSet = new Set<string>();
+        for (const r of (data?.results ?? []) as { notYetOverdue?: string[] }[]) {
+          (r.notYetOverdue ?? []).forEach((n: string) => notYetOverdueSet.add(n));
+        }
+
+        const lines: string[] = [];
+        if (totalSchedules === 0) {
+          lines.push('No enabled schedules found.');
+        } else {
+          lines.push(`${totalSent} reminder(s) sent across ${totalSchedules} schedule(s).`);
+        }
+        if (noWhatsapp.length > 0) {
+          lines.push(`⚠️ ${noWhatsapp.length} customer(s) skipped — no WhatsApp number: ${noWhatsapp.join(', ')}.`);
+        }
+        if (notYetOverdueSet.size > 0) {
+          lines.push(`ℹ️ ${notYetOverdueSet.size} customer(s) not yet overdue for any active schedule.`);
+        }
+
         toast({
           title: 'Payment Reminders Sent',
-          description: totalSchedules === 0
-            ? 'No enabled schedules found.'
-            : `Processed ${totalSchedules} schedule(s). ${totalSent} reminder(s) sent.`,
+          description: lines.join(' '),
         });
         setLogsPage(1);
         queryClient.invalidateQueries({ queryKey: ['payment-reminder-logs'] });

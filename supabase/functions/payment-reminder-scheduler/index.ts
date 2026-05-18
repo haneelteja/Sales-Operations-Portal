@@ -184,6 +184,15 @@ serve(async (req) => {
 
     // Aggregate outstanding + oldest sale date PER DEALER (across all pricing-period IDs)
     const dealerData = new Map<string, { outstanding: number; oldestSaleDate: string | null }>();
+    const noWhatsappDealers: string[] = [];
+
+    // Build a set of dealer names that have at least one outstanding customer_id
+    const dealersWithOutstanding = new Set<string>();
+    for (const [customerId] of customerData.entries()) {
+      const dealerName = idToDealerName.get(customerId);
+      if (dealerName) dealersWithOutstanding.add(dealerName);
+    }
+
     for (const [customerId, data] of customerData.entries()) {
       const dealerName = idToDealerName.get(customerId);
       if (!dealerName) continue;
@@ -198,6 +207,13 @@ serve(async (req) => {
       }
     }
 
+    // Identify dealers with outstanding balance but no WhatsApp number configured
+    for (const dealerName of dealersWithOutstanding) {
+      if (!dealerInfo.has(dealerName)) {
+        noWhatsappDealers.push(dealerName);
+      }
+    }
+
     const now = new Date();
     const results = [];
 
@@ -206,13 +222,16 @@ serve(async (req) => {
       const minOutstanding = schedule.min_outstanding_amount ?? 0;
 
       // Find dealers eligible for this schedule
+      const notYetOverdue: string[] = [];
       const eligibleDealers = Array.from(dealerData.entries())
-        .filter(([, data]) => {
+        .filter(([dealerName, data]) => {
           if (data.outstanding <= 0) return false;
           if (data.outstanding < minOutstanding) return false;
           if (!data.oldestSaleDate) return false;
           const oldestDate = new Date(data.oldestSaleDate);
-          return now.getTime() - oldestDate.getTime() >= daysOverdueMs;
+          const overdue = now.getTime() - oldestDate.getTime() >= daysOverdueMs;
+          if (!overdue) notYetOverdue.push(dealerName);
+          return overdue;
         })
         .map(([dealerName]) => dealerName);
 
@@ -340,6 +359,7 @@ serve(async (req) => {
         alreadySentInWindow: dedupSkippedCount,
         newlySent: sent,
         failed,
+        notYetOverdue,
       });
     }
 
@@ -395,7 +415,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ triggered: true, force, currentIST, scheduleCount: matchingSchedules.length, results }),
+      JSON.stringify({ triggered: true, force, currentIST, scheduleCount: matchingSchedules.length, results, noWhatsappDealers }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
