@@ -384,14 +384,14 @@ const TransportExpenses = () => {
   };
 
   // Get available areas for a selected customer.
-  // A dealer can have multiple active rows (one per branch/pricing period), so we
-  // match by dealer_name across all active rows — not just the single selected ID.
+  // A dealer has multiple rows (one per branch/pricing period, active or inactive),
+  // so we match by dealer_name across ALL rows (customersForLookup includes inactive).
   const getAvailableAreas = (customerId: string) => {
-    if (!customers) return [];
-    const selected = customers.find(c => c.id === customerId);
+    const allRows = customersForLookup ?? customers ?? [];
+    const selected = allRows.find(c => c.id === customerId);
     if (!selected) return [];
     const dealerName = selected.dealer_name.trim().toLowerCase();
-    const areas = customers
+    const areas = allRows
       .filter(c => c.dealer_name.trim().toLowerCase() === dealerName)
       .map(c => c.area)
       .filter((a): a is string => Boolean(a) && a.trim() !== "");
