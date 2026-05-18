@@ -130,8 +130,7 @@ serve(async (req) => {
 
     // If force=true, run all enabled schedules ignoring time window
     const matchingSchedules = (schedules || []).filter((s) =>
-      (force || isTimeInCurrentWindow(s.send_time_ist)) &&
-      (!s.start_date || s.start_date <= todayIST)
+      force || isTimeInCurrentWindow(s.send_time_ist)
     );
 
     if (matchingSchedules.length === 0) {
@@ -253,6 +252,40 @@ serve(async (req) => {
       let failed = 0;
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+      const sendWithRateLimitRetry = async (body: object): Promise<{ success: boolean; messageLogId?: string; error?: string }> => {
+        // Supabase rate-limits edge function invocations; retry once after the specified window
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+
+          // 429 Too Many Requests — honour the Retry-After header or fall back to 10s
+          if (res.status === 429) {
+            const retryAfterMs = parseInt(res.headers.get('retry-after') || '10000', 10) + 500;
+            await sleep(retryAfterMs);
+            continue;
+          }
+
+          const result = await res.json().catch(() => ({}));
+
+          // Supabase rate limit returned as 200 with error message inside the body
+          if (!result.success && typeof result.error === 'string' && result.error.toLowerCase().includes('rate limit')) {
+            const match = result.error.match(/(\d+)ms/);
+            const retryMs = match ? parseInt(match[1], 10) + 500 : 10000;
+            await sleep(retryMs);
+            continue;
+          }
+
+          return result;
+        }
+        return { success: false, error: 'Rate limit: max retries exceeded' };
+      };
+
       for (const dealerName of newDealers) {
         const customer = dealerInfo.get(dealerName)!;
         const data = dealerData.get(dealerName)!;
@@ -267,26 +300,18 @@ serve(async (req) => {
         let failureReason: string | null = null;
 
         try {
-          const sendRes = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json',
+          const sendResult = await sendWithRateLimitRetry({
+            customerId: customer.id,
+            messageType: 'payment_reminder',
+            triggerType: 'scheduled',
+            placeholders: {
+              customerName: customer.dealer_name,
+              outstandingAmount: outstandingFormatted,
+              daysOverdue: daysOverdueActual.toString(),
+              oldestInvoiceDate: new Date(data.oldestSaleDate!).toLocaleDateString('en-IN'),
             },
-            body: JSON.stringify({
-              customerId: customer.id,
-              messageType: 'payment_reminder',
-              triggerType: 'scheduled',
-              placeholders: {
-                customerName: customer.dealer_name,
-                outstandingAmount: outstandingFormatted,
-                daysOverdue: daysOverdueActual.toString(),
-                oldestInvoiceDate: new Date(data.oldestSaleDate!).toLocaleDateString('en-IN'),
-              },
-            }),
           });
 
-          const sendResult = await sendRes.json().catch(() => ({}));
           if (sendResult.success) {
             whatsappLogId = sendResult.messageLogId ?? null;
             sent++;
@@ -311,8 +336,8 @@ serve(async (req) => {
           failure_reason: failureReason,
         });
 
-        // Avoid hitting WhatsApp API rate limits
-        await sleep(1000);
+        // Space out calls to stay within Supabase function invocation limits
+        await sleep(8000);
       }
 
       results.push({
