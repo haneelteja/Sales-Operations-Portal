@@ -20,6 +20,7 @@ import {
   CheckSquare,
   Square,
   Info,
+  List,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -81,6 +82,89 @@ function formatLocal(iso: string) {
   });
 }
 
+// ── Campaign recipients detail ─────────────────────────────────────────────
+
+interface RecipientRow {
+  id: string;
+  client_name: string;
+  branch: string;
+  contact_name: string;
+  phone: string;
+  status: 'pending' | 'sent' | 'failed';
+  error_msg: string | null;
+  sent_at: string | null;
+}
+
+const RECIPIENT_STATUS_COLOR: Record<RecipientRow['status'], string> = {
+  sent:    'text-green-600',
+  failed:  'text-red-500',
+  pending: 'text-yellow-600',
+};
+
+const CampaignRecipients: React.FC<{ campaignId: string }> = ({ campaignId }) => {
+  const { data: recipients = [], isLoading } = useQuery<RecipientRow[]>({
+    queryKey: ['campaign-recipients', campaignId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('festival_campaign_recipients')
+        .select('id, client_name, branch, contact_name, phone, status, error_msg, sent_at')
+        .eq('campaign_id', campaignId)
+        .order('status')
+        .order('client_name');
+      if (error) throw new Error(handleSupabaseError(error));
+      return (data || []) as RecipientRow[];
+    },
+  });
+
+  if (isLoading) return (
+    <div className="flex items-center gap-2 py-3 text-muted-foreground text-xs">
+      <Loader2 className="h-3 w-3 animate-spin" /> Loading recipients…
+    </div>
+  );
+
+  const failed  = recipients.filter((r) => r.status === 'failed');
+  const sent    = recipients.filter((r) => r.status === 'sent');
+  const pending = recipients.filter((r) => r.status === 'pending');
+
+  return (
+    <div className="mt-3 space-y-2">
+      {/* Summary row */}
+      <div className="flex gap-3 text-xs font-medium">
+        <span className="text-green-600">{sent.length} sent</span>
+        {failed.length > 0 && <span className="text-red-500">{failed.length} failed</span>}
+        {pending.length > 0 && <span className="text-yellow-600">{pending.length} pending</span>}
+      </div>
+
+      {/* Failed recipients highlighted */}
+      {failed.length > 0 && (
+        <div className="rounded border border-red-200 bg-red-50 divide-y divide-red-100">
+          <p className="px-3 py-1.5 text-xs font-semibold text-red-700">Failed recipients</p>
+          {failed.map((r) => (
+            <div key={r.id} className="px-3 py-1.5 text-xs">
+              <span className="font-medium">{r.contact_name}</span>
+              <span className="text-muted-foreground"> · {r.client_name} / {r.branch} · {r.phone}</span>
+              {r.error_msg && (
+                <p className="text-red-500 mt-0.5 break-all">{r.error_msg}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* All recipients table */}
+      <div className="rounded border overflow-auto max-h-48 divide-y text-xs">
+        {recipients.map((r) => (
+          <div key={r.id} className="flex items-center gap-2 px-3 py-1.5">
+            <span className={`w-12 font-medium capitalize ${RECIPIENT_STATUS_COLOR[r.status]}`}>{r.status}</span>
+            <span className="flex-1 truncate">{r.contact_name} · {r.client_name} / {r.branch}</span>
+            <span className="text-muted-foreground font-mono">{r.phone}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export const FestivalCampaignsSection: React.FC = () => {
@@ -97,6 +181,7 @@ export const FestivalCampaignsSection: React.FC = () => {
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
+  const [detailCampaignId, setDetailCampaignId] = useState<string | null>(null);
 
   // ── Queries ──
 
@@ -291,7 +376,35 @@ export const FestivalCampaignsSection: React.FC = () => {
         void ext;
       }
 
-      // Create campaign row
+      // Build recipients first (deduplicated by phone) so we know the real count
+      const seenPhones = new Set<string>();
+      const normalizePhone = (raw: string) => {
+        let p = raw.trim().replace(/\s/g, '');
+        if (p && !p.startsWith('+')) p = `+91${p}`;
+        return p;
+      };
+      type RecipientInsert = { campaign_id: string; client_name: string; branch: string; contact_name: string; phone: string };
+      const recipientRowsStaging: Omit<RecipientInsert, 'campaign_id'>[] = [];
+
+      for (const c of allContacts) {
+        if (!selectedRecipients.has(recipientKey(c))) continue;
+        const phone = normalizePhone(c.phone);
+        if (!phone || seenPhones.has(phone)) continue;
+        seenPhones.add(phone);
+        recipientRowsStaging.push({ client_name: c.client_name, branch: c.branch, contact_name: c.contact_name, phone });
+      }
+
+      for (const g of groupedContacts) {
+        if (g.contacts.length > 0 || !g.directPhone) continue;
+        const dk = `${g.client_name}|${g.branch}|${g.client_name}|${g.directPhone}`;
+        if (!selectedRecipients.has(dk)) continue;
+        const phone = normalizePhone(g.directPhone);
+        if (!phone || seenPhones.has(phone)) continue;
+        seenPhones.add(phone);
+        recipientRowsStaging.push({ client_name: g.client_name, branch: g.branch, contact_name: g.client_name, phone });
+      }
+
+      // Create campaign row with the real deduplicated count
       const { data: campaign, error: campErr } = await supabase
         .from('festival_campaigns')
         .insert({
@@ -302,32 +415,13 @@ export const FestivalCampaignsSection: React.FC = () => {
           media_type: mediaType,
           media_filename: uploadedFilename,
           scheduled_at: scheduledIso,
-          total_recipients: selectedRecipients.size,
+          total_recipients: recipientRowsStaging.length,
         })
         .select('id')
         .single();
       if (campErr || !campaign) throw new Error(handleSupabaseError(campErr!));
 
-      // Build recipients: from client_contacts (selected contacts)
-      const recipientRows: { campaign_id: string; client_name: string; branch: string; contact_name: string; phone: string }[] = [];
-
-      for (const c of allContacts) {
-        if (!selectedRecipients.has(recipientKey(c))) continue;
-        let phone = c.phone.trim().replace(/\s/g, '');
-        if (phone && !phone.startsWith('+')) phone = `+91${phone}`;
-        recipientRows.push({ campaign_id: campaign.id, client_name: c.client_name, branch: c.branch, contact_name: c.contact_name, phone });
-      }
-
-      // Also include direct-phone customers (those without contacts)
-      for (const g of groupedContacts) {
-        if (g.contacts.length > 0 || !g.directPhone) continue;
-        const dk = `${g.client_name}|${g.branch}|${g.client_name}|${g.directPhone}`;
-        if (!selectedRecipients.has(dk)) continue;
-        let phone = g.directPhone.trim().replace(/\s/g, '');
-        if (phone && !phone.startsWith('+')) phone = `+91${phone}`;
-        recipientRows.push({ campaign_id: campaign.id, client_name: g.client_name, branch: g.branch, contact_name: g.client_name, phone });
-      }
-
+      const recipientRows: RecipientInsert[] = recipientRowsStaging.map((r) => ({ ...r, campaign_id: campaign.id }));
       const { error: recErr } = await supabase.from('festival_campaign_recipients').insert(recipientRows);
       if (recErr) throw new Error(handleSupabaseError(recErr));
     },
@@ -639,18 +733,31 @@ export const FestivalCampaignsSection: React.FC = () => {
                         </span>
                       </div>
                     </div>
-                    {c.status === 'scheduled' && (
+                    <div className="flex gap-2 flex-shrink-0">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        onClick={() => cancelCampaign(c.id)}
-                        className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                        onClick={() => setDetailCampaignId(detailCampaignId === c.id ? null : c.id)}
+                        className="text-xs gap-1"
                       >
-                        Cancel
+                        <List className="h-3.5 w-3.5" />
+                        {detailCampaignId === c.id ? 'Hide' : 'Details'}
                       </Button>
-                    )}
+                      {c.status === 'scheduled' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => cancelCampaign(c.id)}
+                          className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
                   </div>
+                  {detailCampaignId === c.id && <CampaignRecipients campaignId={c.id} />}
                 );
               })}
             </div>
