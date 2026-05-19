@@ -32,10 +32,17 @@ interface ContactRow {
   role: string;
 }
 
+interface CustomerRow {
+  client_name: string;
+  branch: string;
+  whatsapp_number: string;
+}
+
 interface GroupedClient {
   client_name: string;
   branch: string;
   contacts: ContactRow[];
+  directPhone?: string; // set when client has no contacts — uses customer's whatsapp_number
 }
 
 interface FestivalCampaign {
@@ -122,6 +129,22 @@ export const FestivalCampaignsSection: React.FC = () => {
     },
   });
 
+  // Customers with a whatsapp_number — used as fallback for clients without contacts
+  const { data: allCustomers = [] } = useQuery<CustomerRow[]>({
+    queryKey: ['customers-with-whatsapp'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('client_name, branch, whatsapp_number')
+        .not('whatsapp_number', 'is', null)
+        .neq('whatsapp_number', '')
+        .order('client_name')
+        .order('branch');
+      if (error) throw new Error(handleSupabaseError(error));
+      return (data || []) as CustomerRow[];
+    },
+  });
+
   const { data: campaigns = [], isLoading: campaignsLoading } = useQuery<FestivalCampaign[]>({
     queryKey: ['festival-campaigns'],
     queryFn: async () => {
@@ -134,21 +157,43 @@ export const FestivalCampaignsSection: React.FC = () => {
     },
   });
 
-  // Grouped contacts for recipient picker
+  // Grouped contacts for recipient picker — contacts take priority; customers without contacts appear as a single direct recipient
   const groupedContacts = useMemo<GroupedClient[]>(() => {
     const map: Record<string, GroupedClient> = {};
+
+    // First: all contacts from client_contacts
     for (const c of allContacts) {
       const key = `${c.client_name}|${c.branch}`;
       if (!map[key]) map[key] = { client_name: c.client_name, branch: c.branch, contacts: [] };
       map[key].contacts.push(c);
     }
+
+    // Second: unique client+branch from customers with whatsapp_number — only if no contacts exist
+    const seen = new Set<string>();
+    for (const cu of allCustomers) {
+      const key = `${cu.client_name}|${cu.branch}`;
+      if (!map[key] && !seen.has(key)) {
+        seen.add(key);
+        map[key] = {
+          client_name: cu.client_name,
+          branch: cu.branch,
+          contacts: [],
+          directPhone: cu.whatsapp_number,
+        };
+      }
+    }
+
     return Object.values(map).sort((a, b) => a.client_name.localeCompare(b.client_name));
-  }, [allContacts]);
+  }, [allContacts, allCustomers]);
 
   // ── Recipient selection helpers ──
 
-  const toggleGroup = (groupKey: string, contacts: ContactRow[]) => {
-    const keys = contacts.map(recipientKey);
+  const toggleGroup = (group: GroupedClient) => {
+    const keys = group.contacts.length > 0
+      ? group.contacts.map(recipientKey)
+      : group.directPhone
+        ? [`${group.client_name}|${group.branch}|${group.client_name}|${group.directPhone}`]
+        : [];
     const allSelected = keys.every((k) => selectedRecipients.has(k));
     setSelectedRecipients((prev) => {
       const next = new Set(prev);
@@ -178,7 +223,14 @@ export const FestivalCampaignsSection: React.FC = () => {
   };
 
   const selectAll = () => {
-    const all = new Set(allContacts.map(recipientKey));
+    const all = new Set<string>();
+    for (const g of groupedContacts) {
+      if (g.contacts.length > 0) {
+        g.contacts.forEach((c) => all.add(recipientKey(c)));
+      } else if (g.directPhone) {
+        all.add(`${g.client_name}|${g.branch}|${g.client_name}|${g.directPhone}`);
+      }
+    }
     setSelectedRecipients(all);
   };
 
@@ -256,19 +308,25 @@ export const FestivalCampaignsSection: React.FC = () => {
         .single();
       if (campErr || !campaign) throw new Error(handleSupabaseError(campErr!));
 
-      // Build recipients array from selected keys
-      const selectedContactObjs = allContacts.filter((c) => selectedRecipients.has(recipientKey(c)));
-      const recipientRows = selectedContactObjs.map((c) => {
+      // Build recipients: from client_contacts (selected contacts)
+      const recipientRows: { campaign_id: string; client_name: string; branch: string; contact_name: string; phone: string }[] = [];
+
+      for (const c of allContacts) {
+        if (!selectedRecipients.has(recipientKey(c))) continue;
         let phone = c.phone.trim().replace(/\s/g, '');
         if (phone && !phone.startsWith('+')) phone = `+91${phone}`;
-        return {
-          campaign_id: campaign.id,
-          client_name: c.client_name,
-          branch: c.branch,
-          contact_name: c.contact_name,
-          phone,
-        };
-      });
+        recipientRows.push({ campaign_id: campaign.id, client_name: c.client_name, branch: c.branch, contact_name: c.contact_name, phone });
+      }
+
+      // Also include direct-phone customers (those without contacts)
+      for (const g of groupedContacts) {
+        if (g.contacts.length > 0 || !g.directPhone) continue;
+        const dk = `${g.client_name}|${g.branch}|${g.client_name}|${g.directPhone}`;
+        if (!selectedRecipients.has(dk)) continue;
+        let phone = g.directPhone.trim().replace(/\s/g, '');
+        if (phone && !phone.startsWith('+')) phone = `+91${phone}`;
+        recipientRows.push({ campaign_id: campaign.id, client_name: g.client_name, branch: g.branch, contact_name: g.client_name, phone });
+      }
 
       const { error: recErr } = await supabase.from('festival_campaign_recipients').insert(recipientRows);
       if (recErr) throw new Error(handleSupabaseError(recErr));
@@ -439,8 +497,15 @@ export const FestivalCampaignsSection: React.FC = () => {
                 {groupedContacts.map((group) => {
                   const gk = `${group.client_name}|${group.branch}`;
                   const expanded = expandedGroups.has(gk);
-                  const allChecked = group.contacts.every((c) => selectedRecipients.has(recipientKey(c)));
-                  const someChecked = group.contacts.some((c) => selectedRecipients.has(recipientKey(c)));
+                  const hasContacts = group.contacts.length > 0;
+                  const directKey = `${group.client_name}|${group.branch}|${group.client_name}|${group.directPhone}`;
+
+                  const allChecked = hasContacts
+                    ? group.contacts.every((c) => selectedRecipients.has(recipientKey(c)))
+                    : !!group.directPhone && selectedRecipients.has(directKey);
+                  const someChecked = hasContacts
+                    ? group.contacts.some((c) => selectedRecipients.has(recipientKey(c)))
+                    : allChecked;
 
                   return (
                     <div key={gk}>
@@ -449,8 +514,8 @@ export const FestivalCampaignsSection: React.FC = () => {
                         <button
                           type="button"
                           className="flex-shrink-0"
-                          onClick={() => toggleGroup(gk, group.contacts)}
-                          aria-label={`${allChecked ? 'Deselect' : 'Select'} all in ${group.client_name}`}
+                          onClick={() => toggleGroup(group)}
+                          aria-label={`${allChecked ? 'Deselect' : 'Select'} ${group.client_name}`}
                         >
                           {allChecked ? (
                             <CheckSquare className="h-4 w-4 text-primary" />
@@ -463,24 +528,28 @@ export const FestivalCampaignsSection: React.FC = () => {
                         <button
                           type="button"
                           className="flex-1 flex items-center gap-2 text-left"
-                          onClick={() => toggleExpand(gk)}
+                          onClick={() => hasContacts ? toggleExpand(gk) : toggleGroup(group)}
                         >
-                          {expanded ? (
-                            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                          {hasContacts ? (
+                            expanded
+                              ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                              : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                           ) : (
-                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="w-3.5" />
                           )}
                           <span className="text-sm font-medium">{group.client_name}</span>
                           <span className="text-xs text-muted-foreground">·</span>
                           <span className="text-xs text-muted-foreground">{group.branch}</span>
                           <Badge variant="outline" className="text-xs ml-auto">
-                            {group.contacts.length} contact{group.contacts.length !== 1 ? 's' : ''}
+                            {hasContacts
+                              ? `${group.contacts.length} contact${group.contacts.length !== 1 ? 's' : ''}`
+                              : 'direct'}
                           </Badge>
                         </button>
                       </div>
 
-                      {/* Contacts list */}
-                      {expanded && group.contacts.map((c) => {
+                      {/* Contacts list (for clients with contacts) */}
+                      {expanded && hasContacts && group.contacts.map((c) => {
                         const key = recipientKey(c);
                         const checked = selectedRecipients.has(key);
                         return (
