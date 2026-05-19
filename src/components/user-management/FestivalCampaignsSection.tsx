@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import ExcelJS from 'exceljs';
 import {
   Loader2,
   Upload,
@@ -21,6 +22,10 @@ import {
   Square,
   Info,
   List,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Download,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -95,26 +100,137 @@ interface RecipientRow {
   sent_at: string | null;
 }
 
-const RECIPIENT_STATUS_COLOR: Record<RecipientRow['status'], string> = {
+type SortKey = 'status' | 'client_name' | 'branch' | 'contact_name' | 'phone' | 'sent_at';
+type SortDir = 'asc' | 'desc';
+
+const STATUS_COLOR: Record<RecipientRow['status'], string> = {
   sent:    'text-green-600',
   failed:  'text-red-500',
   pending: 'text-yellow-600',
 };
 
-const CampaignRecipients: React.FC<{ campaignId: string }> = ({ campaignId }) => {
+const STATUS_BG: Record<RecipientRow['status'], string> = {
+  sent:    'bg-green-50 text-green-700 border-green-200',
+  failed:  'bg-red-50 text-red-700 border-red-200',
+  pending: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+};
+
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (col !== sortKey) return <ArrowUpDown className="h-3 w-3 opacity-30" />;
+  return sortDir === 'asc'
+    ? <ArrowUp className="h-3 w-3" />
+    : <ArrowDown className="h-3 w-3" />;
+}
+
+const CampaignRecipients: React.FC<{ campaignId: string; campaignName: string }> = ({ campaignId, campaignName }) => {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<RecipientRow['status'] | 'all'>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('status');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [exporting, setExporting] = useState(false);
+
   const { data: recipients = [], isLoading } = useQuery<RecipientRow[]>({
     queryKey: ['campaign-recipients', campaignId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('festival_campaign_recipients')
         .select('id, client_name, branch, contact_name, phone, status, error_msg, sent_at')
-        .eq('campaign_id', campaignId)
-        .order('status')
-        .order('client_name');
+        .eq('campaign_id', campaignId);
       if (error) throw new Error(handleSupabaseError(error));
       return (data || []) as RecipientRow[];
     },
   });
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return recipients
+      .filter((r) => statusFilter === 'all' || r.status === statusFilter)
+      .filter((r) =>
+        !q ||
+        r.client_name.toLowerCase().includes(q) ||
+        r.branch.toLowerCase().includes(q) ||
+        r.contact_name.toLowerCase().includes(q) ||
+        r.phone.includes(q)
+      )
+      .sort((a, b) => {
+        const av = (a[sortKey] ?? '') as string;
+        const bv = (b[sortKey] ?? '') as string;
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      });
+  }, [recipients, search, statusFilter, sortKey, sortDir]);
+
+  const counts = useMemo(() => ({
+    sent:    recipients.filter((r) => r.status === 'sent').length,
+    failed:  recipients.filter((r) => r.status === 'failed').length,
+    pending: recipients.filter((r) => r.status === 'pending').length,
+  }), [recipients]);
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Recipients');
+
+      ws.columns = [
+        { header: 'Status',       key: 'status',       width: 12 },
+        { header: 'Client',       key: 'client_name',  width: 28 },
+        { header: 'Branch',       key: 'branch',       width: 20 },
+        { header: 'Contact Name', key: 'contact_name', width: 24 },
+        { header: 'Phone',        key: 'phone',        width: 18 },
+        { header: 'Sent At',      key: 'sent_at',      width: 22 },
+        { header: 'Error',        key: 'error_msg',    width: 40 },
+      ];
+
+      // Header styling
+      ws.getRow(1).eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+        cell.alignment = { vertical: 'middle' };
+      });
+
+      // Data rows with status colour
+      const STATUS_ARGB: Record<RecipientRow['status'], string> = {
+        sent:    'FFD1FAE5',
+        failed:  'FFFEE2E2',
+        pending: 'FFFEF9C3',
+      };
+
+      for (const r of filtered) {
+        const row = ws.addRow({
+          status:       r.status,
+          client_name:  r.client_name,
+          branch:       r.branch,
+          contact_name: r.contact_name,
+          phone:        r.phone,
+          sent_at:      r.sent_at ? new Date(r.sent_at).toLocaleString('en-IN') : '',
+          error_msg:    r.error_msg ?? '',
+        });
+        const argb = STATUS_ARGB[r.status];
+        row.eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb } };
+          cell.alignment = { vertical: 'middle', wrapText: true };
+        });
+      }
+
+      ws.autoFilter = { from: 'A1', to: 'G1' };
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${campaignName.replace(/[^a-zA-Z0-9]/g, '_')}_recipients.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (isLoading) return (
     <div className="flex items-center gap-2 py-3 text-muted-foreground text-xs">
@@ -122,45 +238,113 @@ const CampaignRecipients: React.FC<{ campaignId: string }> = ({ campaignId }) =>
     </div>
   );
 
-  const failed  = recipients.filter((r) => r.status === 'failed');
-  const sent    = recipients.filter((r) => r.status === 'sent');
-  const pending = recipients.filter((r) => r.status === 'pending');
+  const cols: { key: SortKey; label: string; className: string }[] = [
+    { key: 'status',       label: 'Status',   className: 'w-24' },
+    { key: 'client_name',  label: 'Client',   className: 'flex-1' },
+    { key: 'branch',       label: 'Branch',   className: 'w-32 hidden sm:flex' },
+    { key: 'contact_name', label: 'Contact',  className: 'w-36 hidden sm:flex' },
+    { key: 'phone',        label: 'Phone',    className: 'w-36 hidden md:flex' },
+    { key: 'sent_at',      label: 'Sent at',  className: 'w-36 hidden lg:flex' },
+  ];
 
   return (
-    <div className="mt-3 space-y-2">
-      {/* Summary row */}
-      <div className="flex gap-3 text-xs font-medium">
-        <span className="text-green-600">{sent.length} sent</span>
-        {failed.length > 0 && <span className="text-red-500">{failed.length} failed</span>}
-        {pending.length > 0 && <span className="text-yellow-600">{pending.length} pending</span>}
+    <div className="space-y-3">
+      {/* Summary pills + export */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(['all', 'sent', 'failed', 'pending'] as const).map((s) => {
+          const count = s === 'all' ? recipients.length : counts[s];
+          const active = statusFilter === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStatusFilter(s)}
+              className={[
+                'text-xs px-2.5 py-1 rounded-full border font-medium transition-colors',
+                active ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400',
+              ].join(' ')}
+            >
+              {s === 'all' ? `All (${count})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${count})`}
+            </button>
+          );
+        })}
+        <div className="flex-1" />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={exportExcel}
+          disabled={exporting || filtered.length === 0}
+          className="text-xs gap-1.5"
+        >
+          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          Export Excel
+        </Button>
       </div>
 
-      {/* Failed recipients highlighted */}
-      {failed.length > 0 && (
-        <div className="rounded border border-red-200 bg-red-50 divide-y divide-red-100">
-          <p className="px-3 py-1.5 text-xs font-semibold text-red-700">Failed recipients</p>
-          {failed.map((r) => (
-            <div key={r.id} className="px-3 py-1.5 text-xs">
-              <span className="font-medium">{r.contact_name}</span>
-              <span className="text-muted-foreground"> · {r.client_name} / {r.branch} · {r.phone}</span>
-              {r.error_msg && (
-                <p className="text-red-500 mt-0.5 break-all">{r.error_msg}</p>
-              )}
-            </div>
+      {/* Search */}
+      <Input
+        placeholder="Search client, contact, or phone…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="h-8 text-xs"
+      />
+
+      {/* Table */}
+      <div className="rounded border overflow-auto max-h-72">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b sticky top-0 text-xs font-medium text-muted-foreground">
+          {cols.map((col) => (
+            <button
+              key={col.key}
+              type="button"
+              onClick={() => handleSort(col.key)}
+              className={`flex items-center gap-1 hover:text-foreground transition-colors ${col.className}`}
+            >
+              {col.label}
+              <SortIcon col={col.key} sortKey={sortKey} sortDir={sortDir} />
+            </button>
           ))}
         </div>
-      )}
 
-      {/* All recipients table */}
-      <div className="rounded border overflow-auto max-h-48 divide-y text-xs">
-        {recipients.map((r) => (
-          <div key={r.id} className="flex items-center gap-2 px-3 py-1.5">
-            <span className={`w-12 font-medium capitalize ${RECIPIENT_STATUS_COLOR[r.status]}`}>{r.status}</span>
-            <span className="flex-1 truncate">{r.contact_name} · {r.client_name} / {r.branch}</span>
-            <span className="text-muted-foreground font-mono">{r.phone}</span>
+        {/* Rows */}
+        {filtered.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-4">No recipients match the filter.</p>
+        ) : (
+          filtered.map((r) => (
+            <div key={r.id} className="flex items-center gap-2 px-3 py-2 border-b last:border-0 hover:bg-muted/20 text-xs">
+              <span className={`w-24 flex-shrink-0`}>
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-xs font-medium capitalize ${STATUS_BG[r.status]}`}>
+                  {r.status}
+                </span>
+              </span>
+              <span className="flex-1 truncate font-medium">{r.client_name}</span>
+              <span className="w-32 hidden sm:block truncate text-muted-foreground">{r.branch}</span>
+              <span className="w-36 hidden sm:block truncate">{r.contact_name}</span>
+              <span className="w-36 hidden md:block font-mono text-muted-foreground">{r.phone}</span>
+              <span className="w-36 hidden lg:block text-muted-foreground">
+                {r.sent_at ? new Date(r.sent_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+              </span>
+            </div>
+          ))
+        )}
+
+        {/* Failed error details below table */}
+        {filtered.some((r) => r.status === 'failed' && r.error_msg) && (
+          <div className="border-t px-3 py-2 space-y-1">
+            <p className="text-xs font-semibold text-red-600">Send errors</p>
+            {filtered.filter((r) => r.status === 'failed' && r.error_msg).map((r) => (
+              <p key={r.id} className="text-xs text-red-500">
+                <span className="font-medium">{r.contact_name} ({r.phone})</span>: {r.error_msg}
+              </p>
+            ))}
           </div>
-        ))}
+        )}
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Showing {filtered.length} of {recipients.length} recipients
+      </p>
     </div>
   );
 };
@@ -761,7 +945,7 @@ export const FestivalCampaignsSection: React.FC = () => {
                     {/* Recipient log — expands inside the card */}
                     {isExpanded && (
                       <div className="border-t bg-muted/20 px-4 py-3">
-                        <CampaignRecipients campaignId={c.id} />
+                        <CampaignRecipients campaignId={c.id} campaignName={c.name} />
                       </div>
                     )}
                   </div>
