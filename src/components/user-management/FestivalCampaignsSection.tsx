@@ -691,7 +691,7 @@ export const FestivalCampaignsSection: React.FC = () => {
       {/* Campaigns list */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Scheduled Campaigns</CardTitle>
+          <CardTitle className="text-base">Campaigns</CardTitle>
         </CardHeader>
         <CardContent>
           {campaignsLoading ? (
@@ -705,86 +705,70 @@ export const FestivalCampaignsSection: React.FC = () => {
             <div className="space-y-2">
               {campaigns.map((c) => {
                 const badge = STATUS_BADGE[c.status];
+                const isExpanded = detailCampaignId === c.id;
                 return (
-                  <div
-                    key={c.id}
-                    className="flex flex-col sm:flex-row sm:items-center gap-2 border rounded-md px-4 py-3"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm truncate">{c.name}</span>
-                        <Badge variant={badge.variant} className="text-xs">{badge.label}</Badge>
-                        {c.media_type === 'image' && (
-                          <Image className="h-3.5 w-3.5 text-muted-foreground" />
-                        )}
-                        {c.media_type === 'video' && (
-                          <Video className="h-3.5 w-3.5 text-muted-foreground" />
-                        )}
+                  <div key={c.id} className="border rounded-md overflow-hidden">
+                    {/* Campaign summary row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm truncate">{c.name}</span>
+                          <Badge variant={badge.variant} className="text-xs">{badge.label}</Badge>
+                          {c.media_type === 'image' && (
+                            <Image className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                          {c.media_type === 'video' && (
+                            <Video className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5 space-x-3">
+                          <span>{c.template_name}</span>
+                          <span>·</span>
+                          <span>{formatLocal(c.scheduled_at)}</span>
+                          <span>·</span>
+                          <span>
+                            {c.status === 'scheduled' || c.status === 'sending'
+                              ? `${c.total_recipients} recipient${c.total_recipients !== 1 ? 's' : ''}`
+                              : `${c.sent_count}/${c.total_recipients} sent${c.failed_count > 0 ? `, ${c.failed_count} failed` : ''}`}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 space-x-3">
-                        <span>{c.template_name}</span>
-                        <span>·</span>
-                        <span>{formatLocal(c.scheduled_at)}</span>
-                        <span>·</span>
-                        <span>
-                          {c.status === 'scheduled' || c.status === 'sending'
-                            ? `${c.total_recipients} recipient${c.total_recipients !== 1 ? 's' : ''}`
-                            : `${c.sent_count}/${c.total_recipients} sent${c.failed_count > 0 ? `, ${c.failed_count} failed` : ''}`}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDetailCampaignId(detailCampaignId === c.id ? null : c.id)}
-                        className="text-xs gap-1"
-                      >
-                        <List className="h-3.5 w-3.5" />
-                        {detailCampaignId === c.id ? 'Hide' : 'Details'}
-                      </Button>
-                      {c.status === 'scheduled' && (
+                      <div className="flex gap-2 flex-shrink-0">
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          onClick={() => cancelCampaign(c.id)}
-                          className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                          onClick={() => setDetailCampaignId(isExpanded ? null : c.id)}
+                          className="text-xs gap-1"
                         >
-                          Cancel
+                          <List className="h-3.5 w-3.5" />
+                          {isExpanded ? 'Hide log' : 'View log'}
                         </Button>
-                      )}
+                        {c.status === 'scheduled' && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => cancelCampaign(c.id)}
+                            className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Recipient log — expands inside the card */}
+                    {isExpanded && (
+                      <div className="border-t bg-muted/20 px-4 py-3">
+                        <CampaignRecipients campaignId={c.id} />
+                      </div>
+                    )}
                   </div>
-                  {detailCampaignId === c.id && <CampaignRecipients campaignId={c.id} />}
                 );
               })}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Cron setup info */}
-      <Card className="border-dashed">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Info className="h-4 w-4" />
-            Cron job setup (one-time)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-xs text-muted-foreground space-y-1">
-          <p>
-            Create a free cron job at{' '}
-            <strong>cron-job.org</strong> that calls the Edge Function URL below every 5 minutes.
-            It picks up any due campaigns and sends them automatically.
-          </p>
-          <p className="font-mono bg-muted rounded px-2 py-1 break-all select-all">
-            POST &lt;your-supabase-url&gt;/functions/v1/festival-campaign-sender
-          </p>
-          <p>
-            Add header <code>Authorization: Bearer &lt;SUPABASE_ANON_KEY&gt;</code> in the cron job settings.
-          </p>
         </CardContent>
       </Card>
     </div>
