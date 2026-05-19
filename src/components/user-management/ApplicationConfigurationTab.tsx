@@ -181,7 +181,7 @@ const ApplicationConfigurationTab: React.FC = () => {
       customKey: 'sku_configurations',
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
 
-    // Row 2: Label vendors
+    // Row 2: Label vendors (custom row — prevents the raw DB record from appearing twice)
     result.push({
       id: '',
       config_key: 'label_vendors',
@@ -194,6 +194,7 @@ const ApplicationConfigurationTab: React.FC = () => {
       isCustom: true,
       customKey: 'label_vendors',
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
+    seen.add('label_vendors');
 
     // Operations configs
     for (const key of order) {
