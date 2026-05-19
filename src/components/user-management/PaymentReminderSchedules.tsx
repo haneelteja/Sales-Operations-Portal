@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +11,8 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Bell, Plus, Edit, Trash2, Send, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Bell, Plus, Edit, Trash2, Send, ChevronLeft, ChevronRight, Download, ArrowUpDown } from 'lucide-react';
+import { exportJsonToExcel } from '@/services/export/excelExport';
 
 interface PaymentReminderSchedule {
   id: string;
@@ -115,7 +116,12 @@ export const PaymentReminderSchedules: React.FC = () => {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [isSendingManual, setIsSendingManual] = useState(false);
   const [logsPage, setLogsPage] = useState(1);
-  const LOGS_PAGE_SIZE = 10;
+  const LOGS_PAGE_SIZE = 20;
+  const [logsSearch, setLogsSearch] = useState('');
+  const [logsStatus, setLogsStatus] = useState<'all' | 'sent' | 'failed' | 'skipped'>('all');
+  const [logsMonth, setLogsMonth] = useState('');
+  const [logsSortField, setLogsSortField] = useState<'triggered_at' | 'customer_name' | 'outstanding_amount'>('triggered_at');
+  const [logsSortDir, setLogsSortDir] = useState<'asc' | 'desc'>('desc');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -149,23 +155,68 @@ export const PaymentReminderSchedules: React.FC = () => {
     },
   });
 
-  const { data: logsData } = useQuery({
-    queryKey: ['payment-reminder-logs', logsPage],
+  const { data: allLogs = [] } = useQuery({
+    queryKey: ['payment-reminder-logs'],
     queryFn: async () => {
-      const from = (logsPage - 1) * LOGS_PAGE_SIZE;
-      const to = from + LOGS_PAGE_SIZE - 1;
-      const { data, error, count } = await supabase
+      const { data, error } = await supabase
         .from('payment_reminder_logs')
-        .select('*', { count: 'exact' })
-        .order('triggered_at', { ascending: false })
-        .range(from, to);
+        .select('*')
+        .order('triggered_at', { ascending: false });
       if (error) throw error;
-      return { logs: data as PaymentReminderLog[], total: count ?? 0 };
+      return data as PaymentReminderLog[];
     },
   });
-  const recentLogs = logsData?.logs ?? [];
-  const totalLogs = logsData?.total ?? 0;
-  const totalLogsPages = Math.max(1, Math.ceil(totalLogs / LOGS_PAGE_SIZE));
+
+  const availableLogMonths = useMemo(() => {
+    const months = new Set<string>();
+    allLogs.forEach((l) => { if (l.triggered_at) months.add(l.triggered_at.slice(0, 7)); });
+    return [...months].sort().reverse();
+  }, [allLogs]);
+
+  const filteredLogs = useMemo(() => {
+    let logs = allLogs;
+    if (logsSearch.trim()) {
+      const q = logsSearch.trim().toLowerCase();
+      logs = logs.filter((l) => l.customer_name.toLowerCase().includes(q));
+    }
+    if (logsStatus !== 'all') logs = logs.filter((l) => l.status === logsStatus);
+    if (logsMonth) logs = logs.filter((l) => l.triggered_at?.startsWith(logsMonth));
+    return [...logs].sort((a, b) => {
+      let cmp = 0;
+      if (logsSortField === 'triggered_at') {
+        cmp = new Date(a.triggered_at).getTime() - new Date(b.triggered_at).getTime();
+      } else if (logsSortField === 'customer_name') {
+        cmp = a.customer_name.localeCompare(b.customer_name);
+      } else {
+        cmp = a.outstanding_amount - b.outstanding_amount;
+      }
+      return logsSortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [allLogs, logsSearch, logsStatus, logsMonth, logsSortField, logsSortDir]);
+
+  const totalLogsPages = Math.max(1, Math.ceil(filteredLogs.length / LOGS_PAGE_SIZE));
+  const pagedLogs = filteredLogs.slice((logsPage - 1) * LOGS_PAGE_SIZE, logsPage * LOGS_PAGE_SIZE);
+
+  const toggleLogsSort = (field: typeof logsSortField) => {
+    if (logsSortField === field) {
+      setLogsSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setLogsSortField(field);
+      setLogsSortDir('desc');
+    }
+    setLogsPage(1);
+  };
+
+  const exportLogs = () => {
+    const rows = filteredLogs.map((l) => ({
+      'Customer': l.customer_name,
+      'Outstanding (₹)': l.outstanding_amount,
+      'Status': l.status,
+      'Triggered At': new Date(l.triggered_at).toLocaleString('en-IN'),
+      'Failure Reason': l.failure_reason ?? '',
+    }));
+    exportJsonToExcel(rows, 'Reminder Logs', 'Payment_Reminder_Logs');
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (values: typeof DEFAULT_FORM) => {
@@ -458,14 +509,75 @@ export const PaymentReminderSchedules: React.FC = () => {
         {/* Recent logs */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-gray-700">Recent Reminder Logs</h4>
-            {totalLogs > 0 && (
-              <span className="text-xs text-gray-500">{totalLogs} total</span>
+            <h4 className="text-sm font-semibold text-gray-700">
+              Recent Reminder Logs
+              {allLogs.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  {filteredLogs.length} of {allLogs.length}
+                </span>
+              )}
+            </h4>
+            {filteredLogs.length > 0 && (
+              <Button variant="outline" size="sm" onClick={exportLogs} className="flex items-center gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </Button>
             )}
           </div>
-          {recentLogs.length === 0 ? (
+
+          {/* Filters */}
+          <div className="flex flex-wrap gap-2 mb-3">
+            <Input
+              placeholder="Search customer…"
+              value={logsSearch}
+              onChange={(e) => { setLogsSearch(e.target.value); setLogsPage(1); }}
+              className="h-8 w-44 text-sm"
+            />
+            <select
+              aria-label="Filter by status"
+              value={logsStatus}
+              onChange={(e) => { setLogsStatus(e.target.value as typeof logsStatus); setLogsPage(1); }}
+              className="h-8 border border-border rounded-md px-2 text-sm bg-background text-foreground"
+            >
+              <option value="all">All statuses</option>
+              <option value="sent">Sent</option>
+              <option value="failed">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+            {availableLogMonths.length > 0 && (
+              <select
+                aria-label="Filter by month"
+                value={logsMonth}
+                onChange={(e) => { setLogsMonth(e.target.value); setLogsPage(1); }}
+                className="h-8 border border-border rounded-md px-2 text-sm bg-background text-foreground"
+              >
+                <option value="">All months</option>
+                {availableLogMonths.map((m) => {
+                  const [y, mo] = m.split('-');
+                  const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            )}
+            {(logsSearch || logsStatus !== 'all' || logsMonth) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground"
+                onClick={() => { setLogsSearch(''); setLogsStatus('all'); setLogsMonth(''); setLogsPage(1); }}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+
+          {allLogs.length === 0 ? (
             <div className="text-sm text-gray-500 text-center py-4 border rounded-md">
               No logs yet — reminders will appear here once sent
+            </div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="text-sm text-gray-500 text-center py-4 border rounded-md">
+              No logs match the current filters
             </div>
           ) : (
             <>
@@ -473,15 +585,42 @@ export const PaymentReminderSchedules: React.FC = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Customer</TableHead>
-                      <TableHead className="text-right">Outstanding</TableHead>
+                      <TableHead>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 hover:text-foreground transition-colors"
+                          onClick={() => toggleLogsSort('customer_name')}
+                        >
+                          Customer
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 ml-auto hover:text-foreground transition-colors"
+                          onClick={() => toggleLogsSort('outstanding_amount')}
+                        >
+                          Outstanding
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
                       <TableHead className="text-center">Status</TableHead>
-                      <TableHead>Triggered At</TableHead>
+                      <TableHead>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 hover:text-foreground transition-colors"
+                          onClick={() => toggleLogsSort('triggered_at')}
+                        >
+                          Triggered At
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
                       <TableHead>Failure Reason</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentLogs.map((log) => (
+                    {pagedLogs.map((log) => (
                       <TableRow key={log.id}>
                         <TableCell className="font-medium">{log.customer_name}</TableCell>
                         <TableCell className="text-right">
@@ -511,33 +650,32 @@ export const PaymentReminderSchedules: React.FC = () => {
                   </TableBody>
                 </Table>
               </div>
-              {totalLogsPages > 1 && (
-                <div className="flex items-center justify-between mt-3 px-1">
-                  <span className="text-xs text-gray-500">
-                    Page {logsPage} of {totalLogsPages}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
-                      disabled={logsPage === 1}
-                      className="h-7 w-7 p-0"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setLogsPage((p) => Math.min(totalLogsPages, p + 1))}
-                      disabled={logsPage === totalLogsPages}
-                      className="h-7 w-7 p-0"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
+              <div className="flex items-center justify-between mt-3 px-1">
+                <span className="text-xs text-gray-500">
+                  {((logsPage - 1) * LOGS_PAGE_SIZE) + 1}–{Math.min(logsPage * LOGS_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
+                    disabled={logsPage === 1}
+                    className="h-7 w-7 p-0"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-xs px-2">{logsPage} / {totalLogsPages}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLogsPage((p) => Math.min(totalLogsPages, p + 1))}
+                    disabled={logsPage === totalLogsPages}
+                    className="h-7 w-7 p-0"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
-              )}
+              </div>
             </>
           )}
         </div>
