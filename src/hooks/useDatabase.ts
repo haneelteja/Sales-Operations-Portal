@@ -125,7 +125,7 @@ export const useLabelPurchases = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_purchases")
-        .select("id, dealer_name, sku, quantity, unit_price, total_amount, purchase_date, vendor_id, created_at, updated_at")
+        .select("id, vendor_id, client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -159,7 +159,7 @@ export const useOrders = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("id, dealer_name, area, sku, quantity, status, tentative_delivery_date, tentative_delivery_time, created_at, updated_at")
+        .select("id, client, area, sku, number_of_cases, status, tentative_delivery_date, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;

@@ -251,7 +251,7 @@ const OrderManagement: React.FC = () => {
       // Get the order details first
       const { data: orderData } = await supabase
         .from("orders")
-        .select("client, dealer_name, branch, area, sku, number_of_cases, quantity, tentative_delivery_date, tentative_delivery_time")
+        .select("client, area, sku, number_of_cases, tentative_delivery_date")
         .eq("id", orderId)
         .single();
 
@@ -261,11 +261,11 @@ const OrderManagement: React.FC = () => {
       const { error: dispatchError } = await supabase
         .from("orders_dispatch")
         .insert([{
-          client: orderData.client || orderData.dealer_name,
-          branch: orderData.branch ?? orderData.area,
+          client: orderData.client,
+          area: orderData.area,
           sku: orderData.sku,
-          cases: orderData.number_of_cases ?? orderData.quantity ?? 0,
-          delivery_date: orderData.tentative_delivery_date ?? orderData.tentative_delivery_time,
+          cases: orderData.number_of_cases ?? 0,
+          delivery_date: orderData.tentative_delivery_date,
         }]);
 
       if (dispatchError) throw dispatchError;
@@ -283,7 +283,7 @@ const OrderManagement: React.FC = () => {
       try {
         const whatsappConfig = await getWhatsAppConfig();
         if (whatsappConfig.whatsapp_enabled && whatsappConfig.whatsapp_stock_delivered_enabled) {
-          const clientName = (orderData.client || orderData.dealer_name || "").trim();
+          const clientName = (orderData.client || "").trim();
           const area = (orderData.area || "").trim();
           if (clientName && area) {
             const { data: customerRows } = await supabase
@@ -378,7 +378,7 @@ const OrderManagement: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from("orders_dispatch")
-          .select("id, client, area, branch, sku, cases, delivery_date")
+          .select("id, client, area, sku, cases, delivery_date")
           .order("delivery_date", { ascending: false });
 
         if (error) {
@@ -387,7 +387,7 @@ const OrderManagement: React.FC = () => {
         }
         return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
           ...row,
-          area: String(row.area ?? row.branch ?? ""),
+          area: String(row.area ?? ""),
         }));
       } catch (e) {
         logger.error("[orders_dispatch] Caught", e);
@@ -403,7 +403,7 @@ const OrderManagement: React.FC = () => {
       .map((order) => ({
         ...order,
         client: order.client || "",
-        area: order.area || order.branch || "",
+        area: order.area || "",
       }))
       .sort((a, b) => {
         const statusA = a.status === "pending" ? 1 : 2;
