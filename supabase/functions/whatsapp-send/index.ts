@@ -122,7 +122,7 @@ serve(async (req) => {
 
 
     // toPhone overrides the customer's WhatsApp number (e.g. for contact persons)
-    const recipientPhone = toPhone?.trim() || recipientPhone;
+    const recipientPhone = toPhone?.trim() || customer.whatsapp_number;
 
     if (!recipientPhone) {
       throw new Error(`Customer ${customer.dealer_name} does not have a WhatsApp number`);
