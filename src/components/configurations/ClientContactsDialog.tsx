@@ -131,7 +131,7 @@ export const ClientContactsDialog: React.FC<ClientContactsDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" onCloseAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Contact persons</DialogTitle>
           <DialogDescription>

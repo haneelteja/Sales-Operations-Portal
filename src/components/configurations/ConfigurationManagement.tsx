@@ -71,6 +71,15 @@ const ConfigurationManagement = () => {
     }
   }, [isEditCustomerOpen]);
 
+  useEffect(() => {
+    if (!contactsTarget) {
+      const t = setTimeout(() => {
+        document.body.style.removeProperty('pointer-events');
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [contactsTarget]);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { invalidateRelated } = useCacheInvalidation();
