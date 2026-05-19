@@ -32,21 +32,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Loader2 } from "lucide-react";
 import { gstinSchema, indiaWhatsAppSchema } from "@/lib/validation/schemas";
 
-const CONTACT_ROLES = [
-  { value: 'store_manager', label: 'Store Manager' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'owner', label: 'Owner' },
-] as const;
-
-type ContactRole = typeof CONTACT_ROLES[number]['value'];
-
-interface ContactRow {
-  id?: string;
-  contact_name: string;
-  phone: string;
-  role: ContactRole;
-}
-
 export interface SkuOption {
   sku: string;
   bottles_per_case: number;
@@ -178,7 +163,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const [gstNumber, setGstNumber] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [skuRows, setSkuRows] = useState<SkuPricingRow[]>([getInitialRow()]);
-  const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   /** After loading an existing client+branch, baseline prices per SKU - inserts only when price changes or SKU is new */
   const initialPricesBySkuRef = useRef<Record<string, number>>({});
@@ -218,29 +202,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     enabled: open && isExistingClient && !!selectedExistingClient.trim(),
   });
 
-  const contactsQueryKey = ["client-contacts", selectedExistingClient, isExistingBranch ? selectedExistingBranch : branchInput];
-  const { data: existingContacts } = useQuery({
-    queryKey: contactsQueryKey,
-    queryFn: async () => {
-      const name = selectedExistingClient.trim();
-      const area = (isExistingBranch ? selectedExistingBranch : branchInput).trim();
-      if (!name || !area) return [];
-      const { data, error } = await supabase
-        .from("client_contacts")
-        .select("id, contact_name, phone, role")
-        .eq("client_name", name)
-        .eq("branch", area)
-        .eq("is_active", true)
-        .order("created_at");
-      if (error) return [];
-      return (data || []) as ContactRow[];
-    },
-    enabled: open && isExistingClient && !!selectedExistingClient.trim(),
-  });
-
-  useEffect(() => {
-    setContacts(existingContacts || []);
-  }, [existingContacts]);
 
   const updateRowPricePerCase = useCallback(
     (rows: SkuPricingRow[]) => {
@@ -292,7 +253,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setGstNumber("");
     setWhatsappNumber("");
     setSkuRows(updateRowPricePerCase([getInitialRow()]));
-    setContacts([]);
     setFieldErrors({});
     initialPricesBySkuRef.current = {};
   }, [updateRowPricePerCase]);
@@ -490,32 +450,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         .eq("branch", resolvedArea);
       if (syncErr) throw new Error(handleSupabaseError(syncErr));
 
-      // Save contacts: replace all contacts for this client+branch
-      await supabase
-        .from("client_contacts")
-        .delete()
-        .eq("client_name", resolvedDealerName)
-        .eq("branch", resolvedArea);
-
-      const validContacts = contacts.filter(
-        (c) => c.contact_name.trim() && c.phone.trim()
-      );
-      if (validContacts.length > 0) {
-        const { error: contactErr } = await supabase.from("client_contacts").insert(
-          validContacts.map((c) => {
-            let phone = c.phone.trim().replace(/\s/g, "");
-            if (phone && !phone.startsWith("+")) phone = `+91${phone}`;
-            return {
-              client_name: resolvedDealerName,
-              branch: resolvedArea,
-              contact_name: c.contact_name.trim(),
-              phone,
-              role: c.role,
-            };
-          })
-        );
-        if (contactErr) throw new Error(handleSupabaseError(contactErr));
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
@@ -693,114 +627,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               )}
             </div>
           </div>
-
-          {/* Contact persons */}
-          {resolvedDealerName && resolvedArea && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Contact persons <span className="text-muted-foreground font-normal text-xs">(for payment reminders)</span></Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setContacts((prev) => [
-                      ...prev,
-                      { contact_name: "", phone: "", role: "manager" },
-                    ])
-                  }
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add person
-                </Button>
-              </div>
-              {contacts.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-1">No contacts yet — reminders will fall back to the WhatsApp number above.</p>
-              ) : (
-                <div className="border rounded-md overflow-auto max-h-44">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[30%]">Name</TableHead>
-                        <TableHead className="w-[35%]">WhatsApp phone</TableHead>
-                        <TableHead className="w-[25%]">Role</TableHead>
-                        <TableHead className="w-[40px]" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {contacts.map((c, i) => (
-                        <TableRow key={i}>
-                          <TableCell>
-                            <Input
-                              value={c.contact_name}
-                              onChange={(e) =>
-                                setContacts((prev) => {
-                                  const next = [...prev];
-                                  next[i] = { ...next[i], contact_name: e.target.value };
-                                  return next;
-                                })
-                              }
-                              placeholder="Name"
-                              className="h-8"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="tel"
-                              value={c.phone}
-                              onChange={(e) =>
-                                setContacts((prev) => {
-                                  const next = [...prev];
-                                  next[i] = { ...next[i], phone: e.target.value };
-                                  return next;
-                                })
-                              }
-                              placeholder="+919876543210"
-                              className="h-8"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <select
-                              aria-label="Contact role"
-                              value={c.role}
-                              onChange={(e) =>
-                                setContacts((prev) => {
-                                  const next = [...prev];
-                                  next[i] = { ...next[i], role: e.target.value as ContactRole };
-                                  return next;
-                                })
-                              }
-                              className="h-8 w-full border border-border rounded px-2 text-sm bg-background text-foreground"
-                            >
-                              {CONTACT_ROLES.map((r) => (
-                                <option key={r.value} value={r.value}>
-                                  {r.label}
-                                </option>
-                              ))}
-                            </select>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive"
-                              onClick={() =>
-                                setContacts((prev) => prev.filter((_, idx) => idx !== i))
-                              }
-                              aria-label="Remove contact"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </div>
-          )}
 
           {isPairHistoryMode && (
             <p className="text-sm text-muted-foreground rounded-md border border-dashed px-3 py-2">

@@ -5,6 +5,7 @@ import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import type { Customer } from "@/types";
 import { AddDealerDialog } from "./AddDealerDialog";
+import { ClientContactsDialog } from "./ClientContactsDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, UserX, UserCheck, Download, ArrowUpDown, MoreHorizontal, BookOpen } from "lucide-react";
+import { Trash2, Edit, UserX, UserCheck, Download, ArrowUpDown, MoreHorizontal, BookOpen, Users } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,7 @@ const ConfigurationManagement = () => {
   const [isEditCustomerOpen, setIsEditCustomerOpen] = useState(false);
   const [isAddDealerOpen, setIsAddDealerOpen] = useState(false);
   const [exportingLedgerFor, setExportingLedgerFor] = useState<string | null>(null);
+  const [contactsTarget, setContactsTarget] = useState<{ clientName: string; branch: string } | null>(null);
   
   // Additional state for advanced customer management
   const [editForm, setEditForm] = useState({
@@ -693,6 +695,17 @@ const ConfigurationManagement = () => {
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              onClick={() =>
+                                setContactsTarget({
+                                  clientName: customer.client_name,
+                                  branch: customer.branch,
+                                })
+                              }
+                            >
+                              <Users className="mr-2 h-4 w-4" />
+                              Manage contacts
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
                               onClick={() => exportClientLedger(customer)}
                               disabled={exportingLedgerFor === customer.id}
                             >
@@ -741,6 +754,15 @@ const ConfigurationManagement = () => {
         onOpenChange={setIsAddDealerOpen}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["customers-management"] })}
       />
+
+      {contactsTarget && (
+        <ClientContactsDialog
+          open={!!contactsTarget}
+          onOpenChange={(v) => { if (!v) setContactsTarget(null); }}
+          clientName={contactsTarget.clientName}
+          branch={contactsTarget.branch}
+        />
+      )}
 
       {/* Edit client dialog */}
       <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>
