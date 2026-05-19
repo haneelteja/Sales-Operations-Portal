@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,7 +20,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!; // used for email notifications
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -156,18 +155,18 @@ serve(async (req) => {
 
       // Send success notification email (only if enabled; failure emails always fire)
       if (config.backup_success_notification_enabled !== 'false') {
-      try {
-        await sendSuccessNotification(notificationEmail, {
-          backupType,
-          fileName,
-          fileSize: compressed.length,
-          googleDrivePath: fileUrl || `${backupFolderPath}/${fileName}`,
-          durationSeconds: executionDurationSeconds,
-          logId,
-        }, supabaseUrl, supabaseAnonKey);
-      } catch (emailError) {
-        console.error('Failed to send success notification email:', emailError);
-      }
+        try {
+          await sendSuccessNotification(notificationEmail, {
+            backupType,
+            fileName,
+            fileSize: compressed.length,
+            googleDrivePath: fileUrl || `${backupFolderPath}/${fileName}`,
+            durationSeconds: executionDurationSeconds,
+            logId,
+          }, supabase);
+        } catch (emailError) {
+          console.error('Failed to send success notification email:', emailError);
+        }
       }
 
       return new Response(
@@ -193,16 +192,16 @@ serve(async (req) => {
         })
         .eq('id', logId);
 
-      // Send failure notification email
+      // Send failure notification email (always sent)
       try {
         await sendFailureNotification(notificationEmail, {
           backupType,
           fileName,
           error: errorMessage,
           logId,
-        }, supabaseUrl, supabaseAnonKey);
+        }, supabase);
       } catch (emailError) {
-        console.error('Failed to send notification email:', emailError);
+        console.error('Failed to send failure notification email:', emailError);
       }
 
       return new Response(
@@ -290,9 +289,6 @@ function formatDurationEdge(seconds: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-/**
- * Send success notification email
- */
 async function sendSuccessNotification(
   email: string,
   details: {
@@ -303,46 +299,32 @@ async function sendSuccessNotification(
     durationSeconds: number;
     logId: string;
   },
-  supabaseUrl: string,
-  supabaseAnonKey: string
+  supabase: SupabaseClient
 ): Promise<void> {
-  try {
-    const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        to: email,
-        subject: `[Database Backup] Backup Successful - ${new Date().toLocaleDateString()}`,
-        html: `
-          <h2>Database Backup Successful</h2>
-          <p><strong>Date & Time:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>
-          <p><strong>Backup Type:</strong> ${details.backupType}</p>
-          <p><strong>Status:</strong> ✅ Success</p>
-          <p><strong>File Name:</strong> ${details.fileName}</p>
-          <p><strong>File Size:</strong> ${formatFileSizeEdge(details.fileSize)}</p>
-          <p><strong>Duration:</strong> ${formatDurationEdge(details.durationSeconds)}</p>
-          <p><strong>Storage Location:</strong> ${details.googleDrivePath}</p>
-          <p><strong>Backup ID:</strong> ${details.logId}</p>
-          <hr>
-          <p><em>This is an automated message from Aamodha Operations Portal.</em></p>
-        `,
-      }),
-    });
-
-    if (!emailResponse.ok) {
-      throw new Error(`Email send failed: ${emailResponse.statusText}`);
-    }
-  } catch (error) {
-    console.error('Failed to send success notification email:', error);
-  }
+  const istNow = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  const { error } = await supabase.functions.invoke('send-email', {
+    body: {
+      to: email,
+      subject: `✅ [Database Backup] Backup Successful — ${istNow} IST`,
+      html: `
+        <h2 style="color:#16a34a">Database Backup Successful</h2>
+        <table style="border-collapse:collapse;font-size:14px">
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Date &amp; Time</td><td><strong>${istNow} IST</strong></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Type</td><td>${details.backupType}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">File Name</td><td><code>${details.fileName}</code></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">File Size</td><td>${formatFileSizeEdge(details.fileSize)}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Duration</td><td>${formatDurationEdge(details.durationSeconds)}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Storage Location</td><td>${details.googleDrivePath}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Backup ID</td><td>${details.logId}</td></tr>
+        </table>
+        <hr style="margin:16px 0">
+        <p style="color:#9ca3af;font-size:12px">Automated message from Aamodha Operations Portal.</p>
+      `,
+    },
+  });
+  if (error) throw new Error(`send-email invoke failed: ${error.message}`);
 }
 
-/**
- * Send failure notification email
- */
 async function sendFailureNotification(
   email: string,
   details: {
@@ -351,42 +333,28 @@ async function sendFailureNotification(
     error: string;
     logId: string;
   },
-  supabaseUrl: string,
-  supabaseAnonKey: string
+  supabase: SupabaseClient
 ): Promise<void> {
-  // Use existing email function or create a new one
-  // For now, we'll call a generic email function
-  try {
-    const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        to: email,
-        subject: `[Database Backup] Backup Failed - ${new Date().toLocaleDateString()}`,
-        html: `
-          <h2>Database Backup Failure Alert</h2>
-          <p><strong>Date & Time:</strong> ${new Date().toLocaleString()}</p>
-          <p><strong>Backup Type:</strong> ${details.backupType}</p>
-          <p><strong>Status:</strong> Failed</p>
-          <p><strong>File Name:</strong> ${details.fileName}</p>
-          <p><strong>Failure Details:</strong></p>
-          <pre>${details.error}</pre>
-          <p><strong>Backup ID:</strong> ${details.logId}</p>
-          <p>Please investigate and ensure backups are functioning correctly.</p>
-          <hr>
-          <p><em>This is an automated message from Aamodha Operations Portal.</em></p>
-        `,
-      }),
-    });
-
-    if (!emailResponse.ok) {
-      throw new Error(`Email send failed: ${emailResponse.statusText}`);
-    }
-  } catch (error) {
-    console.error('Failed to send notification email:', error);
-    // Don't throw - email failure shouldn't fail the backup log update
-  }
+  const istNow = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  const { error } = await supabase.functions.invoke('send-email', {
+    body: {
+      to: email,
+      subject: `❌ [Database Backup] Backup Failed — ${istNow} IST`,
+      html: `
+        <h2 style="color:#dc2626">Database Backup Failed</h2>
+        <table style="border-collapse:collapse;font-size:14px">
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Date &amp; Time</td><td><strong>${istNow} IST</strong></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Type</td><td>${details.backupType}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">File Name</td><td><code>${details.fileName}</code></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Backup ID</td><td>${details.logId}</td></tr>
+        </table>
+        <p style="margin-top:12px"><strong>Failure reason:</strong></p>
+        <pre style="background:#fef2f2;border:1px solid #fecaca;padding:8px;border-radius:4px;font-size:12px;white-space:pre-wrap">${details.error}</pre>
+        <p>Please investigate and ensure backups are functioning correctly.</p>
+        <hr style="margin:16px 0">
+        <p style="color:#9ca3af;font-size:12px">Automated message from Aamodha Operations Portal.</p>
+      `,
+    },
+  });
+  if (error) throw new Error(`send-email invoke failed: ${error.message}`);
 }

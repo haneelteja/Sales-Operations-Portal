@@ -574,81 +574,81 @@ const ApplicationConfigurationTab: React.FC = () => {
               </Button>
             </div>
 
-            {/* Backup Settings */}
-            <div className="border rounded-lg divide-y text-sm">
-              {/* Backup Time */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="font-medium text-gray-700">Backup Time (IST)</p>
-                  <p className="text-gray-500 mt-0.5">{backupConfig?.backup_schedule_time_ist || '—'}</p>
-                </div>
-                {backupScheduleConfig && (
-                  <Button variant="outline" size="sm" onClick={() => handleBackupTimeEdit(backupScheduleConfig)} className="flex items-center gap-2">
-                    <Edit className="h-4 w-4" />
-                    Edit
-                  </Button>
-                )}
-              </div>
+            {/* Backup Settings — single compact row */}
+            <div className="border rounded-lg px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
 
-              {/* Backup Folder */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="font-medium text-gray-700">Backup Folder</p>
-                  <p className="text-gray-500 mt-0.5">{backupConfig?.backup_folder_path || '—'}</p>
+                {/* Backup Time */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-gray-500 whitespace-nowrap">Time (IST)</span>
+                  <span className="font-medium text-gray-800">{backupConfig?.backup_schedule_time_ist || '—'}</span>
+                  {backupScheduleConfig && (
+                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => handleBackupTimeEdit(backupScheduleConfig)}>
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
-                {backupFolderConfig && (
-                  <Button variant="outline" size="sm" onClick={() => handleBackupFolderEdit(backupFolderConfig)} className="flex items-center gap-2">
-                    <Edit className="h-4 w-4" />
-                    Edit
-                  </Button>
-                )}
-              </div>
 
-              {/* Notification Email */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="font-medium text-gray-700">Notification Email</p>
-                  <p className="text-gray-500 mt-0.5">{backupConfig?.backup_notification_email || '—'}</p>
+                <div className="h-4 w-px bg-gray-200 hidden sm:block" />
+
+                {/* Backup Folder */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-gray-500 whitespace-nowrap">Folder</span>
+                  <span className="font-medium text-gray-800 truncate max-w-[160px]">{backupConfig?.backup_folder_path || '—'}</span>
+                  {backupFolderConfig && (
+                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => handleBackupFolderEdit(backupFolderConfig)}>
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
-                {backupEmailConfig && (
-                  <Button variant="outline" size="sm" onClick={() => handleNotificationEmailEdit(backupEmailConfig)} className="flex items-center gap-2">
-                    <Edit className="h-4 w-4" />
-                    Edit
-                  </Button>
-                )}
-              </div>
 
-              {/* Automatic Backup Toggle */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <p className="font-medium text-gray-700">Automatic Backup</p>
-                {backupEnabledConfig ? (
-                  <AutoInvoiceToggle
-                    config={backupEnabledConfig}
-                    value={backupEnabledConfig.config_value === 'true'}
-                    onChange={(newValue) => handleToggleChange(backupEnabledConfig, newValue)}
-                    isLoading={updateMutation.isPending}
-                  />
-                ) : (
-                  <span className="text-gray-500">{backupConfig?.backup_enabled ? 'Enabled' : 'Disabled'}</span>
-                )}
-              </div>
+                <div className="h-4 w-px bg-gray-200 hidden sm:block" />
 
-              {/* Success Notification Toggle */}
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="font-medium text-gray-700">Success Notification Email</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Send email when backup succeeds. Failure emails are always sent.</p>
+                {/* Notification Email */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-gray-500 whitespace-nowrap">Email</span>
+                  <span className="font-medium text-gray-800 truncate max-w-[180px]">{backupConfig?.backup_notification_email || '—'}</span>
+                  {backupEmailConfig && (
+                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => handleNotificationEmailEdit(backupEmailConfig)}>
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
-                {backupSuccessNotifConfig ? (
-                  <AutoInvoiceToggle
-                    config={backupSuccessNotifConfig}
-                    value={backupSuccessNotifConfig.config_value !== 'false'}
-                    onChange={(newValue) => handleToggleChange(backupSuccessNotifConfig, newValue)}
-                    isLoading={updateMutation.isPending}
-                  />
-                ) : (
-                  <span className="text-gray-500">{backupConfig?.backup_success_notification_enabled ? 'Enabled' : 'Disabled'}</span>
-                )}
+
+                <div className="h-4 w-px bg-gray-200 hidden sm:block" />
+
+                {/* Automatic Backup Toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 whitespace-nowrap">Auto Backup</span>
+                  {backupEnabledConfig ? (
+                    <AutoInvoiceToggle
+                      config={backupEnabledConfig}
+                      value={backupEnabledConfig.config_value === 'true'}
+                      onChange={(newValue) => handleToggleChange(backupEnabledConfig, newValue)}
+                      isLoading={updateMutation.isPending}
+                    />
+                  ) : (
+                    <span className="text-gray-500">{backupConfig?.backup_enabled ? 'On' : 'Off'}</span>
+                  )}
+                </div>
+
+                <div className="h-4 w-px bg-gray-200 hidden sm:block" />
+
+                {/* Success Notification Toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 whitespace-nowrap">Success Email</span>
+                  {backupSuccessNotifConfig ? (
+                    <AutoInvoiceToggle
+                      config={backupSuccessNotifConfig}
+                      value={backupSuccessNotifConfig.config_value !== 'false'}
+                      onChange={(newValue) => handleToggleChange(backupSuccessNotifConfig, newValue)}
+                      isLoading={updateMutation.isPending}
+                    />
+                  ) : (
+                    <span className="text-gray-500">{backupConfig?.backup_success_notification_enabled ? 'On' : 'Off'}</span>
+                  )}
+                </div>
+
               </div>
             </div>
 
