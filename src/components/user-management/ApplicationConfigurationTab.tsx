@@ -11,6 +11,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Search, RefreshCw, Edit, Settings, Shield } from 'lucide-react';
 import {
@@ -30,7 +32,6 @@ import { EditSkusAvailableDialog } from './EditSkusAvailableDialog';
 import { EditListConfigDialog } from './EditListConfigDialog';
 import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
-import { EditWhatsAppApiKeyDialog } from './EditWhatsAppApiKeyDialog';
 import { triggerManualBackup, getBackupConfig, getBackupLogs, formatDateInIST, formatFileSize, formatDuration, type BackupConfig, type BackupLog } from '@/services/backupService';
 import { PaymentReminderSchedules } from './PaymentReminderSchedules';
 import { Database, Play } from 'lucide-react';
@@ -51,7 +52,8 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isExpenseGroupsDialogOpen, setIsExpenseGroupsDialogOpen] = useState(false);
   const [isTentativeDeliveryDaysDialogOpen, setIsTentativeDeliveryDaysDialogOpen] = useState(false);
   const [isLabelVendorsDialogOpen, setIsLabelVendorsDialogOpen] = useState(false);
-  const [isWhatsAppApiKeyDialogOpen, setIsWhatsAppApiKeyDialogOpen] = useState(false);
+  const [isInvoiceFormatOpen, setIsInvoiceFormatOpen] = useState(false);
+  const [invoiceFormatValue, setInvoiceFormatValue] = useState('simple');
   const [isRunningBackup, setIsRunningBackup] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -123,34 +125,41 @@ const ApplicationConfigurationTab: React.FC = () => {
     },
   });
 
-  // Filter configurations: exclude WhatsApp; include main configs + Database Backup Folder Path + Database Backup Time
+  const EXCLUDED_CONFIG_KEYS = new Set(['whatsapp_api_key', 'production_order_recipients']);
+  const INVOICE_SECTION_HEADER = '__invoice_section_header__';
+
+  // Filter configurations: exclude all WhatsApp keys, excluded keys, and backup keys
   const mainConfigsCount = useMemo(() => {
     if (!configurations) return 0;
     return configurations.filter(
       (c) =>
-        (c.config_key === 'whatsapp_api_key' || !c.config_key.startsWith('whatsapp_')) &&
+        !EXCLUDED_CONFIG_KEYS.has(c.config_key) &&
+        !c.config_key.startsWith('whatsapp_') &&
         (!c.config_key.startsWith('backup_') || BACKUP_TABLE_KEYS.includes(c.config_key))
     ).length;
   }, [configurations]);
 
-  // Display order: 1. SKUs, 2. Item list, 3. Auto Invoice, then rest (exclude whatsapp_ except whatsapp_api_key)
+  // Display order: 1. SKUs, 2. Label vendors, then operations configs, then Invoice Generation section
   const orderedDisplayConfigs = useMemo(() => {
     if (!configurations) return [];
 
-    const mainAndBackupConfigs = configurations.filter(
-      (config) =>
-        (config.config_key === 'whatsapp_api_key' || !config.config_key.startsWith('whatsapp_')) &&
-        (!config.config_key.startsWith('backup_') || BACKUP_TABLE_KEYS.includes(config.config_key))
-    );
+    const mainAndBackupConfigs = configurations.filter((config) => {
+      if (EXCLUDED_CONFIG_KEYS.has(config.config_key)) return false;
+      if (config.config_key.startsWith('whatsapp_')) return false;
+      if (config.config_key.startsWith('backup_') && !BACKUP_TABLE_KEYS.includes(config.config_key)) return false;
+      return true;
+    });
 
     const order: string[] = [
-      'auto_invoice_generation_enabled',
-      'invoice_folder_path',
-      'storage_provider',
       'transport_vendors',
       'expense_groups',
       'tentative_delivery_days',
-      'whatsapp_api_key',
+    ];
+
+    const invoiceOrder: string[] = [
+      'auto_invoice_generation_enabled',
+      'invoice_folder_path',
+      'storage_provider',
       'invoice_number_format',
     ];
 
@@ -186,7 +195,7 @@ const ApplicationConfigurationTab: React.FC = () => {
       customKey: 'label_vendors',
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
 
-    // Row 3+: Ordered configs
+    // Operations configs
     for (const key of order) {
       if (seen.has(key)) continue;
       const config = configMap.get(key);
@@ -196,10 +205,34 @@ const ApplicationConfigurationTab: React.FC = () => {
       }
     }
 
-    // Add any remaining configs not in order
+    // Add any remaining configs not in order (excluding invoice-related ones saved for section below)
+    const invoiceKeySet = new Set(invoiceOrder);
     for (const config of mainAndBackupConfigs) {
-      if (!seen.has(config.config_key)) {
+      if (!seen.has(config.config_key) && !invoiceKeySet.has(config.config_key)) {
         result.push(config);
+        seen.add(config.config_key);
+      }
+    }
+
+    // Invoice Generation section header
+    result.push({
+      id: INVOICE_SECTION_HEADER,
+      config_key: INVOICE_SECTION_HEADER,
+      config_value: '',
+      config_type: 'string',
+      description: 'Invoice Generation',
+      updated_by: null,
+      updated_at: '',
+      created_at: '',
+    } as InvoiceConfiguration);
+
+    // Invoice Generation items
+    for (const key of invoiceOrder) {
+      if (seen.has(key)) continue;
+      const config = configMap.get(key);
+      if (config) {
+        result.push(config);
+        seen.add(key);
       }
     }
 
@@ -393,10 +426,23 @@ const ApplicationConfigurationTab: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredConfigurations.map((config, index) => (
+                  {(() => {
+                    let rowNum = 0;
+                    return filteredConfigurations.map((config, index) => {
+                      if (config.config_key === INVOICE_SECTION_HEADER) {
+                        return (
+                          <TableRow key="invoice-section-header" className="bg-gray-50 hover:bg-gray-50">
+                            <TableCell colSpan={3} className="py-2 px-4">
+                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Invoice Generation</span>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+                      rowNum++;
+                      return (
                     <TableRow key={config.id || config.config_key || index}>
                       <TableCell className="text-center font-medium">
-                        {index + 1}
+                        {rowNum}
                       </TableCell>
                       <TableCell>{config.description}</TableCell>
                       <TableCell className="text-center align-middle">
@@ -504,11 +550,15 @@ const ApplicationConfigurationTab: React.FC = () => {
                             <Edit className="h-4 w-4" />
                             Edit
                           </Button>
-                        ) : config.config_key === 'whatsapp_api_key' ? (
+                        ) : config.config_key === 'invoice_number_format' ? (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setIsWhatsAppApiKeyDialogOpen(true)}
+                            onClick={() => {
+                              setInvoiceFormatValue(config.config_value || 'simple');
+                              setEditingConfig(config);
+                              setIsInvoiceFormatOpen(true);
+                            }}
                             className="flex items-center gap-2"
                           >
                             <Edit className="h-4 w-4" />
@@ -517,7 +567,9 @@ const ApplicationConfigurationTab: React.FC = () => {
                         ) : null}
                       </TableCell>
                     </TableRow>
-                  ))}
+                      );
+                    });
+                  })()}
                 </TableBody>
               </Table>
             </div>
@@ -786,11 +838,38 @@ const ApplicationConfigurationTab: React.FC = () => {
       {/* Payment Reminder Schedules */}
       <PaymentReminderSchedules />
 
-      {/* WhatsApp API Key Dialog */}
-      <EditWhatsAppApiKeyDialog
-        open={isWhatsAppApiKeyDialogOpen}
-        onOpenChange={setIsWhatsAppApiKeyDialogOpen}
-      />
+      {/* Invoice Number Format Dialog */}
+      <Dialog open={isInvoiceFormatOpen} onOpenChange={setIsInvoiceFormatOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Invoice Number Format</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={invoiceFormatValue} onValueChange={setInvoiceFormatValue}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="simple">Simple (1, 2, 3)</SelectItem>
+                <SelectItem value="date_based">Date-based (INV-2025-01-001)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsInvoiceFormatOpen(false)}>Cancel</Button>
+            <Button
+              disabled={updateMutation.isPending}
+              onClick={() => {
+                if (!editingConfig) return;
+                updateMutation.mutate({ id: editingConfig.id, config_value: invoiceFormatValue });
+                setIsInvoiceFormatOpen(false);
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
