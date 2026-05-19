@@ -167,21 +167,7 @@ const ApplicationConfigurationTab: React.FC = () => {
     const seen = new Set<string>();
     const result: (InvoiceConfiguration & { isCustom?: boolean; customKey?: string })[] = [];
 
-    // Row 1: SKUs (custom - not from config table)
-    result.push({
-      id: '',
-      config_key: 'sku_configurations',
-      config_value: '',
-      config_type: 'string',
-      description: "SKU's available in the plant",
-      updated_by: null,
-      updated_at: '',
-      created_at: '',
-      isCustom: true,
-      customKey: 'sku_configurations',
-    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
-
-    // Row 2: Label vendors (custom row — prevents the raw DB record from appearing twice)
+    // Row 1: Label vendors (custom row — prevents the raw DB record from appearing twice)
     result.push({
       id: '',
       config_key: 'label_vendors',
@@ -196,7 +182,7 @@ const ApplicationConfigurationTab: React.FC = () => {
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
     seen.add('label_vendors');
 
-    // Operations configs
+    // Operations configs (rows 2-4)
     for (const key of order) {
       if (seen.has(key)) continue;
       const config = configMap.get(key);
@@ -205,6 +191,20 @@ const ApplicationConfigurationTab: React.FC = () => {
         seen.add(key);
       }
     }
+
+    // Row 5: SKUs (custom - not from config table)
+    result.push({
+      id: '',
+      config_key: 'sku_configurations',
+      config_value: '',
+      config_type: 'string',
+      description: "SKU's available in the plant",
+      updated_by: null,
+      updated_at: '',
+      created_at: '',
+      isCustom: true,
+      customKey: 'sku_configurations',
+    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
 
     // Add any remaining configs not in order (excluding invoice-related ones saved for section below)
     const invoiceKeySet = new Set(invoiceOrder);
