@@ -446,7 +446,8 @@ const ApplicationConfigurationTab: React.FC = () => {
                         {rowNum}
                       </TableCell>
                       <TableCell>{config.description}</TableCell>
-                      <TableCell className="text-center align-middle">
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center">
                         {config.config_key === 'sku_configurations' ? (
                           <Button
                             variant="outline"
@@ -566,6 +567,7 @@ const ApplicationConfigurationTab: React.FC = () => {
                             Edit
                           </Button>
                         ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
                       );
