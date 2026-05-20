@@ -5,7 +5,6 @@ type CustomerDirectoryRecord = Customer;
 
 type TransactionLike = {
   branch?: string | null;
-  area?: string | null;
   customers?: {
     branch?: string | null;
   } | null;
@@ -58,7 +57,6 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
   const getTransactionBranch = useCallback((transaction?: TransactionLike | null) => {
     return (
       transaction?.branch ||
-      transaction?.area ||
       transaction?.customers?.branch ||
       ''
     );

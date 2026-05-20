@@ -65,7 +65,7 @@ export const useSalesTransactions = () => {
           sku,
           description,
           transaction_date,
-          area,
+          branch,
           total_amount,
           created_at,
           updated_at,

@@ -24,8 +24,7 @@ export interface SalesTransaction {
   description: string | null;
   transaction_date: string;
   transaction_type: string;
-  area: string | null;
-  branch?: string | null;
+  branch: string | null;
   created_at: string;
   updated_at: string;
   customers?: {
