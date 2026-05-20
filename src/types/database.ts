@@ -23,10 +23,12 @@ export interface LabelPayment {
 export interface Order {
   id: string;
   client: string;
-  area: string;
+  customer_id: string | null;
+  branch: string | null;
+  order_date: string | null;
   sku: string;
   number_of_cases: number;
-  tentative_delivery_date: string;
+  tentative_delivery_date: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -37,8 +39,8 @@ export interface UserManagementRecord {
   user_id: string;
   username: string;
   email: string;
-  associated_dealers: string[];
-  associated_areas: string[];
+  associated_clients: string[];
+  associated_branches: string[];
   status: "active" | "inactive" | "pending";
   role: "admin" | "manager" | "client";
   created_by: string | null;

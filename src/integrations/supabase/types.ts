@@ -14,7 +14,7 @@ export type Database = {
   }
   public: {
     Tables: {
-      adjustments: {
+      _archived_adjustments: {
         Row: {
           adjustment_date: string
           adjustment_type: string
@@ -143,6 +143,7 @@ export type Database = {
           sku: string
           no_of_cases: number
           created_at: string | null
+          updated_at: string | null
         }
         Insert: {
           id?: string
@@ -150,6 +151,7 @@ export type Database = {
           sku: string
           no_of_cases: number
           created_at?: string | null
+          updated_at?: string | null
         }
         Update: {
           id?: string
@@ -157,6 +159,7 @@ export type Database = {
           sku?: string
           no_of_cases?: number
           created_at?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -197,7 +200,7 @@ export type Database = {
         }
         Relationships: []
       }
-      label_design_costs: {
+      _archived_label_design_costs: {
         Row: {
           cost: number
           created_at: string
@@ -227,7 +230,7 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "label_design_costs_customer_id_fkey"
+            foreignKeyName: "_archived_label_design_costs_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
@@ -345,7 +348,7 @@ export type Database = {
       sales_transactions: {
         Row: {
           amount: number
-          area: string | null
+          branch: string | null
           created_at: string
           customer_id: string
           description: string | null
@@ -359,7 +362,7 @@ export type Database = {
         }
         Insert: {
           amount: number
-          area?: string | null
+          branch?: string | null
           created_at?: string
           customer_id: string
           description?: string | null
@@ -373,7 +376,7 @@ export type Database = {
         }
         Update: {
           amount?: number
-          area?: string | null
+          branch?: string | null
           created_at?: string
           customer_id?: string
           description?: string | null
@@ -431,7 +434,7 @@ export type Database = {
       transport_expenses: {
         Row: {
           amount: number
-          area: string | null
+          branch: string | null
           client_id: string | null
           created_at: string
           description: string
@@ -443,7 +446,7 @@ export type Database = {
         }
         Insert: {
           amount: number
-          area?: string | null
+          branch?: string | null
           client_id?: string | null
           created_at?: string
           description: string
@@ -455,7 +458,7 @@ export type Database = {
         }
         Update: {
           amount?: number
-          area?: string | null
+          branch?: string | null
           client_id?: string | null
           created_at?: string
           description?: string
@@ -465,7 +468,15 @@ export type Database = {
           transport_vendor?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "transport_expenses_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       material_purchases: {
         Row: {
@@ -672,7 +683,6 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
-          last_updated: string
           sku: string | null
           updated_at: string
         }
@@ -682,7 +692,6 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
-          last_updated?: string
           sku?: string | null
           updated_at?: string
         }
@@ -692,7 +701,6 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
-          last_updated?: string
           sku?: string | null
           updated_at?: string
         }
@@ -738,10 +746,11 @@ export type Database = {
       }
       orders: {
         Row: {
-          area: string | null
+          branch: string | null
           client: string
           created_at: string
-          date: string | null
+          customer_id: string | null
+          order_date: string | null
           id: string
           number_of_cases: number
           sku: string
@@ -750,10 +759,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          area?: string | null
+          branch?: string | null
           client: string
           created_at?: string
-          date?: string | null
+          customer_id?: string | null
+          order_date?: string | null
           id?: string
           number_of_cases: number
           sku: string
@@ -762,10 +772,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          area?: string | null
+          branch?: string | null
           client?: string
           created_at?: string
-          date?: string | null
+          customer_id?: string | null
+          order_date?: string | null
           id?: string
           number_of_cases?: number
           sku?: string
@@ -773,40 +784,59 @@ export type Database = {
           tentative_delivery_date?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       orders_dispatch: {
         Row: {
-          area: string | null
+          branch: string | null
           cases: number
           client: string
           created_at: string
+          customer_id: string | null
           delivery_date: string | null
           id: string
           sku: string
           updated_at: string
         }
         Insert: {
-          area?: string | null
+          branch?: string | null
           cases: number
           client: string
           created_at?: string
+          customer_id?: string | null
           delivery_date?: string | null
           id?: string
           sku: string
           updated_at?: string
         }
         Update: {
-          area?: string | null
+          branch?: string | null
           cases?: number
           client?: string
           created_at?: string
+          customer_id?: string | null
           delivery_date?: string | null
           id?: string
           sku?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "orders_dispatch_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       saved_filters: {
         Row: {
@@ -852,8 +882,8 @@ export type Database = {
       }
       user_management: {
         Row: {
-          associated_areas: string[] | null
-          associated_dealers: string[] | null
+          associated_branches: string[] | null
+          associated_clients: string[] | null
           created_at: string
           created_by: string | null
           email: string
@@ -866,8 +896,8 @@ export type Database = {
           username: string | null
         }
         Insert: {
-          associated_areas?: string[] | null
-          associated_dealers?: string[] | null
+          associated_branches?: string[] | null
+          associated_clients?: string[] | null
           created_at?: string
           created_by?: string | null
           email: string
@@ -880,8 +910,8 @@ export type Database = {
           username?: string | null
         }
         Update: {
-          associated_areas?: string[] | null
-          associated_dealers?: string[] | null
+          associated_branches?: string[] | null
+          associated_clients?: string[] | null
           created_at?: string
           created_by?: string | null
           email?: string
@@ -1021,7 +1051,7 @@ export type Database = {
         Returns: {
           customer_id: string
           customer_name: string
-          area: string
+          branch: string
           total_sales: number
           total_payments: number
           outstanding: number
@@ -1032,15 +1062,16 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: {
           id: string
-          date: string
+          order_date: string
           client: string
-          area: string
+          branch: string
           sku: string
           number_of_cases: number
           tentative_delivery_date: string
           status: string
           created_at: string
           updated_at: string
+          customer_id: string
         }[]
       }
       ping: {
@@ -1061,15 +1092,15 @@ export type Database = {
       user_has_data_access: {
         Args: {
           table_name: string
-          dealer_name?: string
-          area_name?: string
+          client_name?: string
+          branch_name?: string
         }
         Returns: boolean
       }
-      user_has_access_to_dealer_area: {
+      user_has_access_to_client_branch: {
         Args: {
-          dealer_name: string
-          area_name: string
+          client_name: string
+          branch_name: string
         }
         Returns: boolean
       }

@@ -159,7 +159,7 @@ export const useOrders = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("id, client, area, sku, number_of_cases, status, tentative_delivery_date, created_at, updated_at")
+        .select("id, client, customer_id, branch, order_date, sku, number_of_cases, status, tentative_delivery_date, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -176,7 +176,7 @@ export const useUserManagement = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_management")
-        .select("id, user_id, username, email, associated_dealers, associated_areas, status, role, created_by, last_login, created_at, updated_at")
+        .select("id, user_id, username, email, associated_clients, associated_branches, status, role, created_by, last_login, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) {

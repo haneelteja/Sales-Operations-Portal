@@ -25,7 +25,7 @@ const TransportExpenses = () => {
     description: "",
     amount: "",
     client_id: "",
-    area: "",
+    branch: "",
     transport_vendor: ""
   });
 
@@ -36,7 +36,7 @@ const TransportExpenses = () => {
     description: "",
     amount: "",
     client_id: "",
-    area: "",
+    branch: "",
     transport_vendor: ""
   });
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -115,14 +115,14 @@ const TransportExpenses = () => {
       if (!data || data.length === 0) return [];
       
       // OPTIMIZED: Batch query instead of N+1 queries
-      // Collect all unique client_id + area pairs
+      // Collect all unique client_id + branch pairs
       const clientAreaPairs = data
-        .filter((e: { client_id?: string; area?: string }) => e.client_id && e.area)
-        .map((e: { client_id: string; area: string }) => ({
+        .filter((e: { client_id?: string; branch?: string }) => e.client_id && e.branch)
+        .map((e: { client_id: string; branch: string }) => ({
           customer_id: e.client_id,
-          area: e.area
+          area: e.branch
         }));
-      
+
       // Remove duplicates
       const uniquePairs = Array.from(
         new Map(clientAreaPairs.map(p => [`${p.customer_id}_${p.area}`, p])).values()
@@ -149,21 +149,21 @@ const TransportExpenses = () => {
           } else {
             // Fallback: Single query with IN clause (still better than N+1)
             const customerIds = [...new Set(uniquePairs.map(p => p.customer_id))];
-            const areaes = [...new Set(uniquePairs.map(p => p.area))];
-            
+            const branches = [...new Set(uniquePairs.map(p => p.area))];
+
             const { data: allSales } = await supabase
               .from("sales_transactions")
-              .select("customer_id, area, sku, quantity, transaction_date")
+              .select("customer_id, branch, sku, quantity, transaction_date")
               .in("customer_id", customerIds)
-              .in("area", areaes)
+              .in("branch", branches)
               .eq("transaction_type", "sale")
               .order("transaction_date", { ascending: false })
               .order("created_at", { ascending: false });
-            
-            // Group by customer_id + area and get latest
-            const salesByKey = new Map<string, { customer_id: string; area: string; sku?: string; quantity?: number }>();
-            allSales?.forEach((sale: { customer_id: string; area: string; sku?: string; quantity?: number }) => {
-              const key = `${sale.customer_id}_${sale.area}`;
+
+            // Group by customer_id + branch and get latest
+            const salesByKey = new Map<string, { customer_id: string; branch: string; sku?: string; quantity?: number }>();
+            allSales?.forEach((sale: { customer_id: string; branch: string; sku?: string; quantity?: number }) => {
+              const key = `${sale.customer_id}_${sale.branch}`;
               if (!salesByKey.has(key)) {
                 salesByKey.set(key, sale);
               }
@@ -182,9 +182,9 @@ const TransportExpenses = () => {
       }
       
       // Enrich expenses with sales data
-      return data.map((expense: { client_id?: string; area?: string; sku?: string }) => {
-        if (expense.client_id && expense.area) {
-          const key = `${expense.client_id}_${expense.area}`;
+      return data.map((expense: { client_id?: string; branch?: string; sku?: string }) => {
+        if (expense.client_id && expense.branch) {
+          const key = `${expense.client_id}_${expense.branch}`;
           const saleData = salesMap.get(key);
           return {
             ...expense,
@@ -230,7 +230,7 @@ const TransportExpenses = () => {
         description: "",
         amount: "",
         client_id: "",
-        area: "",
+        branch: "",
         transport_vendor: ""
       });
       invalidateRelated('transport_expenses');
@@ -329,7 +329,7 @@ const TransportExpenses = () => {
       description: expense.description || "",
       amount: expense.amount?.toString() || "",
       client_id: expense.client_id || "",
-      area: expense.area || "",
+      branch: (expense as { branch?: string }).branch || "",
       transport_vendor: (expense as { transport_vendor?: string }).transport_vendor || ""
     });
     setIsEditDialogOpen(true);
@@ -443,7 +443,7 @@ const TransportExpenses = () => {
       return {
         ...expense,
         client_name: customer?.client_name ?? expense.client_name ?? null,
-        area: expense.area ?? customer?.branch ?? null,
+        branch: (expense as { branch?: string }).branch ?? customer?.branch ?? null,
       };
     });
   }, [expenses, customersForLookup, customers]);
@@ -476,7 +476,7 @@ const TransportExpenses = () => {
     
     // Get client and area names for filtering
     const clientName = expense.client_name?.toLowerCase() || '';
-    const areaName = expense.area?.toLowerCase() || '';
+    const areaName = (expense as { branch?: string }).branch?.toLowerCase() || '';
     
     // Global search filter (using debounced value)
     if (debouncedSearchTerm) {
@@ -533,8 +533,8 @@ const TransportExpenses = () => {
         valueB = b.client_name || '';
         break;
       case 'branch':
-        valueA = a.area || '';
-        valueB = b.area || '';
+        valueA = (a as { branch?: string }).branch || '';
+        valueB = (b as { branch?: string }).branch || '';
         break;
       default:
         return 0;
@@ -564,7 +564,7 @@ const TransportExpenses = () => {
         'Date': new Date(expense.expense_date).toLocaleDateString(),
         'Transport Vendor': (expense as { transport_vendor?: string }).transport_vendor || '',
         'Client': expense.client_name || '',
-        'Branch': expense.area || '',
+        'Branch': (expense as { branch?: string }).branch || '',
         'Group': expense.expense_group || '',
         'Amount (₹)': expense.amount || 0,
         'Description': expense.description || ''
@@ -607,17 +607,17 @@ const TransportExpenses = () => {
             <SearchableSelect
               options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.client_name }))}
               value={form.client_id || ""}
-              onValueChange={(value) => setForm({ ...form, client_id: value, area: "" })}
+              onValueChange={(value) => setForm({ ...form, client_id: value, branch: "" })}
               placeholder="Select client"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="area">Branch</Label>
+            <Label htmlFor="branch">Branch</Label>
             <SearchableSelect
-              options={getAvailableAreas(form.client_id).map((area) => ({ value: area, label: area }))}
-              value={form.area || ""}
-              onValueChange={(value) => setForm({ ...form, area: value })}
+              options={getAvailableAreas(form.client_id).map((b) => ({ value: b, label: b }))}
+              value={form.branch || ""}
+              onValueChange={(value) => setForm({ ...form, branch: value })}
               placeholder="Select branch"
               disabled={!form.client_id}
             />
@@ -731,7 +731,7 @@ const TransportExpenses = () => {
                 setColumnFilters({
                   date: "",
                   client: "",
-                  area: "",
+                  branch: "",
                   group: "",
                   amount: "",
                   description: "",
@@ -875,7 +875,7 @@ const TransportExpenses = () => {
               <TableRow key={expense.id}>
                 <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
                 <TableCell>{expense.client_name || 'N/A'}</TableCell>
-                <TableCell>{expense.area || 'N/A'}</TableCell>
+                <TableCell>{(expense as { branch?: string }).branch || 'N/A'}</TableCell>
                 <TableCell>{(expense as { transport_vendor?: string }).transport_vendor || 'N/A'}</TableCell>
                 <TableCell>{expense.expense_group || 'N/A'}</TableCell>
                 <TableCell className="text-right font-medium">₹{expense.amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
@@ -1017,16 +1017,16 @@ const TransportExpenses = () => {
                 <SearchableSelect
                   options={getUniqueCustomers().map((customer) => ({ value: customer.id, label: customer.client_name }))}
                   value={editForm.client_id || ""}
-                  onValueChange={(value) => setEditForm({ ...editForm, client_id: value, area: "" })}
+                  onValueChange={(value) => setEditForm({ ...editForm, client_id: value, branch: "" })}
                   placeholder="Select client"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-area">Branch</Label>
+                <Label htmlFor="edit-branch">Branch</Label>
                 <SearchableSelect
-                  options={getAvailableAreas(editForm.client_id).map((area) => ({ value: area, label: area }))}
-                  value={editForm.area || ""}
-                  onValueChange={(value) => setEditForm({ ...editForm, area: value })}
+                  options={getAvailableAreas(editForm.client_id).map((b) => ({ value: b, label: b }))}
+                  value={editForm.branch || ""}
+                  onValueChange={(value) => setEditForm({ ...editForm, branch: value })}
                   placeholder="Select branch"
                   disabled={!editForm.client_id}
                 />

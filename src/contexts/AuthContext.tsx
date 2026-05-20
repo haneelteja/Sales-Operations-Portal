@@ -9,8 +9,8 @@ interface UserProfile {
   user_id: string;
   username: string;
   email: string;
-  associated_dealers: string[];
-  associated_areas: string[];
+  associated_clients: string[];
+  associated_branches: string[];
   status: 'active' | 'inactive' | 'pending';
   role: 'admin' | 'manager' | 'client';
   created_by: string | null;
@@ -246,8 +246,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       full_name: mockUser.user_metadata.full_name,
       role: 'admin',
       status: 'active',
-      associated_dealers: [],
-      associated_areas: []
+      associated_clients: [],
+      associated_branches: []
     };
     
     setProfile(mockProfile);

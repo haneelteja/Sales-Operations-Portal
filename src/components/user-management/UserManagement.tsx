@@ -23,8 +23,8 @@ interface UserManagementRecord {
   user_id: string;
   username: string;
   email: string;
-  associated_dealers: string[];
-  associated_areas: string[];
+  associated_clients: string[];
+  associated_branches: string[];
   status: 'active' | 'inactive' | 'pending';
   role: 'admin' | 'manager' | 'client';
   created_by: string;
@@ -689,9 +689,9 @@ const UserManagement = () => {
       Username: record.username,
       Email: record.email,
       Role: record.role,
-      'Client / branch access': record.associated_dealers && record.associated_dealers.length > 0 ? 
-        record.associated_dealers.map((client, idx) => {
-          const branch = record.associated_areas && record.associated_areas[idx] ? record.associated_areas[idx] : 'All branches';
+      'Client / branch access': record.associated_clients && record.associated_clients.length > 0 ?
+        record.associated_clients.map((client, idx) => {
+          const branch = record.associated_branches && record.associated_branches[idx] ? record.associated_branches[idx] : 'All branches';
           return `${client} / ${branch}`;
         }).join('; ') : 'No access assigned',
       Status: record.status,
@@ -729,10 +729,10 @@ const UserManagement = () => {
     if (user.role === 'admin' || user.role === 'manager') {
       // Check if they have all available clients (or a large number indicating all access)
       const allClientBranchPairs = getUniqueClientBranchPairs();
-      const hasAllAccess = allClientBranchPairs.length > 0 && 
-        (user.associated_dealers?.length || 0) >= allClientBranchPairs.length;
-      
-      if (hasAllAccess || (user.associated_dealers?.length || 0) > 5) {
+      const hasAllAccess = allClientBranchPairs.length > 0 &&
+        (user.associated_clients?.length || 0) >= allClientBranchPairs.length;
+
+      if (hasAllAccess || (user.associated_clients?.length || 0) > 5) {
         return (
           <Badge variant="secondary" className="text-xs px-1 py-0 bg-blue-100 text-blue-800">
             All clients & branches
@@ -741,9 +741,9 @@ const UserManagement = () => {
       }
     }
     
-    const clientBranches = user.associated_dealers && user.associated_dealers.length > 0 ? 
-      user.associated_dealers.map((client, idx) => {
-        const area = user.associated_areas && user.associated_areas[idx] ? user.associated_areas[idx] : 'All';
+    const clientBranches = user.associated_clients && user.associated_clients.length > 0 ?
+      user.associated_clients.map((client, idx) => {
+        const area = user.associated_branches && user.associated_branches[idx] ? user.associated_branches[idx] : 'All';
         return `${client} / ${area}`;
       }) : [];
 
@@ -1082,11 +1082,11 @@ const UserManagement = () => {
                     </TableHead>
                     <TableHead 
                       className="font-semibold text-blue-800 text-xs uppercase tracking-widest py-3 px-3 text-left border-r border-blue-200/50 w-64 cursor-pointer hover:bg-blue-100 transition-colors"
-                      onClick={() => handleSort('associated_dealers')}
+                      onClick={() => handleSort('associated_clients')}
                     >
                       <div className="flex items-center space-x-1">
                         <span>Client / branch access</span>
-                        {sortField === 'associated_dealers' && (
+                        {sortField === 'associated_clients' && (
                           <span className="text-blue-600">
                             {sortDirection === 'asc' ? '↑' : '↓'}
                           </span>

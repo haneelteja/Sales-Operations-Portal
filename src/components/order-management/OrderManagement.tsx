@@ -24,8 +24,7 @@ import { PageSizeSelector } from "@/components/ui/page-size-selector";
 interface OrderRow {
   id: string;
   client: string;
-  area: string;
-  branch?: string;
+  branch: string;
   sku: string;
   number_of_cases: number;
   expense_date?: string;
@@ -38,8 +37,7 @@ interface OrderRow {
 interface DispatchRow {
   id: string;
   client: string;
-  area: string;
-  branch?: string;
+  branch: string;
   sku: string;
   cases: number;
   delivery_date: string;
@@ -54,7 +52,7 @@ const OrderManagement: React.FC = () => {
   const [orderForm, setOrderForm] = useState({
     expense_date: new Date().toISOString().split("T")[0],
     client_id: "",
-    area: "",
+    branch: "",
     tentative_delivery_date: "",
   });
   const [skuRows, setSkuRows] = useState<{ sku: string; number_of_cases: string }[]>([
@@ -71,7 +69,7 @@ const OrderManagement: React.FC = () => {
   const debouncedOrdersSearchTerm = useDebouncedValue(ordersSearchTerm, 300);
   const [ordersColumnFilters, setOrdersColumnFilters] = useState({
     client: "",
-    area: "",
+    branch: "",
     sku: "",
     number_of_cases: "",
     expense_date: "",
@@ -81,7 +79,7 @@ const OrderManagement: React.FC = () => {
     [key: string]: 'asc' | 'desc' | null;
   }>({
     client: null,
-    area: null,
+    branch: null,
     sku: null,
     number_of_cases: null,
     expense_date: 'desc',
@@ -98,7 +96,7 @@ const OrderManagement: React.FC = () => {
   const debouncedDispatchSearchTerm = useDebouncedValue(dispatchSearchTerm, 300);
   const [dispatchColumnFilters, setDispatchColumnFilters] = useState({
     client: "",
-    area: "",
+    branch: "",
     sku: "",
     cases: "",
     delivery_date: "",
@@ -107,7 +105,7 @@ const OrderManagement: React.FC = () => {
     [key: string]: 'asc' | 'desc' | null;
   }>({
     client: null,
-    area: null,
+    branch: null,
     sku: null,
     cases: null,
     delivery_date: 'desc',
@@ -135,7 +133,6 @@ const OrderManagement: React.FC = () => {
       try {
         const { data, error } = await supabase.rpc("get_orders_sorted");
         if (error) {
-          // Fallback: try select(*) first (works with any schema), then specific columns
           const { data: d, error: e } = await supabase
             .from("orders")
             .select("*")
@@ -143,16 +140,16 @@ const OrderManagement: React.FC = () => {
           if (!e && d) {
             return (d as Array<Record<string, unknown>>).map((o) => ({
               ...o,
-              area: o.area ?? o.branch,
+              branch: o.branch,
               number_of_cases: o.number_of_cases ?? o.quantity,
-              expense_date: (o.expense_date ?? o.date) as string | undefined,
+              expense_date: (o.expense_date ?? o.order_date) as string | undefined,
             }));
           }
           return [];
         }
         return (data as Array<Record<string, unknown>>).map((o) => ({
           ...o,
-          expense_date: (o.date ?? o.expense_date) as string | undefined,
+          expense_date: (o.order_date ?? o.expense_date) as string | undefined,
         }));
       } catch {
         return [];
@@ -177,16 +174,14 @@ const OrderManagement: React.FC = () => {
   });
 
   // Create order mutation (accepts array of orders for multiple SKUs)
-  // Uses insert_orders RPC - run docs/migration/ADD_INSERT_ORDERS_RPC_ONLY.sql in Supabase SQL Editor once
   const createOrderMutation = useMutation({
     mutationFn: async (newOrders: Record<string, unknown>[]) => {
       const ordersJson = newOrders.map((o) => ({
         client: o.client,
-        area: o.area,
-        branch: o.area,
+        branch: o.branch,
         sku: o.sku,
         number_of_cases: o.number_of_cases,
-        date: o.date,
+        order_date: o.order_date,
         tentative_delivery_date: o.tentative_delivery_date,
         status: o.status ?? "pending",
       }));
@@ -212,26 +207,26 @@ const OrderManagement: React.FC = () => {
       // Notify production WhatsApp recipients
       try {
         const client = String(variables[0]?.client ?? '');
-        const branch = String(variables[0]?.area ?? '');
+        const branch = String(variables[0]?.branch ?? '');
         const items = variables.map((o) => ({
           sku: String(o.sku ?? ''),
           cases: Number(o.number_of_cases ?? 0),
         }));
-        const orderDate = String(variables[0]?.date ?? new Date().toISOString().split('T')[0]);
+        const orderDate = String(variables[0]?.order_date ?? new Date().toISOString().split('T')[0]);
         const deliveryDate = String(variables[0]?.tentative_delivery_date ?? '');
         sendProductionOrderNotification({ client, branch, items, orderDate, deliveryDate }).catch(() => {});
       } catch (err) {
         logger.warn('Production order notification trigger failed (non-fatal):', err);
       }
-      // Reset form - use config for tentative delivery days
+      // Reset form
       const today = new Date().toISOString().split("T")[0];
       const defaultDeliveryDate = new Date();
       defaultDeliveryDate.setDate(defaultDeliveryDate.getDate() + tentativeDeliveryDays);
-      
+
       setOrderForm({
         expense_date: today,
         client_id: "",
-        area: "",
+        branch: "",
         tentative_delivery_date: defaultDeliveryDate.toISOString().split("T")[0],
       });
       setSkuRows([{ sku: "", number_of_cases: "" }]);
@@ -248,21 +243,19 @@ const OrderManagement: React.FC = () => {
   // Dispatch order mutation
   const dispatchOrderMutation = useMutation({
     mutationFn: async (orderId: string) => {
-      // Get the order details first
       const { data: orderData } = await supabase
         .from("orders")
-        .select("client, area, sku, number_of_cases, tentative_delivery_date")
+        .select("client, branch, sku, number_of_cases, tentative_delivery_date")
         .eq("id", orderId)
         .single();
 
       if (!orderData) throw new Error("Order not found");
 
-      // Insert into dispatch table
       const { error: dispatchError } = await supabase
         .from("orders_dispatch")
         .insert([{
           client: orderData.client,
-          area: orderData.area,
+          branch: orderData.branch,
           sku: orderData.sku,
           cases: orderData.number_of_cases ?? 0,
           delivery_date: orderData.tentative_delivery_date,
@@ -270,7 +263,6 @@ const OrderManagement: React.FC = () => {
 
       if (dispatchError) throw dispatchError;
 
-      // Delete from orders table
       const { error: deleteError } = await supabase
         .from("orders")
         .delete()
@@ -279,18 +271,17 @@ const OrderManagement: React.FC = () => {
       if (deleteError) throw deleteError;
 
       // Send "Stock Delivered" WhatsApp notification if enabled.
-      // NOTE: Message text can be changed later via User Management → WhatsApp Configurations → templates (whatsapp_templates).
       try {
         const whatsappConfig = await getWhatsAppConfig();
         if (whatsappConfig.whatsapp_enabled && whatsappConfig.whatsapp_stock_delivered_enabled) {
           const clientName = (orderData.client || "").trim();
-          const area = (orderData.area || "").trim();
-          if (clientName && area) {
+          const branch = (orderData.branch || "").trim();
+          if (clientName && branch) {
             const { data: customerRows } = await supabase
               .from("customers")
               .select("id, client_name, whatsapp_number")
               .eq("client_name", clientName)
-              .eq("branch", area)
+              .eq("branch", branch)
               .not("whatsapp_number", "is", null)
               .limit(1);
 
@@ -378,7 +369,7 @@ const OrderManagement: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from("orders_dispatch")
-          .select("id, client, area, sku, cases, delivery_date")
+          .select("id, client, branch, sku, cases, delivery_date")
           .order("delivery_date", { ascending: false });
 
         if (error) {
@@ -387,7 +378,7 @@ const OrderManagement: React.FC = () => {
         }
         return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
           ...row,
-          area: String(row.area ?? ""),
+          branch: String(row.branch ?? ""),
         }));
       } catch (e) {
         logger.error("[orders_dispatch] Caught", e);
@@ -403,7 +394,7 @@ const OrderManagement: React.FC = () => {
       .map((order) => ({
         ...order,
         client: order.client || "",
-        area: order.area || "",
+        branch: order.branch || "",
       }))
       .sort((a, b) => {
         const statusA = a.status === "pending" ? 1 : 2;
@@ -422,40 +413,39 @@ const OrderManagement: React.FC = () => {
     return <Badge variant="secondary">Unknown</Badge>;
   };
 
-  // Get unique areas for selected customer (exclude empty)
-  const getAvailableAreas = useCallback((clientId: string) => {
+  // Get unique branches for selected customer
+  const getAvailableBranches = useCallback((clientId: string) => {
     if (!customers || !clientId) return [];
     const selectedCustomer = customers.find(c => c.id === clientId);
     if (!selectedCustomer) return [];
-    
-    const areas = customers
+
+    const branches = customers
       .filter(c => c.client_name === selectedCustomer.client_name)
       .map(c => c.branch)
-      .filter((a): a is string => !!a && String(a).trim() !== "")
-      .filter((a, index, self) => self.indexOf(a) === index)
+      .filter((b): b is string => !!b && String(b).trim() !== "")
+      .filter((b, index, self) => self.indexOf(b) === index)
       .sort();
-    
-    return areas;
+
+    return branches;
   }, [customers]);
 
-  // Get all available SKUs for dealer+area (no row filter - for "all selected" check)
+  // Get all available SKUs for client+branch
   const getAllAvailableSKUs = useCallback(() => {
-    if (!customers || !orderForm.client_id || !orderForm.area) return [];
+    if (!customers || !orderForm.client_id || !orderForm.branch) return [];
     const selectedCustomer = customers.find(c => c.id === orderForm.client_id);
     if (!selectedCustomer) return [];
     return customers
       .filter(c =>
         c.client_name === selectedCustomer.client_name &&
-        c.branch === orderForm.area &&
+        c.branch === orderForm.branch &&
         c.sku &&
         c.sku.trim() !== ""
       )
       .map(c => c.sku)
       .filter((sku, index, self) => self.indexOf(sku) === index)
       .sort();
-  }, [customers, orderForm.client_id, orderForm.area]);
+  }, [customers, orderForm.client_id, orderForm.branch]);
 
-  // Whether all available SKUs for dealer+area are selected (disable Add SKU)
   const allSkusSelected = useMemo(() => {
     const allAvailable = getAllAvailableSKUs();
     if (allAvailable.length === 0) return false;
@@ -463,18 +453,17 @@ const OrderManagement: React.FC = () => {
     return allAvailable.every(s => selectedSkus.includes(s));
   }, [getAllAvailableSKUs, skuRows]);
 
-  // Single SKU mode: dealer has only one SKU - show simplified UI (cases only)
   const singleSkuMode = useMemo(() => getAllAvailableSKUs().length === 1, [getAllAvailableSKUs]);
 
-  // Get available SKUs for selected customer and area (excludes SKUs already selected in other rows)
+  // Get available SKUs for a row (excludes already-selected SKUs in other rows)
   const getAvailableSKUsForRow = useCallback((currentRowIndex: number) => {
-    if (!customers || !orderForm.client_id || !orderForm.area) return [];
+    if (!customers || !orderForm.client_id || !orderForm.branch) return [];
     const selectedCustomer = customers.find(c => c.id === orderForm.client_id);
     if (!selectedCustomer) return [];
     const allSkus = customers
       .filter(c =>
         c.client_name === selectedCustomer.client_name &&
-        c.branch === orderForm.area &&
+        c.branch === orderForm.branch &&
         c.sku &&
         c.sku.trim() !== ""
       )
@@ -486,14 +475,13 @@ const OrderManagement: React.FC = () => {
       .filter(Boolean);
     const currentRowSku = skuRows[currentRowIndex]?.sku?.trim();
     return allSkus.filter(sku => !alreadySelected.includes(sku) || sku === currentRowSku);
-  }, [customers, orderForm.client_id, orderForm.area, skuRows]);
+  }, [customers, orderForm.client_id, orderForm.branch, skuRows]);
 
   // Handle order form submission
   const handleOrderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation: Check required fields
-    if (!orderForm.client_id || !orderForm.area || !orderForm.tentative_delivery_date) {
+    if (!orderForm.client_id || !orderForm.branch || !orderForm.tentative_delivery_date) {
       toast({
         title: "Validation Error",
         description: "Please fill in client, branch, and tentative delivery date",
@@ -502,7 +490,6 @@ const OrderManagement: React.FC = () => {
       return;
     }
 
-    // Validation: At least one SKU row with valid SKU and cases
     const validRows = skuRows.filter(
       (row) => row.sku?.trim() && row.number_of_cases && parseInt(row.number_of_cases) > 0
     );
@@ -514,7 +501,6 @@ const OrderManagement: React.FC = () => {
       });
       return;
     }
-    // Validation: No duplicate SKUs in the same order
     const skuSet = new Set(validRows.map(r => r.sku.trim()));
     if (skuSet.size !== validRows.length) {
       toast({
@@ -525,7 +511,6 @@ const OrderManagement: React.FC = () => {
       return;
     }
 
-    // Validation: Tentative delivery date must not be in the past
     const deliveryDate = new Date(orderForm.tentative_delivery_date);
     const todayCheck = new Date();
     todayCheck.setHours(0, 0, 0, 0);
@@ -550,52 +535,50 @@ const OrderManagement: React.FC = () => {
 
     const newOrders = validRows.map((row) => ({
       client: selectedCustomer.client_name,
-      area: orderForm.area,
+      branch: orderForm.branch,
       sku: row.sku.trim(),
       number_of_cases: parseInt(row.number_of_cases),
       tentative_delivery_date: orderForm.tentative_delivery_date,
       status: "pending",
-      date: orderForm.expense_date,
+      order_date: orderForm.expense_date,
     }));
 
     createOrderMutation.mutate(newOrders);
   };
 
-  // Handle client change - auto-populate area if single, reset SKU rows
+  // Handle client change - auto-populate branch if single, reset SKU rows
   const handleClientChange = (clientId: string) => {
     if (!clientId || clientId === "") {
-      setOrderForm({ ...orderForm, client_id: "", area: "" });
+      setOrderForm({ ...orderForm, client_id: "", branch: "" });
       setSkuRows([{ sku: "", number_of_cases: "" }]);
       setClientSearch("");
       return;
     }
-    const availableAreas = getAvailableAreas(clientId);
-    const autoArea = availableAreas.length === 1 ? availableAreas[0] : "";
-    setOrderForm({ ...orderForm, client_id: clientId, area: autoArea });
+    const availableBranches = getAvailableBranches(clientId);
+    const autoBranch = availableBranches.length === 1 ? availableBranches[0] : "";
+    setOrderForm({ ...orderForm, client_id: clientId, branch: autoBranch });
     setSkuRows([{ sku: "", number_of_cases: "" }]);
   };
 
-  // Handle client selection from autocomplete dropdown
   const handleClientSelect = (clientId: string, clientName: string) => {
     setClientSearch(clientName);
     setClientDropdownOpen(false);
     handleClientChange(clientId);
   };
 
-  // Handle area change - reset SKU rows
-  const handleAreaChange = (areaValue: string) => {
-    setOrderForm({ ...orderForm, area: areaValue });
+  const handleBranchChange = (branchValue: string) => {
+    setOrderForm({ ...orderForm, branch: branchValue });
     setSkuRows([{ sku: "", number_of_cases: "" }]);
   };
 
-  // Auto-populate single SKU when dealer has only one SKU for the selected area
+  // Auto-populate single SKU when client has only one SKU for the selected branch
   useEffect(() => {
-    if (!orderForm.client_id || !orderForm.area) return;
+    if (!orderForm.client_id || !orderForm.branch) return;
     const allSkus = getAllAvailableSKUs();
     if (allSkus.length === 1) {
       setSkuRows([{ sku: allSkus[0], number_of_cases: "" }]);
     }
-  }, [orderForm.client_id, orderForm.area, getAllAvailableSKUs]);
+  }, [orderForm.client_id, orderForm.branch, getAllAvailableSKUs]);
 
   const addSkuRow = () => setSkuRows((prev) => [...prev, { sku: "", number_of_cases: "" }]);
   const removeSkuRow = (index: number) => {
@@ -607,7 +590,6 @@ const OrderManagement: React.FC = () => {
     );
   };
 
-  // Handle date change and auto-calculate delivery
   const handleDateChange = (date: string) => {
     const selectedDate = new Date(date);
     const today = new Date();
@@ -635,11 +617,8 @@ const OrderManagement: React.FC = () => {
 
     const deliveryDate = new Date(selectedDate);
     deliveryDate.setDate(deliveryDate.getDate() + tentativeDeliveryDays);
-    
-    // Ensure delivery date is always set
+
     const newDeliveryDate = orderForm.tentative_delivery_date || deliveryDate.toISOString().split("T")[0];
-    
-    // If current delivery date is before or equal to new order date, update it
     const currentDeliveryDate = new Date(newDeliveryDate);
     if (currentDeliveryDate <= selectedDate) {
       setOrderForm({
@@ -656,7 +635,6 @@ const OrderManagement: React.FC = () => {
     }
   };
 
-  // Initialize tentative delivery date on component mount (uses config)
   useEffect(() => {
     if (!orderForm.tentative_delivery_date) {
       const defaultDeliveryDate = new Date(orderForm.expense_date);
@@ -669,7 +647,6 @@ const OrderManagement: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tentativeDeliveryDays]);
 
-  // Get unique customers for form dropdown (by client_name, not by id)
   const getUniqueCustomers = useCallback(() => {
     if (!customers) return [];
     const seenNames = new Set<string>();
@@ -685,7 +662,6 @@ const OrderManagement: React.FC = () => {
     return unique.sort((a, b) => a.client_name.localeCompare(b.client_name));
   }, [customers]);
 
-  // Close client dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (clientInputRef.current && !clientInputRef.current.contains(e.target as Node)) {
@@ -696,7 +672,6 @@ const OrderManagement: React.FC = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Filtered client list for autocomplete
   const filteredCustomers = useMemo(() => {
     const unique = getUniqueCustomers();
     if (!clientSearch.trim()) return unique;
@@ -726,14 +701,12 @@ const OrderManagement: React.FC = () => {
     if (!normalizedOrders) return [];
 
     return normalizedOrders.filter(order => {
-      // Month filter
       if (ordersMonthFilter && !(order.expense_date || '').startsWith(ordersMonthFilter)) return false;
-      // Global search
       if (debouncedOrdersSearchTerm) {
         const searchLower = debouncedOrdersSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
           order.client?.toLowerCase().includes(searchLower) ||
-          order.area?.toLowerCase().includes(searchLower) ||
+          order.branch?.toLowerCase().includes(searchLower) ||
           order.sku?.toLowerCase().includes(searchLower) ||
           order.number_of_cases?.toString().includes(searchLower) ||
           order.expense_date?.includes(searchLower) ||
@@ -742,9 +715,8 @@ const OrderManagement: React.FC = () => {
         if (!matchesGlobalSearch) return false;
       }
 
-      // Column filters
       if (ordersColumnFilters.client && !order.client?.toLowerCase().includes(ordersColumnFilters.client.toLowerCase())) return false;
-      if (ordersColumnFilters.area && !order.area?.toLowerCase().includes(ordersColumnFilters.area.toLowerCase())) return false;
+      if (ordersColumnFilters.branch && !order.branch?.toLowerCase().includes(ordersColumnFilters.branch.toLowerCase())) return false;
       if (ordersColumnFilters.sku && !order.sku?.toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
       if (ordersColumnFilters.number_of_cases && order.number_of_cases?.toString() !== ordersColumnFilters.number_of_cases) return false;
       if (ordersColumnFilters.expense_date && !order.expense_date?.includes(ordersColumnFilters.expense_date)) return false;
@@ -752,10 +724,8 @@ const OrderManagement: React.FC = () => {
 
       return true;
     }).sort((a, b) => {
-      // Apply sorting
       const sortKey = Object.keys(ordersColumnSorts).find(key => ordersColumnSorts[key] !== null);
       if (!sortKey) {
-        // Default sort: newest order date first
         const dateA = new Date(a.expense_date || a.created_at).getTime();
         const dateB = new Date(b.expense_date || b.created_at).getTime();
         return dateB - dateA;
@@ -772,9 +742,9 @@ const OrderManagement: React.FC = () => {
           aValue = (a.client || '').toLowerCase();
           bValue = (b.client || '').toLowerCase();
           break;
-        case 'area':
-          aValue = (a.area || '').toLowerCase();
-          bValue = (b.area || '').toLowerCase();
+        case 'branch':
+          aValue = (a.branch || '').toLowerCase();
+          bValue = (b.branch || '').toLowerCase();
           break;
         case 'sku':
           aValue = (a.sku || '').toLowerCase();
@@ -807,15 +777,13 @@ const OrderManagement: React.FC = () => {
     if (!dispatchData) return [];
 
     return (dispatchData as DispatchRow[]).filter(order => {
-      // Month filter
       if (dispatchMonthFilter && !(order.delivery_date || '').startsWith(dispatchMonthFilter)) return false;
 
-      // Global search
       if (debouncedDispatchSearchTerm) {
         const searchLower = debouncedDispatchSearchTerm.toLowerCase();
         const matchesGlobalSearch = (
           order.client?.toLowerCase().includes(searchLower) ||
-          order.area?.toLowerCase().includes(searchLower) ||
+          order.branch?.toLowerCase().includes(searchLower) ||
           order.sku?.toLowerCase().includes(searchLower) ||
           order.cases?.toString().includes(searchLower) ||
           order.delivery_date?.includes(searchLower)
@@ -823,19 +791,16 @@ const OrderManagement: React.FC = () => {
         if (!matchesGlobalSearch) return false;
       }
 
-      // Column filters
       if (dispatchColumnFilters.client && !order.client?.toLowerCase().includes(dispatchColumnFilters.client.toLowerCase())) return false;
-      if (dispatchColumnFilters.area && !order.area?.toLowerCase().includes(dispatchColumnFilters.area.toLowerCase())) return false;
+      if (dispatchColumnFilters.branch && !order.branch?.toLowerCase().includes(dispatchColumnFilters.branch.toLowerCase())) return false;
       if (dispatchColumnFilters.sku && !order.sku?.toLowerCase().includes(dispatchColumnFilters.sku.toLowerCase())) return false;
       if (dispatchColumnFilters.cases && order.cases?.toString() !== dispatchColumnFilters.cases) return false;
       if (dispatchColumnFilters.delivery_date && !order.delivery_date?.includes(dispatchColumnFilters.delivery_date)) return false;
 
       return true;
     }).sort((a, b) => {
-      // Apply sorting
       const sortKey = Object.keys(dispatchColumnSorts).find(key => dispatchColumnSorts[key] !== null);
       if (!sortKey) {
-        // Default sort: by delivery date descending
         const dateA = new Date(a.delivery_date).getTime();
         const dateB = new Date(b.delivery_date).getTime();
         return dateB - dateA;
@@ -852,9 +817,9 @@ const OrderManagement: React.FC = () => {
           aValue = (a.client || '').toLowerCase();
           bValue = (b.client || '').toLowerCase();
           break;
-        case 'area':
-          aValue = (a.area || '').toLowerCase();
-          bValue = (b.area || '').toLowerCase();
+        case 'branch':
+          aValue = (a.branch || '').toLowerCase();
+          bValue = (b.branch || '').toLowerCase();
           break;
         case 'sku':
           aValue = (a.sku || '').toLowerCase();
@@ -878,13 +843,12 @@ const OrderManagement: React.FC = () => {
     });
   }, [dispatchData, debouncedDispatchSearchTerm, dispatchColumnFilters, dispatchColumnSorts, dispatchMonthFilter]);
 
-  // Export functions (defined after filteredAndSortedOrders and filteredAndSortedDispatch)
   const exportOrdersToExcel = useCallback(async () => {
     if (!filteredAndSortedOrders.length) return;
 
     const exportData = filteredAndSortedOrders.map((order) => ({
       Client: order.client,
-      Branch: order.area,
+      Branch: order.branch,
       SKU: order.sku,
       "Number of Cases": order.number_of_cases,
       "Order Date": order.expense_date || "",
@@ -901,7 +865,7 @@ const OrderManagement: React.FC = () => {
 
     const exportData = filteredAndSortedDispatch.map((row) => ({
       Client: row.client,
-      Branch: row.area,
+      Branch: row.branch,
       SKU: row.sku,
       Cases: row.cases,
       "Delivery Date": row.delivery_date,
@@ -911,7 +875,6 @@ const OrderManagement: React.FC = () => {
     await exportJsonToExcel(exportData, 'Orders Dispatch', fileName);
   }, [filteredAndSortedDispatch]);
 
-  // Handle column filter changes for Current Orders
   const handleOrdersColumnFilterChange = useCallback((columnKey: string, value: string) => {
     setOrdersColumnFilters(prev => ({ ...prev, [columnKey]: value }));
     setOrdersPage(1);
@@ -921,16 +884,13 @@ const OrderManagement: React.FC = () => {
     setOrdersColumnSorts(prev => {
       const newSorts = { ...prev };
       Object.keys(newSorts).forEach(key => {
-        if (key !== columnKey) {
-          newSorts[key] = null;
-        }
+        if (key !== columnKey) newSorts[key] = null;
       });
       newSorts[columnKey] = direction;
       return newSorts;
     });
   }, []);
 
-  // Handle column filter changes for Orders Dispatched
   const handleDispatchColumnFilterChange = useCallback((columnKey: string, value: string) => {
     setDispatchColumnFilters(prev => ({ ...prev, [columnKey]: value }));
     setDispatchPage(1);
@@ -940,21 +900,18 @@ const OrderManagement: React.FC = () => {
     setDispatchColumnSorts(prev => {
       const newSorts = { ...prev };
       Object.keys(newSorts).forEach(key => {
-        if (key !== columnKey) {
-          newSorts[key] = null;
-        }
+        if (key !== columnKey) newSorts[key] = null;
       });
       newSorts[columnKey] = direction;
       return newSorts;
     });
   }, []);
 
-  // Get unique values for filter options — cascading: each column's options reflect the other active filters
   const getUniqueOrderValues = useCallback((key: keyof OrderRow) => {
     if (!normalizedOrders) return [];
     const filtered = normalizedOrders.filter(order => {
       if (key !== 'client' && ordersColumnFilters.client && !order.client?.toLowerCase().includes(ordersColumnFilters.client.toLowerCase())) return false;
-      if (key !== 'area' && ordersColumnFilters.area && !order.area?.toLowerCase().includes(ordersColumnFilters.area.toLowerCase())) return false;
+      if (key !== 'branch' && ordersColumnFilters.branch && !order.branch?.toLowerCase().includes(ordersColumnFilters.branch.toLowerCase())) return false;
       if (key !== 'sku' && ordersColumnFilters.sku && !order.sku?.toLowerCase().includes(ordersColumnFilters.sku.toLowerCase())) return false;
       return true;
     });
@@ -966,7 +923,7 @@ const OrderManagement: React.FC = () => {
     if (!dispatchData) return [];
     const filtered = (dispatchData as DispatchRow[]).filter(order => {
       if (key !== 'client' && dispatchColumnFilters.client && !order.client?.toLowerCase().includes(dispatchColumnFilters.client.toLowerCase())) return false;
-      if (key !== 'area' && dispatchColumnFilters.area && !order.area?.toLowerCase().includes(dispatchColumnFilters.area.toLowerCase())) return false;
+      if (key !== 'branch' && dispatchColumnFilters.branch && !order.branch?.toLowerCase().includes(dispatchColumnFilters.branch.toLowerCase())) return false;
       if (key !== 'sku' && dispatchColumnFilters.sku && !order.sku?.toLowerCase().includes(dispatchColumnFilters.sku.toLowerCase())) return false;
       return true;
     });
@@ -974,7 +931,6 @@ const OrderManagement: React.FC = () => {
     return Array.from(new Set(values)).sort();
   }, [dispatchData, dispatchColumnFilters]);
 
-  // Get max date (today) and min date (today - 7) for date input
   const maxDate = new Date().toISOString().split("T")[0];
   const minOrderDate = useMemo(() => {
     const d = new Date();
@@ -991,14 +947,13 @@ const OrderManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Order Registration Form - Compact */}
+      {/* Order Registration Form */}
       <Card className="border-slate-200">
         <CardHeader className="py-3 px-4">
           <CardTitle className="text-base">Create New Order</CardTitle>
         </CardHeader>
         <CardContent className="pt-0 px-4 pb-4">
           <form onSubmit={handleOrderSubmit} className="space-y-3">
-            {/* Row 1: Date, Client, Branch, Tentative Delivery Date */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
               <div className="space-y-1">
                 <Label htmlFor="order-date" className="text-xs">Date *</Label>
@@ -1055,11 +1010,11 @@ const OrderManagement: React.FC = () => {
                 </div>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="order-area" className="text-xs">Branch *</Label>
+                <Label htmlFor="order-branch" className="text-xs">Branch *</Label>
                 <SearchableSelect
-                  options={getAvailableAreas(orderForm.client_id).map(area => ({ value: area, label: area }))}
-                  value={orderForm.area || ""}
-                  onValueChange={handleAreaChange}
+                  options={getAvailableBranches(orderForm.client_id).map(b => ({ value: b, label: b }))}
+                  value={orderForm.branch || ""}
+                  onValueChange={handleBranchChange}
                   placeholder="Select branch"
                   disabled={!orderForm.client_id}
                 />
@@ -1091,7 +1046,7 @@ const OrderManagement: React.FC = () => {
             </div>
 
             {/* SKU Rows - only shown after client and branch are selected */}
-            {orderForm.client_id && orderForm.area && <div className="space-y-1.5">
+            {orderForm.client_id && orderForm.branch && <div className="space-y-1.5">
               <Label className="text-xs">SKUs *</Label>
               {singleSkuMode && (
                 <p className="text-xs text-muted-foreground">
@@ -1112,7 +1067,7 @@ const OrderManagement: React.FC = () => {
                         value={row.sku || ""}
                         onValueChange={(value) => updateSkuRow(index, "sku", value)}
                         placeholder="Select SKU"
-                        disabled={!orderForm.client_id || !orderForm.area}
+                        disabled={!orderForm.client_id || !orderForm.branch}
                       />
                     </div>
                   )}
@@ -1207,11 +1162,10 @@ const OrderManagement: React.FC = () => {
               </Button>
             </div>
           </div>
-          {/* Mobile export button */}
           <div className="md:hidden mt-3 flex justify-end">
-            <Button 
-              variant="outline" 
-              onClick={exportOrdersToExcel} 
+            <Button
+              variant="outline"
+              onClick={exportOrdersToExcel}
               disabled={!filteredAndSortedOrders.length}
               size="sm"
               className="w-full sm:w-auto"
@@ -1251,15 +1205,15 @@ const OrderManagement: React.FC = () => {
                       <div className="flex items-center gap-2 text-gray-800">
                         <span>Branch</span>
                         <ColumnFilter
-                          columnKey="area"
+                          columnKey="branch"
                           columnName="Branch"
-                          filterValue={ordersColumnFilters.area}
-                          onFilterChange={(value) => handleOrdersColumnFilterChange('area', value as string)}
-                          onClearFilter={() => handleOrdersColumnFilterChange('area', '')}
-                          sortDirection={ordersColumnSorts.area}
-                          onSortChange={(direction) => handleOrdersColumnSortChange('area', direction)}
+                          filterValue={ordersColumnFilters.branch}
+                          onFilterChange={(value) => handleOrdersColumnFilterChange('branch', value as string)}
+                          onClearFilter={() => handleOrdersColumnFilterChange('branch', '')}
+                          sortDirection={ordersColumnSorts.branch}
+                          onSortChange={(direction) => handleOrdersColumnSortChange('branch', direction)}
                           dataType="text"
-                          options={getUniqueOrderValues('area') as string[]}
+                          options={getUniqueOrderValues('branch') as string[]}
                           triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
                         />
                       </div>
@@ -1336,7 +1290,7 @@ const OrderManagement: React.FC = () => {
                   {filteredAndSortedOrders.slice((ordersPage - 1) * ordersPageSize, ordersPage * ordersPageSize).map((order) => (
                     <TableRow key={order.id} className="hover:bg-gray-50">
                       <TableCell>{order.client || "-"}</TableCell>
-                      <TableCell>{order.area || "-"}</TableCell>
+                      <TableCell>{order.branch || "-"}</TableCell>
                       <TableCell>{order.sku || "-"}</TableCell>
                       <TableCell className="text-right">{order.number_of_cases ?? "-"}</TableCell>
                       <TableCell>{order.expense_date || "-"}</TableCell>
@@ -1445,7 +1399,6 @@ const OrderManagement: React.FC = () => {
               </Button>
             </div>
           </div>
-          {/* Mobile export button */}
           <div className="md:hidden mt-3 flex justify-end">
             <Button
               variant="outline"
@@ -1489,15 +1442,15 @@ const OrderManagement: React.FC = () => {
                       <div className="flex items-center gap-2 text-gray-800">
                         <span>Branch</span>
                         <ColumnFilter
-                          columnKey="area"
+                          columnKey="branch"
                           columnName="Branch"
-                          filterValue={dispatchColumnFilters.area}
-                          onFilterChange={(value) => handleDispatchColumnFilterChange('area', value as string)}
-                          onClearFilter={() => handleDispatchColumnFilterChange('area', '')}
-                          sortDirection={dispatchColumnSorts.area}
-                          onSortChange={(direction) => handleDispatchColumnSortChange('area', direction)}
+                          filterValue={dispatchColumnFilters.branch}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('branch', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('branch', '')}
+                          sortDirection={dispatchColumnSorts.branch}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('branch', direction)}
                           dataType="text"
-                          options={getUniqueDispatchValues('area') as string[]}
+                          options={getUniqueDispatchValues('branch') as string[]}
                           triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
                         />
                       </div>
@@ -1557,7 +1510,7 @@ const OrderManagement: React.FC = () => {
                   {filteredAndSortedDispatch.slice((dispatchPage - 1) * dispatchPageSize, dispatchPage * dispatchPageSize).map((order) => (
                     <TableRow key={order.id} className="hover:bg-gray-50">
                       <TableCell>{order.client || "-"}</TableCell>
-                      <TableCell>{order.area || "-"}</TableCell>
+                      <TableCell>{order.branch || "-"}</TableCell>
                       <TableCell>{order.sku || "-"}</TableCell>
                       <TableCell className="text-right">{order.cases ?? "-"}</TableCell>
                       <TableCell>{order.delivery_date || "-"}</TableCell>
