@@ -105,7 +105,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
 
   const followupMap = new Map<string, { comments: string; nextFollowupDate: string }>();
   for (const f of followups) {
-    followupMap.set(`${f.dealer_name}|||${f.branch}`, {
+    followupMap.set(`${f.dealer_name.toLowerCase()}|||${f.branch.toLowerCase()}`, {
       comments: f.comments ?? '',
       nextFollowupDate: f.next_followup_date ?? '',
     });
@@ -128,7 +128,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     const customer = customerMap.get(tx.customer_id);
     if (!customer) continue;
 
-    const key = `${customer.dealerName}|||${customer.branch}`;
+    const key = `${customer.dealerName.toLowerCase()}|||${customer.branch.toLowerCase()}`;
     if (!groups.has(key)) {
       groups.set(key, {
         customerId: tx.customer_id,

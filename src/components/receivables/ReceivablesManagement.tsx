@@ -324,9 +324,13 @@ async function fetchLatestFollowupInfo(): Promise<Record<string, FollowupInfo>> 
 // ── Summary strip ─────────────────────────────────────────────────────────────
 
 function SummaryStrip({ data, allData }: { data: CustomerRow[]; allData: CustomerRow[] }) {
-  const totalOutstanding = allData.reduce((s, c) => s + c.outstanding_balance, 0);
+  // Gross outstanding = sum of only positive balances (what clients owe us).
+  // Matches the tracking view which filters out cleared/overpaid accounts.
+  const totalOutstanding = allData.filter(c => c.outstanding_balance > 0).reduce((s, c) => s + c.outstanding_balance, 0);
   const totalRevenue = allData.reduce((s, c) => s + c.total_revenue, 0);
-  const totalPaid = totalRevenue - totalOutstanding;
+  // Collection rate uses net outstanding (includes credits) for accurate payment efficiency.
+  const netOutstanding = allData.reduce((s, c) => s + c.outstanding_balance, 0);
+  const totalPaid = totalRevenue - netOutstanding;
   const collectionRate = totalRevenue > 0 ? Math.round((totalPaid / totalRevenue) * 100) : 0;
 
   const totalProfit = data.reduce((s, c) => s + c.total_profit, 0);
