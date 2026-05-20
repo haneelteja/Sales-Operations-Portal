@@ -232,7 +232,7 @@ export const useCreateSalesTransaction = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["receivables"] });
+      queryClient.invalidateQueries({ queryKey: ["receivables-tracking"] });
       handleSuccess(toast, "Transaction recorded");
     },
     onError: (error) => handleError(error, toast, "record transaction"),
