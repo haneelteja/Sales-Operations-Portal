@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X } from 'lucide-react';
+import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X, Wallet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ExcelJS from 'exceljs';
 
@@ -434,6 +434,11 @@ export default function ReceivablesTrackingView() {
     [displayRows]
   );
 
+  const totalOutstanding = useMemo(
+    () => (data?.rows ?? []).reduce((sum, r) => sum + (r.outstanding ?? 0), 0),
+    [data?.rows]
+  );
+
   const handleExport = async () => {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Aamodha Operations Portal';
@@ -543,7 +548,7 @@ export default function ReceivablesTrackingView() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center gap-4">
@@ -555,6 +560,25 @@ export default function ReceivablesTrackingView() {
                 <p className="text-3xl font-bold text-red-600">{overdueCount}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Outstanding &amp; follow-up date passed
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-4">
+              <div className="p-2.5 bg-orange-50 rounded-lg">
+                <Wallet className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Outstanding</p>
+                <p className="text-3xl font-bold text-orange-600">
+                  {fmt(totalOutstanding)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Sum of all client balances
                 </p>
               </div>
             </div>
