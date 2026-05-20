@@ -73,7 +73,7 @@ export function useTransactionMutations({
         description: data.description || null,
         sku: 'Payment',
         quantity: 0,
-        branch: data.area || null,
+        area: data.area || null,
       };
 
       const { data: paymentData, error } = await supabase
@@ -125,10 +125,10 @@ export function useTransactionMutations({
           sku: data.sku,
           description: data.description,
           transaction_date: data.transaction_date,
-          branch: data.area || editingTransaction?.branch || null,
+          area: data.area || editingTransaction?.area || null,
         })
         .eq('id', data.id)
-        .select(`id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, branch, created_at, updated_at`);
+        .select(`id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, area, created_at, updated_at`);
 
       if (salesError) throw salesError;
       const updatedTransaction = (updatedRows?.[0] ?? null) as SalesTransaction | null;
