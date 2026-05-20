@@ -53,7 +53,7 @@ const initialState: FilterState = {
     amount: null,
   },
   currentPage: 1,
-  pageSize: 20,
+  pageSize: 5,
   monthFilter: '',
 };
 
@@ -136,7 +136,7 @@ function filterReducer(state: FilterState, action: FilterAction): FilterState {
   }
 }
 
-export function useTransactionFilters(initialPageSize: number = 20) {
+export function useTransactionFilters(initialPageSize: number = 5) {
   const [state, dispatch] = useReducer(filterReducer, {
     ...initialState,
     pageSize: initialPageSize,

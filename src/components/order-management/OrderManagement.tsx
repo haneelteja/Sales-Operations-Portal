@@ -90,7 +90,7 @@ const OrderManagement: React.FC = () => {
 
   // Pagination state for Current Orders
   const [ordersPage, setOrdersPage] = useState(1);
-  const [ordersPageSize, setOrdersPageSize] = useState(20);
+  const [ordersPageSize, setOrdersPageSize] = useState(5);
   const [ordersMonthFilter, setOrdersMonthFilter] = useState('');
 
   // Filter and sort states for Orders Dispatched table
@@ -115,7 +115,7 @@ const OrderManagement: React.FC = () => {
 
   // Pagination state for Orders Dispatched
   const [dispatchPage, setDispatchPage] = useState(1);
-  const [dispatchPageSize, setDispatchPageSize] = useState(20);
+  const [dispatchPageSize, setDispatchPageSize] = useState(5);
   const [dispatchMonthFilter, setDispatchMonthFilter] = useState('');
 
   const { data: tentativeDeliveryDays = 5 } = useQuery({

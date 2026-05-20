@@ -49,7 +49,7 @@ const LabelPayments = () => {
 
   // Pagination and month filter state for payments table
   const [paymentsPage, setPaymentsPage] = useState(1);
-  const [paymentsPageSize, setPaymentsPageSize] = useState(20);
+  const [paymentsPageSize, setPaymentsPageSize] = useState(5);
   const [paymentsMonthFilter, setPaymentsMonthFilter] = useState('');
 
   // State for filtering and sorting

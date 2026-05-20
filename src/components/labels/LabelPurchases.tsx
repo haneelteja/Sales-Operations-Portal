@@ -135,7 +135,7 @@ const LabelPurchases = () => {
 
   // Pagination and month filter state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(5);
   const [monthFilter, setMonthFilter] = useState('');
 
   // Filtering and sorting state

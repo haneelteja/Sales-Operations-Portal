@@ -10,7 +10,7 @@ interface PageSizeSelectorProps {
 export const PageSizeSelector: React.FC<PageSizeSelectorProps> = ({
   pageSize,
   onPageSizeChange,
-  options = [20, 50, 100],
+  options = [5, 10, 20, 50, 100],
   totalRecords,
 }) => {
   return (
