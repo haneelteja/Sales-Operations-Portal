@@ -80,7 +80,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('client_followups')
-      .select('client_name, branch, comments, next_followup_date'),
+      .select('dealer_name, branch, comments, next_followup_date'),
   ]);
 
   if (txResult.error) throw txResult.error;
@@ -89,7 +89,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
   const transactions = txResult.data ?? [];
   const customers = custResult.data ?? [];
   const followups = (followupResult.data ?? []) as Array<{
-    client_name: string;
+    dealer_name: string;
     branch: string;
     comments: string | null;
     next_followup_date: string | null;
@@ -105,7 +105,7 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
 
   const followupMap = new Map<string, { comments: string; nextFollowupDate: string }>();
   for (const f of followups) {
-    followupMap.set(`${f.client_name}|||${f.branch}`, {
+    followupMap.set(`${f.dealer_name}|||${f.branch}`, {
       comments: f.comments ?? '',
       nextFollowupDate: f.next_followup_date ?? '',
     });
@@ -230,18 +230,19 @@ function FollowupNotesDrawer({
       await insertFollowupNote(customerId, trimmed, followupDate || null, operatorName);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
+      const { error: upsertError } = await (supabase as any)
         .from('client_followups')
         .upsert(
           {
-            client_name: dealerName,
+            dealer_name: dealerName,
             branch,
             comments: trimmed,
             ...(followupDate ? { next_followup_date: followupDate } : {}),
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'client_name,branch' }
+          { onConflict: 'dealer_name,branch' }
         );
+      if (upsertError) throw upsertError;
 
       queryClient.invalidateQueries({ queryKey: ['followup-notes', customerId] });
       queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });
