@@ -281,10 +281,28 @@ const FactoryPricingTab: React.FC = () => {
     if (confirm('Delete this pricing record?')) deleteMutation.mutate(id);
   };
 
-  const exportToExcel = () => {
-    const rows = filteredAndSortedRows.flatMap(r =>
-      r.history.map(record => {
-        const gst = record.tax || 0;
+  const exportToExcel = async () => {
+    const fresh = await queryClient.fetchQuery({
+      queryKey: ['factory-pricing'],
+      queryFn: async () => {
+        const { data } = await supabase
+          .from('factory_pricing')
+          .select('id, sku, price_per_bottle, cost_per_case, bottles_per_case, pricing_date, tax, description')
+          .order('pricing_date', { ascending: false });
+        return (data || []) as PricingRecord[];
+      },
+      staleTime: 0,
+    });
+
+    const freshGroups = new Map<string, PricingRecord[]>();
+    for (const record of fresh) {
+      if (!freshGroups.has(record.sku)) freshGroups.set(record.sku, []);
+      freshGroups.get(record.sku)!.push(record);
+    }
+
+    const rows = Array.from(freshGroups.values()).flatMap(history =>
+      history.map(record => {
+        const gst = record.tax ?? 0;
         const totalBottle = calcTotalCostPerBottle(record.price_per_bottle, gst);
         return {
           'Pricing Date': record.pricing_date,
@@ -292,13 +310,14 @@ const FactoryPricingTab: React.FC = () => {
           'Bottles/Case': record.bottles_per_case,
           'Price/Bottle (₹)': record.price_per_bottle,
           'GST (%)': gst,
-          'Total Cost/Bottle (₹)': +totalBottle.toFixed(4),
+          'Total Cost/Bottle (₹)': isNaN(totalBottle) ? '' : +totalBottle.toFixed(4),
           'Total Cost/Case (₹)': record.cost_per_case,
           Description: record.description ?? '',
         };
       })
     );
-    exportJsonToExcel(rows, 'factory-pricing');
+
+    await exportJsonToExcel(rows, 'Elma Factory Pricing', 'elma-factory-pricing.xlsx');
   };
 
   const toggleExpand = (sku: string) => {
