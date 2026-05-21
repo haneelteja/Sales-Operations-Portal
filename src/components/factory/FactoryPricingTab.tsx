@@ -282,20 +282,22 @@ const FactoryPricingTab: React.FC = () => {
   };
 
   const exportToExcel = () => {
-    const rows = filteredAndSortedRows.map(r => {
-      const gst = r.latest.tax || 0;
-      const totalBottle = calcTotalCostPerBottle(r.latest.price_per_bottle, gst);
-      return {
-        'Pricing Date': r.latest.pricing_date,
-        SKU: r.sku,
-        'Bottles/Case': r.latest.bottles_per_case,
-        'Price/Bottle (₹)': r.latest.price_per_bottle,
-        'GST (%)': gst,
-        'Total Cost/Bottle (₹)': +totalBottle.toFixed(4),
-        'Total Cost/Case (₹)': r.latest.cost_per_case,
-        Description: r.latest.description ?? '',
-      };
-    });
+    const rows = filteredAndSortedRows.flatMap(r =>
+      r.history.map(record => {
+        const gst = record.tax || 0;
+        const totalBottle = calcTotalCostPerBottle(record.price_per_bottle, gst);
+        return {
+          'Pricing Date': record.pricing_date,
+          SKU: record.sku,
+          'Bottles/Case': record.bottles_per_case,
+          'Price/Bottle (₹)': record.price_per_bottle,
+          'GST (%)': gst,
+          'Total Cost/Bottle (₹)': +totalBottle.toFixed(4),
+          'Total Cost/Case (₹)': record.cost_per_case,
+          Description: record.description ?? '',
+        };
+      })
+    );
     exportJsonToExcel(rows, 'factory-pricing');
   };
 
