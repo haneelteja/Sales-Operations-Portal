@@ -87,6 +87,8 @@ const FactoryPricingTab: React.FC = () => {
         .order('pricing_date', { ascending: false });
       return (data || []) as PricingRecord[];
     },
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const selectedSkuConfig = useMemo(
@@ -293,6 +295,8 @@ const FactoryPricingTab: React.FC = () => {
       },
       staleTime: 0,
     });
+
+    queryClient.setQueryData(['factory-pricing'], fresh);
 
     const freshGroups = new Map<string, PricingRecord[]>();
     for (const record of fresh) {
