@@ -191,27 +191,41 @@ const FactoryPayables = () => {
   };
 
   // Fetch factory transactions
+  // Fetch all customers (active + inactive) for transaction display lookup.
+  // Separate from the production-form query (active only) to ensure every
+  // factory_payables row resolves its client_name/branch even if the customer
+  // was later deactivated. This also avoids a PostgREST embedded-resource join
+  // that silently drops 3 rows when the customers table has per-SKU rows.
+  const { data: allCustomers } = useQuery({
+    queryKey: ["customers-all-factory"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, client_name, branch");
+      return data || [];
+    },
+  });
+
+  const customerById = useMemo(() => {
+    const map: Record<string, { client_name: string; branch: string }> = {};
+    (allCustomers || []).forEach(c => { map[c.id] = { client_name: c.client_name, branch: c.branch }; });
+    return map;
+  }, [allCustomers]);
+
   const { data: transactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ["factory-transactions"],
     ...getQueryConfig("factory-transactions"),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("factory_payables")
-        .select(`
-          *,
-          customers (
-            id,
-            client_name,
-            branch
-          )
-        `)
+        .select("*")
         .order("created_at", { ascending: false });
-      
+
       if (error) {
         console.error("Error fetching factory transactions:", error);
         throw error;
       }
-      
+
       return data || [];
     },
   });
@@ -261,8 +275,8 @@ const FactoryPayables = () => {
     const type = transaction.transaction_type || '';
     const clientName = transaction.transaction_type === 'payment' 
       ? (transaction.description || 'Elma Payment')
-      : (transaction.customers?.client_name || '');
-    const area = transaction.customers?.branch || '';
+      : (customerById[transaction.customer_id]?.client_name || '');
+    const area = customerById[transaction.customer_id]?.branch || '';
     const quantity = transaction.quantity?.toString() || '';
     const pricePerCase = getDisplayPricePerCase(transaction.sku, transaction.transaction_date, transaction.transaction_type, transaction.amount, transaction.quantity);
     const pricePerCaseStr = pricePerCase?.toString() || '';
@@ -358,14 +372,14 @@ const FactoryPayables = () => {
       case 'client':
         valueA = a.transaction_type === 'payment' 
           ? (a.description || 'Elma Payment')
-          : (a.customers?.client_name || '');
+          : (customerById[a.customer_id]?.client_name || '');
         valueB = b.transaction_type === 'payment' 
           ? (b.description || 'Elma Payment')
-          : (b.customers?.client_name || '');
+          : (customerById[b.customer_id]?.client_name || '');
         break;
       case 'branch':
-        valueA = a.customers?.branch || '';
-        valueB = b.customers?.branch || '';
+        valueA = customerById[a.customer_id]?.branch || '';
+        valueB = customerById[b.customer_id]?.branch || '';
         break;
       case 'sku':
         valueA = a.sku || '';
@@ -430,8 +444,8 @@ const FactoryPayables = () => {
     transactions.forEach(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.client_name || '');
-      const area = t.customers?.branch || '';
+        : (customerById[t.customer_id]?.client_name || '');
+      const area = customerById[t.customer_id]?.branch || '';
       const sku = t.sku || '';
       const type = t.transaction_type || '';
       if (!passesMultiFilter(area, columnFilters.branch)) return;
@@ -448,8 +462,8 @@ const FactoryPayables = () => {
     transactions.forEach(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.client_name || '');
-      const area = t.customers?.branch || '';
+        : (customerById[t.customer_id]?.client_name || '');
+      const area = customerById[t.customer_id]?.branch || '';
       const sku = t.sku || '';
       const type = t.transaction_type || '';
       if (!passesMultiFilter(clientName, columnFilters.client)) return;
@@ -478,9 +492,9 @@ const FactoryPayables = () => {
     return [...new Set(transactions.filter(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.client_name || '');
+        : (customerById[t.customer_id]?.client_name || '');
       if (!passesMultiFilter(clientName, columnFilters.client)) return false;
-      if (!passesMultiFilter(t.customers?.branch || '', columnFilters.branch)) return false;
+      if (!passesMultiFilter(customerById[t.customer_id]?.branch || '', columnFilters.branch)) return false;
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return false;
       return true;
     }).map(t => t.transaction_type).filter(Boolean))].sort();
@@ -491,9 +505,9 @@ const FactoryPayables = () => {
     return [...new Set(transactions.filter(t => {
       const clientName = t.transaction_type === 'payment'
         ? (t.description || 'Elma Payment')
-        : (t.customers?.client_name || '');
+        : (customerById[t.customer_id]?.client_name || '');
       if (!passesMultiFilter(clientName, columnFilters.client)) return false;
-      if (!passesMultiFilter(t.customers?.branch || '', columnFilters.branch)) return false;
+      if (!passesMultiFilter(customerById[t.customer_id]?.branch || '', columnFilters.branch)) return false;
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return false;
       return true;
     }).map(t => t.sku).filter(Boolean))].sort();
@@ -504,13 +518,13 @@ const FactoryPayables = () => {
     const exportData = filteredAndSortedTransactions.map((transaction) => {
       const clientName = transaction.transaction_type === 'payment' 
         ? (transaction.description || 'Elma Payment')
-        : (transaction.customers?.client_name || '');
+        : (customerById[transaction.customer_id]?.client_name || '');
       const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
 
       return {
         'Date': new Date(transaction.transaction_date).toLocaleDateString(),
         'Client': clientName,
-        'Branch': transaction.customers?.branch || '',
+        'Branch': customerById[transaction.customer_id]?.branch || '',
         'SKU': transaction.sku || '',
         'Quantity': transaction.quantity || 0,
         'Price per case': pricePerCase || '',
@@ -1164,7 +1178,7 @@ const FactoryPayables = () => {
               paginatedTransactions.map((transaction) => {
                 const clientName = transaction.transaction_type === 'payment'
                   ? (transaction.description || 'Elma Payment')
-                  : (transaction.customers?.client_name || '-');
+                  : (customerById[transaction.customer_id]?.client_name || '-');
                 const pricePerCase = getDisplayPricePerCase(transaction.sku, transaction.transaction_date, transaction.transaction_type, transaction.amount, transaction.quantity);
 
                 return (
@@ -1176,7 +1190,7 @@ const FactoryPayables = () => {
                   {clientName}
                 </TableCell>
                 <TableCell>
-                  {transaction.customers?.branch || '-'}
+                  {customerById[transaction.customer_id]?.branch || '-'}
                 </TableCell>
                 <TableCell>
                   {transaction.sku || '-'}
