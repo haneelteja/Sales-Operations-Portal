@@ -9,9 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X, Wallet } from 'lucide-react';
+import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X, Wallet, FileText, Receipt } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ExcelJS from 'exceljs';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { exportLedger } from '@/lib/ledgerExport';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,6 +43,16 @@ interface FollowupNote {
 
 type SortKey = 'outstanding-desc' | 'outstanding-asc' | 'name' | 'last-payment' | 'followup';
 
+interface LedgerRow {
+  date: string;
+  particulars: string;
+  sku: string | null;
+  cases: number | null;
+  debit: number | null;
+  credit: number | null;
+  balance: number;
+}
+
 // ── Helper Functions ──────────────────────────────────────────────────────────
 
 async function fetchFollowupNotes(customerId: string): Promise<FollowupNote[]> {
@@ -65,6 +77,34 @@ async function insertFollowupNote(
     .from('client_followup_notes')
     .insert({ customer_id: customerId, note, followup_date: followupDate || null, created_by: createdBy || null });
   if (error) throw error;
+}
+
+async function fetchLedgerRows(customerId: string): Promise<LedgerRow[]> {
+  const { data, error } = await supabase
+    .from('sales_transactions')
+    .select('transaction_date, transaction_type, sku, quantity, amount, description')
+    .eq('customer_id', customerId)
+    .order('transaction_date', { ascending: true });
+  if (error) throw error;
+
+  let balance = 0;
+  return (data ?? []).map(tx => {
+    const isSale = tx.transaction_type === 'sale';
+    const debit = isSale ? (tx.amount ?? 0) : null;
+    const credit = isSale ? null : (tx.amount ?? 0);
+    balance += (debit ?? 0) - (credit ?? 0);
+    return {
+      date: tx.transaction_date,
+      particulars: isSale
+        ? `Stock Delivered${tx.description ? ` — ${tx.description}` : ''}`
+        : `Payment Received${tx.description ? ` — ${tx.description}` : ''}`,
+      sku: tx.sku,
+      cases: tx.quantity,
+      debit,
+      credit,
+      balance,
+    };
+  });
 }
 
 // ── Data Fetching ─────────────────────────────────────────────────────────────
@@ -173,6 +213,175 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
   }
 
   return { rows, collectionsThisMonth };
+}
+
+// ── LedgerDrawer ──────────────────────────────────────────────────────────────
+
+interface LedgerDrawerProps {
+  open: boolean;
+  onClose: () => void;
+  customerId: string;
+  dealerName: string;
+  branch: string;
+  outstanding: number;
+}
+
+function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstanding }: LedgerDrawerProps) {
+  const [exporting, setExporting] = useState(false);
+
+  const { data: ledger, isLoading } = useQuery({
+    queryKey: ['customer-ledger', customerId],
+    queryFn: () => fetchLedgerRows(customerId),
+    enabled: open && !!customerId,
+    staleTime: 30000,
+  });
+
+  const fmtFull = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
+  const fmtDateLedger = (d: string) =>
+    new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  const lastRow = ledger?.[ledger.length - 1];
+  const closingBalance = lastRow?.balance ?? 0;
+
+  const handleExport = async () => {
+    if (!ledger?.length) return;
+    setExporting(true);
+    try {
+      const rows = ledger.map(r => ({
+        date: r.date,
+        clientName: dealerName,
+        branch: branch || '',
+        type: r.debit != null ? 'sale' : 'payment',
+        sku: r.sku,
+        cases: r.cases,
+        amount: r.debit ?? r.credit ?? 0,
+        description: r.particulars,
+      }));
+      const safeName = dealerName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const dateStr = new Date().toISOString().split('T')[0];
+      await exportLedger(
+        rows,
+        `Ledger_${safeName}_${dateStr}.xlsx`,
+        `Client Ledger — ${dealerName}${branch ? ` (${branch})` : ''}`
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0 overflow-hidden">
+        {/* Header */}
+        <SheetHeader className="px-6 py-4 border-b bg-card flex-shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <SheetTitle className="text-base font-semibold leading-tight">{dealerName}</SheetTitle>
+              {branch && <p className="text-sm text-muted-foreground mt-0.5">{branch}</p>}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExport}
+              disabled={exporting || !ledger?.length}
+              className="gap-1.5 text-xs flex-shrink-0"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {exporting ? 'Exporting…' : 'Export Ledger'}
+            </Button>
+          </div>
+
+          {/* Summary pill */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            <div className="flex items-center gap-1.5 bg-muted/60 rounded-lg px-3 py-1.5">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Outstanding</span>
+              <span className={`text-sm font-bold ${
+                closingBalance > 0 ? 'text-red-600' :
+                closingBalance < 0 ? 'text-emerald-600' :
+                'text-foreground'
+              }`}>
+                {fmtFull(Math.abs(closingBalance))}{closingBalance < 0 ? ' (overpaid)' : ''}
+              </span>
+            </div>
+          </div>
+        </SheetHeader>
+
+        {/* Ledger table */}
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-40 gap-2">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+              <span className="text-sm text-muted-foreground">Loading ledger…</span>
+            </div>
+          ) : !ledger?.length ? (
+            <div className="flex flex-col items-center justify-center h-40 text-center gap-2">
+              <p className="text-sm text-muted-foreground">No transactions found</p>
+            </div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm">
+                <tr>
+                  <th className="text-left py-2.5 px-4 text-muted-foreground font-semibold">Date</th>
+                  <th className="text-left py-2.5 px-4 text-muted-foreground font-semibold">Particulars</th>
+                  <th className="text-right py-2.5 px-3 text-muted-foreground font-semibold">Debit</th>
+                  <th className="text-right py-2.5 px-3 text-muted-foreground font-semibold">Credit</th>
+                  <th className="text-right py-2.5 px-4 text-muted-foreground font-semibold">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger.map((row, i) => (
+                  <tr
+                    key={i}
+                    className={`border-t border-border/40 ${
+                      row.debit != null
+                        ? 'bg-red-50/40 dark:bg-red-900/10'
+                        : 'bg-emerald-50/40 dark:bg-emerald-900/10'
+                    }`}
+                  >
+                    <td className="py-2 px-4 text-muted-foreground whitespace-nowrap">{fmtDateLedger(row.date)}</td>
+                    <td className="py-2 px-4 text-foreground leading-snug max-w-[180px]">
+                      <span className="line-clamp-2">{row.particulars}</span>
+                      {row.sku && (
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">
+                          {row.sku}{row.cases ? ` · ${row.cases} cases` : ''}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-right font-medium text-red-600 dark:text-red-400 whitespace-nowrap">
+                      {row.debit != null ? fmtFull(row.debit) : ''}
+                    </td>
+                    <td className="py-2 px-3 text-right font-medium text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                      {row.credit != null ? fmtFull(row.credit) : ''}
+                    </td>
+                    <td className={`py-2 px-4 text-right font-semibold whitespace-nowrap ${
+                      row.balance > 0 ? 'text-red-600 dark:text-red-400' :
+                      row.balance < 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                      'text-foreground'
+                    }`}>
+                      {fmtFull(Math.abs(row.balance))}{row.balance < 0 ? ' CR' : row.balance > 0 ? ' DR' : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="sticky bottom-0 bg-card border-t-2 border-border">
+                <tr>
+                  <td colSpan={2} className="py-2.5 px-4 font-bold text-foreground text-xs">Closing Balance</td>
+                  <td colSpan={2} />
+                  <td className={`py-2.5 px-4 text-right font-bold text-sm ${
+                    closingBalance > 0 ? 'text-red-600 dark:text-red-400' :
+                    closingBalance < 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                    'text-foreground'
+                  }`}>
+                    {fmtFull(Math.abs(closingBalance))}{closingBalance < 0 ? ' CR' : closingBalance > 0 ? ' DR' : ''}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
 }
 
 // ── FollowupNotesDrawer ───────────────────────────────────────────────────────
@@ -386,6 +595,13 @@ export default function ReceivablesTrackingView() {
     branch: string;
     outstanding: number;
     key: string;
+  } | null>(null);
+
+  const [activeLedger, setActiveLedger] = useState<{
+    customerId: string;
+    dealerName: string;
+    branch: string;
+    outstanding: number;
   } | null>(null);
 
   const { data, isLoading } = useQuery<FetchResult>({
@@ -655,6 +871,7 @@ export default function ReceivablesTrackingView() {
                 <th className="px-4 py-3 font-semibold min-w-[240px]">Latest Note</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Next Follow-up</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Log</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Ledger</th>
               </tr>
             </thead>
             <tbody>
@@ -724,6 +941,26 @@ export default function ReceivablesTrackingView() {
                       Log
                     </Button>
                   </td>
+
+                  {/* View Ledger button */}
+                  <td className="px-4 py-3 align-top">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 text-blue-600 hover:text-blue-700 border-blue-200 bg-blue-50/40 hover:bg-blue-50"
+                      onClick={() =>
+                        setActiveLedger({
+                          customerId: row.customerId,
+                          dealerName: row.dealerName,
+                          branch: row.branch,
+                          outstanding: row.outstanding,
+                        })
+                      }
+                    >
+                      <Receipt className="h-4 w-4 mr-1" />
+                      View Ledger
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -745,6 +982,18 @@ export default function ReceivablesTrackingView() {
           branch={activeNotes.branch}
           outstanding={activeNotes.outstanding}
           currentFollowupDate={activeRow?.nextFollowupDate ?? ''}
+        />
+      )}
+
+      {/* Ledger Drawer */}
+      {activeLedger && (
+        <LedgerDrawer
+          open={!!activeLedger}
+          onClose={() => setActiveLedger(null)}
+          customerId={activeLedger.customerId}
+          dealerName={activeLedger.dealerName}
+          branch={activeLedger.branch}
+          outstanding={activeLedger.outstanding}
         />
       )}
     </div>
