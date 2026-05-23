@@ -39,6 +39,7 @@ BEGIN
     INSERT INTO public.orders (
       client,
       client_name,
+      area,
       branch,
       sku,
       number_of_cases,
@@ -49,6 +50,7 @@ BEGIN
     VALUES (
       client_val,
       client_val,
+      branch_val,
       branch_val,
       COALESCE(NULLIF(trim((rec->>'sku')::text), ''), ''),
       COALESCE((rec->>'number_of_cases')::integer, 0),
