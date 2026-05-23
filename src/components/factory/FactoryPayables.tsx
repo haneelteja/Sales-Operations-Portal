@@ -44,6 +44,7 @@ const FactoryPayables = () => {
   });
 
   const [editingTransaction, setEditingTransaction] = useState<FactoryPayable | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     amount: "",
     quantity: "",
@@ -661,6 +662,7 @@ const FactoryPayables = () => {
     onSuccess: () => {
       toast({ title: "Success", description: "Transaction updated successfully!" });
       setEditingTransaction(null);
+      setEditDialogOpen(false);
       invalidateRelated('factory_payables');
     },
     onError: (error: unknown) => {
@@ -730,6 +732,7 @@ const FactoryPayables = () => {
       description: transaction.description || "",
       transaction_date: transaction.transaction_date || ""
     });
+    setEditDialogOpen(true);
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
@@ -761,6 +764,7 @@ const FactoryPayables = () => {
   };
 
   return (
+    <>
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1222,87 +1226,13 @@ const FactoryPayables = () => {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditClick(transaction)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Edit Transaction</DialogTitle>
-                        </DialogHeader>
-                        <form onSubmit={handleEditSubmit} className="space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="edit-date">Date</Label>
-                              <Input
-                                id="edit-date"
-                                type="date"
-                                value={editForm.transaction_date}
-                                onChange={(e) => setEditForm({...editForm, transaction_date: e.target.value})}
-                              />
-                            </div>
-                            
-                            {editingTransaction?.transaction_type === 'production' && (
-                              <>
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-sku">SKU</Label>
-                                  <SearchableSelect
-                                    options={(availableSKUs ?? []).map(sku => ({ value: sku, label: sku }))}
-                                    value={editForm.sku || ""}
-                                    onValueChange={(value) => setEditForm({...editForm, sku: value})}
-                                    placeholder="Select SKU"
-                                  />
-                                </div>
-                                
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit-quantity">Quantity (cases)</Label>
-                                  <Input
-                                    id="edit-quantity"
-                                    type="number"
-                                    value={editForm.quantity}
-                                    onChange={(e) => setEditForm({...editForm, quantity: e.target.value})}
-                                  />
-                                </div>
-                              </>
-                            )}
-                            
-                            {editingTransaction?.transaction_type === 'payment' && (
-                              <div className="space-y-2">
-                                <Label htmlFor="edit-amount">Amount (₹)</Label>
-                                <Input
-                                  id="edit-amount"
-                                  type="number"
-                                  step="0.01"
-                                  value={editForm.amount}
-                                  onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
-                                />
-                              </div>
-                            )}
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label htmlFor="edit-description">Description</Label>
-                            <Textarea
-                              id="edit-description"
-                              value={editForm.description}
-                              onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                            />
-                          </div>
-                          
-                          <div className="flex justify-end gap-2">
-                            <Button type="submit" disabled={updateMutation.isPending}>
-                              {updateMutation.isPending ? "Updating..." : "Update"}
-                            </Button>
-                          </div>
-                        </form>
-                      </DialogContent>
-                    </Dialog>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditClick(transaction)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                     
                     <Button
                       variant="outline"
@@ -1363,6 +1293,96 @@ const FactoryPayables = () => {
       </div>}
 
     </div>
+
+      {/* Controlled edit dialog — single instance, not per-row */}
+
+      <Dialog open={editDialogOpen} onOpenChange={(open) => { setEditDialogOpen(open); if (!open) setEditingTransaction(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Transaction</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-date">Date</Label>
+                <Input
+                  id="edit-date"
+                  type="date"
+                  value={editForm.transaction_date}
+                  onChange={(e) => setEditForm({...editForm, transaction_date: e.target.value})}
+                />
+              </div>
+
+              {editingTransaction?.transaction_type === 'production' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-sku">SKU</Label>
+                    <SearchableSelect
+                      options={(availableSKUs ?? []).map(sku => ({ value: sku, label: sku }))}
+                      value={editForm.sku || ""}
+                      onValueChange={(value) => setEditForm({...editForm, sku: value})}
+                      placeholder="Select SKU"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-quantity">Quantity (cases)</Label>
+                    <Input
+                      id="edit-quantity"
+                      type="number"
+                      value={editForm.quantity}
+                      onChange={(e) => setEditForm({...editForm, quantity: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Total Amount (₹)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={(() => {
+                        const price = getPricePerCase(editForm.sku, editForm.transaction_date);
+                        return price && editForm.quantity ? (parseInt(editForm.quantity) * price).toFixed(4) : '0';
+                      })()}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                </>
+              )}
+
+              {editingTransaction?.transaction_type === 'payment' && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-amount">Amount (₹)</Label>
+                  <Input
+                    id="edit-amount"
+                    type="number"
+                    step="0.01"
+                    value={editForm.amount}
+                    onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={editForm.description}
+                onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="submit" disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? "Updating..." : "Update"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
