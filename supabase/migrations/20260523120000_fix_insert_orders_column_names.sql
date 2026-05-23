@@ -1,7 +1,7 @@
 -- Fix insert_orders RPC after schema_cleanup renamed:
 --   orders.date  → orders.order_date
 --   orders.area  → orders.branch
--- The RPC was still inserting into the old column names, causing 400 errors.
+-- Also: live DB has a client_name column (NOT NULL) that must be populated.
 
 DROP FUNCTION IF EXISTS public.insert_orders(jsonb);
 CREATE OR REPLACE FUNCTION public.insert_orders(orders_json jsonb)
@@ -11,11 +11,12 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  rec       jsonb;
-  new_id    uuid;
-  ids       uuid[] := '{}';
+  rec        jsonb;
+  new_id     uuid;
+  ids        uuid[] := '{}';
   branch_val text;
   date_val   date;
+  client_val text;
 BEGIN
   IF orders_json IS NULL OR jsonb_array_length(orders_json) = 0 THEN
     RAISE EXCEPTION 'orders_json must be a non-empty array';
@@ -23,6 +24,7 @@ BEGIN
 
   FOR rec IN SELECT * FROM jsonb_array_elements(orders_json)
   LOOP
+    client_val := COALESCE(NULLIF(trim((rec->>'client')::text), ''), '');
     branch_val := COALESCE(
       NULLIF(trim((rec->>'branch')::text), ''),
       NULLIF(trim((rec->>'area')::text),   ''),
@@ -36,6 +38,7 @@ BEGIN
 
     INSERT INTO public.orders (
       client,
+      client_name,
       branch,
       sku,
       number_of_cases,
@@ -44,7 +47,8 @@ BEGIN
       status
     )
     VALUES (
-      COALESCE(NULLIF(trim((rec->>'client')::text), ''), ''),
+      client_val,
+      client_val,
       branch_val,
       COALESCE(NULLIF(trim((rec->>'sku')::text), ''), ''),
       COALESCE((rec->>'number_of_cases')::integer, 0),
