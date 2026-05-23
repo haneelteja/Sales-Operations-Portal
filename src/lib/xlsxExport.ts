@@ -4,6 +4,16 @@
  */
 import ExcelJS from 'exceljs';
 
+function parseDateValue(v: unknown): number {
+  if (!v) return 0;
+  const s = String(v);
+  const direct = Date.parse(s);
+  if (!isNaN(direct)) return direct;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return Date.parse(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+  return 0;
+}
+
 export async function exportToExcel(
   data: Record<string, unknown>[],
   sheetName: string,
@@ -13,12 +23,17 @@ export async function exportToExcel(
   const worksheet = workbook.addWorksheet(sheetName);
 
   if (data.length > 0) {
+    const dateKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('date'));
+    const sorted = dateKey
+      ? [...data].sort((a, b) => parseDateValue(b[dateKey]) - parseDateValue(a[dateKey]))
+      : data;
+
     worksheet.columns = Object.keys(data[0]).map((key) => ({
       header: key,
       key,
       width: 20,
     }));
-    worksheet.addRows(data);
+    worksheet.addRows(sorted);
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
