@@ -761,7 +761,10 @@ const ConfigurationManagement = () => {
       <AddDealerDialog
         open={isAddDealerOpen}
         onOpenChange={setIsAddDealerOpen}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["customers-management"] })}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["customers-management"] });
+          queryClient.invalidateQueries({ queryKey: ["customers"] });
+        }}
       />
 
       {contactsTarget && (
