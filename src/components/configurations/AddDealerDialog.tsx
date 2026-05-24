@@ -162,6 +162,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const [branchInput, setBranchInput] = useState("");
   const [gstNumber, setGstNumber] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [requiresBackLabel, setRequiresBackLabel] = useState(false);
   const [skuRows, setSkuRows] = useState<SkuPricingRow[]>([getInitialRow()]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   /** After loading an existing client+branch, baseline prices per SKU - inserts only when price changes or SKU is new */
@@ -252,6 +253,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setBranchInput("");
     setGstNumber("");
     setWhatsappNumber("");
+    setRequiresBackLabel(false);
     setSkuRows(updateRowPricePerCase([getInitialRow()]));
     setFieldErrors({});
     initialPricesBySkuRef.current = {};
@@ -450,6 +452,22 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         .eq("branch", resolvedArea);
       if (syncErr) throw new Error(handleSupabaseError(syncErr));
 
+      // If back label is enabled, insert a history entry only when not already active
+      if (requiresBackLabel) {
+        const { data: latest } = await supabase
+          .from("customer_back_label_history")
+          .select("requires_back_label")
+          .eq("client_name", resolvedDealerName)
+          .order("effective_from", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!latest || !latest.requires_back_label) {
+          const { error: histErr } = await supabase
+            .from("customer_back_label_history")
+            .insert({ client_name: resolvedDealerName, requires_back_label: true, effective_from: date });
+          if (histErr) throw new Error(handleSupabaseError(histErr));
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
@@ -459,6 +477,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       queryClient.invalidateQueries({ queryKey: ["add-client-branches"] });
       queryClient.invalidateQueries({ queryKey: ["add-client-pair-rows"] });
       queryClient.invalidateQueries({ queryKey: ["sku-configurations-options"] });
+      queryClient.invalidateQueries({ queryKey: ["back-label-history"] });
       toast({
         title: "Success",
         description: isPairHistoryMode
@@ -625,6 +644,22 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               {fieldErrors.whatsapp_number && (
                 <p className="text-sm text-destructive">{fieldErrors.whatsapp_number}</p>
               )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/40">
+            <Switch
+              id="requires-back-label"
+              checked={requiresBackLabel}
+              onCheckedChange={setRequiresBackLabel}
+            />
+            <div>
+              <Label htmlFor="requires-back-label" className="cursor-pointer font-medium">
+                Requires Back Label
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Enable if this client's bottles will have a back label applied
+              </p>
             </div>
           </div>
 
