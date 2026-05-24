@@ -2,6 +2,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LabelPurchases from "./LabelPurchases";
 import LabelAvailability from "./LabelAvailability";
 import LabelPayments from "./LabelPayments";
+import BackLabels from "./BackLabels";
 
 const Labels = () => {
   return (
@@ -14,10 +15,11 @@ const Labels = () => {
       </div>
 
       <Tabs defaultValue="availability" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="availability">Label Availability</TabsTrigger>
           <TabsTrigger value="purchases">Labels Purchase</TabsTrigger>
           <TabsTrigger value="payments">Labels Payment</TabsTrigger>
+          <TabsTrigger value="back-labels">Back Labels</TabsTrigger>
         </TabsList>
 
         <TabsContent value="availability" className="space-y-4">
@@ -30,6 +32,10 @@ const Labels = () => {
 
         <TabsContent value="payments" className="space-y-4">
           <LabelPayments />
+        </TabsContent>
+
+        <TabsContent value="back-labels" className="space-y-4">
+          <BackLabels />
         </TabsContent>
       </Tabs>
     </div>
