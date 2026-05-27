@@ -94,7 +94,8 @@ const BackLabels = () => {
         .from("customer_back_label_history")
         .select("id, client_name, requires_back_label, effective_from")
         .order("client_name", { ascending: true })
-        .order("effective_from", { ascending: false });
+        .order("effective_from", { ascending: false })
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return (data || []) as HistoryRow[];
     },
