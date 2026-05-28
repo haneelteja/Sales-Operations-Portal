@@ -948,9 +948,6 @@ const OrderManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Order Analysis */}
-      <OrderAnalysis />
-
       {/* Order Registration Form */}
       <Card className="border-slate-200">
         <CardHeader className="py-3 px-4">
@@ -1554,6 +1551,9 @@ const OrderManagement: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Order Analysis */}
+      <OrderAnalysis />
 
     </div>
   );
