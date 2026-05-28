@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -295,8 +296,25 @@ function formatDurationEdge(seconds: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+function getSmtpClient() {
+  const host = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
+  const port = parseInt(Deno.env.get('SMTP_PORT') || '465');
+  const username = Deno.env.get('SMTP_USER');
+  const password = Deno.env.get('SMTP_PASS');
+  if (!username || !password) throw new Error('SMTP_USER and SMTP_PASS secrets are not configured');
+  return new SMTPClient({
+    connection: { hostname: host, port, tls: port === 465, auth: { username, password } },
+  });
+}
+
+function getFromAddress() {
+  const email = Deno.env.get('SMTP_FROM_EMAIL') || Deno.env.get('SMTP_USER') || 'noreply@example.com';
+  const name = Deno.env.get('SMTP_FROM_NAME') || 'Aamodha Operations';
+  return `${name} <${email}>`;
+}
+
 async function sendSuccessNotification(
-  email: string,
+  toEmail: string,
   details: {
     backupType: string;
     fileName: string;
@@ -305,13 +323,15 @@ async function sendSuccessNotification(
     durationSeconds: number;
     logId: string;
   },
-  supabase: SupabaseClient
+  _supabase: SupabaseClient
 ): Promise<void> {
   const istNow = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-  const { error } = await supabase.functions.invoke('send-email', {
-    body: {
-      to: email,
-      subject: `✅ [Database Backup] Backup Successful — ${istNow} IST`,
+  const client = getSmtpClient();
+  try {
+    await client.send({
+      from: getFromAddress(),
+      to: toEmail,
+      subject: `[Database Backup] Backup Successful — ${istNow} IST`,
       html: `
         <h2 style="color:#16a34a">Database Backup Successful</h2>
         <table style="border-collapse:collapse;font-size:14px">
@@ -326,26 +346,29 @@ async function sendSuccessNotification(
         <hr style="margin:16px 0">
         <p style="color:#9ca3af;font-size:12px">Automated message from Aamodha Operations Portal.</p>
       `,
-    },
-  });
-  if (error) throw new Error(`send-email invoke failed: ${error.message}`);
+    });
+  } finally {
+    await client.close();
+  }
 }
 
 async function sendFailureNotification(
-  email: string,
+  toEmail: string,
   details: {
     backupType: string;
     fileName: string;
     error: string;
     logId: string;
   },
-  supabase: SupabaseClient
+  _supabase: SupabaseClient
 ): Promise<void> {
   const istNow = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-  const { error } = await supabase.functions.invoke('send-email', {
-    body: {
-      to: email,
-      subject: `❌ [Database Backup] Backup Failed — ${istNow} IST`,
+  const client = getSmtpClient();
+  try {
+    await client.send({
+      from: getFromAddress(),
+      to: toEmail,
+      subject: `[Database Backup] Backup Failed — ${istNow} IST`,
       html: `
         <h2 style="color:#dc2626">Database Backup Failed</h2>
         <table style="border-collapse:collapse;font-size:14px">
@@ -360,7 +383,8 @@ async function sendFailureNotification(
         <hr style="margin:16px 0">
         <p style="color:#9ca3af;font-size:12px">Automated message from Aamodha Operations Portal.</p>
       `,
-    },
-  });
-  if (error) throw new Error(`send-email invoke failed: ${error.message}`);
+    });
+  } finally {
+    await client.close();
+  }
 }
