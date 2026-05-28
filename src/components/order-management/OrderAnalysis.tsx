@@ -1,10 +1,18 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { getQueryConfig } from "@/lib/query-configs";
+import { ColumnFilter } from "@/components/ui/column-filter";
+import { Pagination } from "@/components/ui/pagination";
+import { PageSizeSelector } from "@/components/ui/page-size-selector";
+import { exportJsonToExcel } from "@/services/export/excelExport";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { Download } from "lucide-react";
 
 interface AnalysisRow {
   client: string;
@@ -18,9 +26,16 @@ interface AnalysisRow {
   totalOrders: number;
 }
 
-function daysDiff(from: number, to: number) {
-  return Math.round((to - from) / 86400000);
-}
+const STATUS_ORDER: Record<string, number> = {
+  OVERDUE: 0,
+  "DUE SOON": 1,
+  "ON TRACK": 2,
+  "Only 1 Order": 3,
+  "N/A": 4,
+  "No Orders": 5,
+};
+
+const STATUS_OPTIONS = ["OVERDUE", "DUE SOON", "ON TRACK", "Only 1 Order", "N/A", "No Orders"];
 
 function computeStatus(totalOrders: number, expectedNext: string | null, daysOverdue: number): string {
   if (totalOrders === 0) return "No Orders";
@@ -36,15 +51,6 @@ function computeStatus(totalOrders: number, expectedNext: string | null, daysOve
   return "ON TRACK";
 }
 
-const STATUS_ORDER: Record<string, number> = {
-  OVERDUE: 0,
-  "DUE SOON": 1,
-  "ON TRACK": 2,
-  "Only 1 Order": 3,
-  "N/A": 4,
-  "No Orders": 5,
-};
-
 function StatusBadge({ status, daysOverdue }: { status: string; daysOverdue: number }) {
   if (status === "OVERDUE")
     return <Badge variant="destructive">OVERDUE ({daysOverdue}d)</Badge>;
@@ -55,7 +61,52 @@ function StatusBadge({ status, daysOverdue }: { status: string; daysOverdue: num
   return <Badge variant="secondary">{status}</Badge>;
 }
 
+const fmtDate = (d: string | null) =>
+  d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+
 const OrderAnalysis: React.FC = () => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebouncedValue(searchTerm, 300);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+
+  const [colFilters, setColFilters] = useState({
+    client: "",
+    branch: "",
+    outstanding: "",
+    lastOrderDate: "",
+    avgDays: "",
+    expectedNext: "",
+    status: "",
+  });
+
+  const [colSorts, setColSorts] = useState<Record<string, "asc" | "desc" | null>>({
+    client: null,
+    branch: null,
+    outstanding: null,
+    lastOrderDate: null,
+    avgDays: null,
+    expectedNext: null,
+    daysOverdue: null,
+    status: null,
+  });
+
+  const handleFilterChange = useCallback((key: string, value: string | string[]) => {
+    setColFilters((prev) => ({ ...prev, [key]: Array.isArray(value) ? value[0] ?? "" : value }));
+    setPage(1);
+  }, []);
+
+  const handleSortChange = useCallback((key: string, direction: "asc" | "desc" | null) => {
+    setColSorts((prev) => {
+      const next: Record<string, "asc" | "desc" | null> = {};
+      Object.keys(prev).forEach((k) => { next[k] = null; });
+      next[key] = direction;
+      return next;
+    });
+  }, []);
+
+  // ── Data Queries ──────────────────────────────────────────────────────────────
+
   const { data: rawOrders = [] } = useQuery({
     queryKey: ["orders"],
     ...getQueryConfig("orders"),
@@ -93,11 +144,12 @@ const OrderAnalysis: React.FC = () => {
     },
   });
 
-  const rows = useMemo<AnalysisRow[]>(() => {
+  // ── Compute base analysis rows ────────────────────────────────────────────────
+
+  const baseRows = useMemo<AnalysisRow[]>(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Collect all order dates per client+branch key
     const dateMap = new Map<string, string[]>();
     const addDate = (client: string, branch: string, date: string | null | undefined) => {
       if (!client || !date) return;
@@ -112,7 +164,6 @@ const OrderAnalysis: React.FC = () => {
     rawOrders.forEach((o) => addDate(o.client, o.branch, o.date || o.created_at));
     rawDispatch.forEach((d) => addDate(d.client, d.branch, d.delivery_date));
 
-    // Outstanding per client+branch
     const outstandingMap = new Map<string, number>();
     rawTx.forEach((tx) => {
       const cust = tx.customers;
@@ -151,7 +202,7 @@ const OrderAnalysis: React.FC = () => {
       if (expectedNext) {
         const expMs = new Date(expectedNext).getTime();
         if (today.getTime() > expMs) {
-          daysOverdue = daysDiff(expMs, today.getTime());
+          daysOverdue = Math.round((today.getTime() - expMs) / 86400000);
         }
       }
 
@@ -168,6 +219,7 @@ const OrderAnalysis: React.FC = () => {
       });
     });
 
+    // Default sort: OVERDUE first, then by daysOverdue desc
     return result.sort((a, b) => {
       const so = (STATUS_ORDER[a.status] ?? 6) - (STATUS_ORDER[b.status] ?? 6);
       if (so !== 0) return so;
@@ -175,41 +227,266 @@ const OrderAnalysis: React.FC = () => {
     });
   }, [rawOrders, rawDispatch, rawTx]);
 
-  const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  // ── Unique values for filter dropdowns ────────────────────────────────────────
+
+  const uniqueClients = useMemo(() => [...new Set(baseRows.map((r) => r.client))].sort(), [baseRows]);
+  const uniqueBranches = useMemo(() => [...new Set(baseRows.map((r) => r.branch).filter(Boolean))].sort(), [baseRows]);
+
+  // ── Filter + sort ─────────────────────────────────────────────────────────────
+
+  const filteredRows = useMemo(() => {
+    let rows = baseRows;
+
+    // Global search
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.client.toLowerCase().includes(q) ||
+          r.branch.toLowerCase().includes(q) ||
+          r.status.toLowerCase().includes(q) ||
+          (r.lastOrderDate || "").includes(q) ||
+          (r.expectedNext || "").includes(q) ||
+          (r.avgDays !== null ? String(r.avgDays) : "").includes(q)
+      );
+    }
+
+    // Column filters
+    if (colFilters.client) rows = rows.filter((r) => r.client.toLowerCase().includes(colFilters.client.toLowerCase()));
+    if (colFilters.branch) rows = rows.filter((r) => r.branch.toLowerCase().includes(colFilters.branch.toLowerCase()));
+    if (colFilters.outstanding) {
+      const n = parseFloat(colFilters.outstanding);
+      if (!isNaN(n)) rows = rows.filter((r) => Math.round(r.outstanding) === Math.round(n));
+    }
+    if (colFilters.lastOrderDate) rows = rows.filter((r) => (r.lastOrderDate || "").startsWith(colFilters.lastOrderDate));
+    if (colFilters.avgDays) {
+      const n = parseInt(colFilters.avgDays);
+      if (!isNaN(n)) rows = rows.filter((r) => r.avgDays === n);
+    }
+    if (colFilters.expectedNext) rows = rows.filter((r) => (r.expectedNext || "").startsWith(colFilters.expectedNext));
+    if (colFilters.status) rows = rows.filter((r) => r.status === colFilters.status);
+
+    // Column sort
+    const sortKey = Object.keys(colSorts).find((k) => colSorts[k] !== null);
+    if (sortKey) {
+      const dir = colSorts[sortKey]!;
+      rows = [...rows].sort((a, b) => {
+        let av: string | number = 0;
+        let bv: string | number = 0;
+        switch (sortKey) {
+          case "client":       av = a.client.toLowerCase(); bv = b.client.toLowerCase(); break;
+          case "branch":       av = a.branch.toLowerCase(); bv = b.branch.toLowerCase(); break;
+          case "outstanding":  av = a.outstanding; bv = b.outstanding; break;
+          case "lastOrderDate":av = a.lastOrderDate ?? ""; bv = b.lastOrderDate ?? ""; break;
+          case "avgDays":      av = a.avgDays ?? -1; bv = b.avgDays ?? -1; break;
+          case "expectedNext": av = a.expectedNext ?? ""; bv = b.expectedNext ?? ""; break;
+          case "daysOverdue":  av = a.daysOverdue; bv = b.daysOverdue; break;
+          case "status":       av = STATUS_ORDER[a.status] ?? 6; bv = STATUS_ORDER[b.status] ?? 6; break;
+        }
+        if (av < bv) return dir === "asc" ? -1 : 1;
+        if (av > bv) return dir === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return rows;
+  }, [baseRows, debouncedSearch, colFilters, colSorts]);
+
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
+  // ── Export ────────────────────────────────────────────────────────────────────
+
+  const handleExport = useCallback(async () => {
+    if (!filteredRows.length) return;
+    const data = filteredRows.map((r) => ({
+      Client: r.client,
+      Branch: r.branch || "",
+      "Outstanding (₹)": Math.round(r.outstanding),
+      "Last Order Date": r.lastOrderDate ?? "",
+      "Avg Days Between Orders": r.avgDays ?? "",
+      "Expected Next Order": r.expectedNext ?? "",
+      "Days Overdue": r.daysOverdue || "",
+      Status: r.status,
+      "Total Orders": r.totalOrders,
+    }));
+    await exportJsonToExcel(data, "Order Analysis", `Order_Analysis_${new Date().toISOString().split("T")[0]}.xlsx`);
+  }, [filteredRows]);
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold">Order Analysis — Expected Next Order</CardTitle>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Per client &amp; branch · Avg days between orders based on full order history (pending + dispatched)
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <CardTitle className="text-base font-semibold">Order Analysis — Expected Next Order</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Per client &amp; branch · Avg days between orders based on full order history (pending + dispatched)
+            </p>
+          </div>
+          <div className="flex-1 min-w-[200px] max-w-xs">
+            <Input
+              placeholder="Search analysis..."
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={!filteredRows.length}
+            className="whitespace-nowrap"
+          >
+            <Download className="h-4 w-4 mr-1" />
+            Export Excel
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="table-auto w-full">
             <TableHeader>
               <TableRow className="bg-slate-50">
-                <TableHead className="py-2 px-4">Client</TableHead>
-                <TableHead className="py-2 px-4">Branch</TableHead>
-                <TableHead className="py-2 px-4 text-right">Outstanding (₹)</TableHead>
-                <TableHead className="py-2 px-4">Last Order</TableHead>
-                <TableHead className="py-2 px-4 text-right">Avg Days</TableHead>
-                <TableHead className="py-2 px-4">Expected Next</TableHead>
-                <TableHead className="py-2 px-4 text-right">Days Overdue</TableHead>
-                <TableHead className="py-2 px-4">Status</TableHead>
+                <TableHead className="py-2 px-4">
+                  <div className="flex items-center gap-1">
+                    Client
+                    <ColumnFilter
+                      columnKey="client"
+                      columnName="Client"
+                      filterValue={colFilters.client}
+                      onFilterChange={(v) => handleFilterChange("client", v)}
+                      onClearFilter={() => handleFilterChange("client", "")}
+                      sortDirection={colSorts.client}
+                      onSortChange={(d) => handleSortChange("client", d)}
+                      dataType="text"
+                      options={uniqueClients}
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4">
+                  <div className="flex items-center gap-1">
+                    Branch
+                    <ColumnFilter
+                      columnKey="branch"
+                      columnName="Branch"
+                      filterValue={colFilters.branch}
+                      onFilterChange={(v) => handleFilterChange("branch", v)}
+                      onClearFilter={() => handleFilterChange("branch", "")}
+                      sortDirection={colSorts.branch}
+                      onSortChange={(d) => handleSortChange("branch", d)}
+                      dataType="text"
+                      options={uniqueBranches}
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    Outstanding (₹)
+                    <ColumnFilter
+                      columnKey="outstanding"
+                      columnName="Outstanding"
+                      filterValue={colFilters.outstanding}
+                      onFilterChange={(v) => handleFilterChange("outstanding", v)}
+                      onClearFilter={() => handleFilterChange("outstanding", "")}
+                      sortDirection={colSorts.outstanding}
+                      onSortChange={(d) => handleSortChange("outstanding", d)}
+                      dataType="number"
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4">
+                  <div className="flex items-center gap-1">
+                    Last Order
+                    <ColumnFilter
+                      columnKey="lastOrderDate"
+                      columnName="Last Order"
+                      filterValue={colFilters.lastOrderDate}
+                      onFilterChange={(v) => handleFilterChange("lastOrderDate", v)}
+                      onClearFilter={() => handleFilterChange("lastOrderDate", "")}
+                      sortDirection={colSorts.lastOrderDate}
+                      onSortChange={(d) => handleSortChange("lastOrderDate", d)}
+                      dataType="date"
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    Avg Days
+                    <ColumnFilter
+                      columnKey="avgDays"
+                      columnName="Avg Days"
+                      filterValue={colFilters.avgDays}
+                      onFilterChange={(v) => handleFilterChange("avgDays", v)}
+                      onClearFilter={() => handleFilterChange("avgDays", "")}
+                      sortDirection={colSorts.avgDays}
+                      onSortChange={(d) => handleSortChange("avgDays", d)}
+                      dataType="number"
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4">
+                  <div className="flex items-center gap-1">
+                    Expected Next
+                    <ColumnFilter
+                      columnKey="expectedNext"
+                      columnName="Expected Next"
+                      filterValue={colFilters.expectedNext}
+                      onFilterChange={(v) => handleFilterChange("expectedNext", v)}
+                      onClearFilter={() => handleFilterChange("expectedNext", "")}
+                      sortDirection={colSorts.expectedNext}
+                      onSortChange={(d) => handleSortChange("expectedNext", d)}
+                      dataType="date"
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    Days Overdue
+                    <ColumnFilter
+                      columnKey="daysOverdue"
+                      columnName="Days Overdue"
+                      filterValue={""}
+                      onFilterChange={() => {}}
+                      onClearFilter={() => {}}
+                      sortDirection={colSorts.daysOverdue}
+                      onSortChange={(d) => handleSortChange("daysOverdue", d)}
+                      dataType="number"
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4">
+                  <div className="flex items-center gap-1">
+                    Status
+                    <ColumnFilter
+                      columnKey="status"
+                      columnName="Status"
+                      filterValue={colFilters.status}
+                      onFilterChange={(v) => handleFilterChange("status", v)}
+                      onClearFilter={() => handleFilterChange("status", "")}
+                      sortDirection={colSorts.status}
+                      onSortChange={(d) => handleSortChange("status", d)}
+                      dataType="text"
+                      options={STATUS_OPTIONS}
+                    />
+                  </div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 ? (
+              {pagedRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No order data available
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((row) => (
+                pagedRows.map((row) => (
                   <TableRow
                     key={`${row.client}|||${row.branch}`}
                     className={
@@ -217,7 +494,7 @@ const OrderAnalysis: React.FC = () => {
                         ? "bg-red-50 hover:bg-red-100"
                         : row.status === "DUE SOON"
                         ? "bg-amber-50 hover:bg-amber-100"
-                        : undefined
+                        : "hover:bg-slate-50"
                     }
                   >
                     <TableCell className="font-medium py-2 px-4">{row.client}</TableCell>
@@ -257,6 +534,26 @@ const OrderAnalysis: React.FC = () => {
               )}
             </TableBody>
           </Table>
+        </div>
+        <div className="flex items-center justify-between px-4 py-3 border-t">
+          <PageSizeSelector
+            pageSize={pageSize}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+            totalRecords={filteredRows.length}
+          />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={filteredRows.length}
+            pageSize={pageSize}
+            onNextPage={() => setPage((p) => Math.min(p + 1, totalPages))}
+            onPreviousPage={() => setPage((p) => Math.max(p - 1, 1))}
+            onFirstPage={() => setPage(1)}
+            onLastPage={() => setPage(totalPages)}
+            onPageChange={setPage}
+            hasNextPage={page < totalPages}
+            hasPreviousPage={page > 1}
+          />
         </div>
       </CardContent>
     </Card>
