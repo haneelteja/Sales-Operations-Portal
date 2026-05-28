@@ -20,6 +20,7 @@ import { ColumnFilter } from "@/components/ui/column-filter";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Pagination } from "@/components/ui/pagination";
 import { PageSizeSelector } from "@/components/ui/page-size-selector";
+import OrderAnalysis from "./OrderAnalysis";
 
 interface OrderRow {
   id: string;
@@ -946,6 +947,9 @@ const OrderManagement: React.FC = () => {
           <h2 className="text-xl font-semibold">Order Management</h2>
         </div>
       </div>
+
+      {/* Order Analysis */}
+      <OrderAnalysis />
 
       {/* Order Registration Form */}
       <Card className="border-slate-200">
