@@ -165,7 +165,13 @@ serve(async (req) => {
             logId,
           }, supabase);
         } catch (emailError) {
-          console.error('Failed to send success notification email:', emailError);
+          const emailMsg = emailError instanceof Error ? emailError.message : String(emailError);
+          console.error('Failed to send success notification email:', emailMsg);
+          // Store email error in backup log so it's visible in the UI
+          await supabase
+            .from('backup_logs')
+            .update({ failure_reason: `Backup succeeded but email notification failed: ${emailMsg}` })
+            .eq('id', logId);
         }
       }
 

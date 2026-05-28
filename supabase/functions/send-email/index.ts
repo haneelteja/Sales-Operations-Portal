@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,38 +21,38 @@ serve(async (req) => {
       );
     }
 
-    const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    if (!resendApiKey) {
-      console.error('RESEND_API_KEY not configured');
-      return new Response(
-        JSON.stringify({ error: 'Email service not configured: RESEND_API_KEY missing' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const smtpHost = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
+    const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '465');
+    const smtpUser = Deno.env.get('SMTP_USER');
+    const smtpPass = Deno.env.get('SMTP_PASS');
+    const fromEmail = Deno.env.get('SMTP_FROM_EMAIL') || smtpUser || 'noreply@example.com';
+    const fromName = Deno.env.get('SMTP_FROM_NAME') || 'Aamodha Operations';
+
+    if (!smtpUser || !smtpPass) {
+      throw new Error('SMTP_USER and SMTP_PASS are not configured in edge function secrets');
     }
 
-    const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'Aamodha Operations <onboarding@resend.dev>';
-
-    const payload: Record<string, unknown> = { from: fromEmail, to, subject };
-    if (html) payload.html = html;
-    if (text) payload.text = text;
-
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
+    const client = new SMTPClient({
+      connection: {
+        hostname: smtpHost,
+        port: smtpPort,
+        tls: smtpPort === 465,
+        auth: { username: smtpUser, password: smtpPass },
       },
-      body: JSON.stringify(payload),
     });
 
-    const result = await response.json();
+    await client.send({
+      from: `${fromName} <${fromEmail}>`,
+      to,
+      subject,
+      ...(html ? { html } : {}),
+      ...(text ? { content: text } : {}),
+    });
 
-    if (!response.ok) {
-      throw new Error(`Resend API error: ${JSON.stringify(result)}`);
-    }
+    await client.close();
 
     return new Response(
-      JSON.stringify({ success: true, id: result.id }),
+      JSON.stringify({ success: true }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
