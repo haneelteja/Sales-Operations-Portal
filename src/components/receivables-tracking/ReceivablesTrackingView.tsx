@@ -26,6 +26,12 @@ interface RawRow {
   lastPaymentDate: string | null;
   comments: string;
   nextFollowupDate: string;
+  totalPayments: number;
+  firstPaymentDate: string | null;
+  avgDaysBetweenPayments: number | null;
+  expectedNextPayment: string | null;
+  paymentDaysOverdue: number | null; // null = "N/A"
+  paymentStatus: string;
 }
 
 interface FetchResult {
@@ -158,6 +164,8 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     sales: number;
     payments: number;
     lastPaymentDate: string | null;
+    paymentCount: number;
+    firstPaymentDate: string | null;
   }>();
 
   const today = new Date().toISOString().split('T')[0];
@@ -177,6 +185,8 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
         sales: 0,
         payments: 0,
         lastPaymentDate: null,
+        paymentCount: 0,
+        firstPaymentDate: null,
       });
     }
     const g = groups.get(key)!;
@@ -185,8 +195,11 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
       g.sales += tx.amount ?? 0;
     } else if (tx.transaction_type === 'payment') {
       g.payments += tx.amount ?? 0;
-      if (!g.lastPaymentDate || (tx.transaction_date ?? '') > g.lastPaymentDate) {
-        g.lastPaymentDate = tx.transaction_date ?? null;
+      g.paymentCount += 1;
+      const txDate = tx.transaction_date ?? null;
+      if (txDate) {
+        if (!g.firstPaymentDate || txDate < g.firstPaymentDate) g.firstPaymentDate = txDate;
+        if (!g.lastPaymentDate || txDate > g.lastPaymentDate) g.lastPaymentDate = txDate;
       }
       if ((tx.transaction_date ?? '') >= monthStart) {
         collectionsThisMonth += tx.amount ?? 0;
@@ -194,10 +207,52 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
     }
   }
 
+  const todayForCalc = new Date();
+  todayForCalc.setHours(0, 0, 0, 0);
+
   const rows: RawRow[] = [];
   for (const [key, g] of groups) {
     const outstanding = g.sales - g.payments;
     if (outstanding < 0.01) continue;
+
+    const totalPayments = g.paymentCount;
+    const firstPaymentDate = g.firstPaymentDate;
+    const lastPmtDate = g.lastPaymentDate;
+
+    let avgDaysBetweenPayments: number | null = null;
+    let expectedNextPayment: string | null = null;
+    let paymentDaysOverdue: number | null = null;
+
+    if (totalPayments > 1 && firstPaymentDate && lastPmtDate) {
+      const firstMs = new Date(firstPaymentDate).setHours(0, 0, 0, 0);
+      const lastMs = new Date(lastPmtDate).setHours(0, 0, 0, 0);
+      avgDaysBetweenPayments = Math.round((lastMs - firstMs) / ((totalPayments - 1) * 86400000));
+
+      const expDate = new Date(lastPmtDate);
+      expDate.setDate(expDate.getDate() + avgDaysBetweenPayments);
+      expectedNextPayment = expDate.toISOString().split('T')[0];
+
+      const expMs = new Date(expectedNextPayment).setHours(0, 0, 0, 0);
+      paymentDaysOverdue = Math.max(0, Math.round((todayForCalc.getTime() - expMs) / 86400000));
+    }
+
+    let paymentStatus: string;
+    if (totalPayments === 0) {
+      paymentStatus = 'No Payments';
+    } else if (totalPayments === 1) {
+      paymentStatus = 'Only 1 Payment';
+    } else if (paymentDaysOverdue === null) {
+      paymentStatus = 'N/A';
+    } else if (paymentDaysOverdue > 14) {
+      paymentStatus = 'OVERDUE';
+    } else if (paymentDaysOverdue > 0) {
+      paymentStatus = 'DUE SOON';
+    } else if (expectedNextPayment) {
+      const expMs = new Date(expectedNextPayment).setHours(0, 0, 0, 0);
+      paymentStatus = todayForCalc.getTime() >= expMs - 5 * 86400000 ? 'DUE SOON' : 'ON TRACK';
+    } else {
+      paymentStatus = 'ON TRACK';
+    }
 
     const followup = followupMap.get(key) ?? { comments: '', nextFollowupDate: '' };
     rows.push({
@@ -206,9 +261,15 @@ async function fetchReceivablesTracking(): Promise<FetchResult> {
       dealerName: g.dealerName,
       branch: g.branch,
       outstanding,
-      lastPaymentDate: g.lastPaymentDate,
+      lastPaymentDate: lastPmtDate,
       comments: followup.comments,
       nextFollowupDate: followup.nextFollowupDate,
+      totalPayments,
+      firstPaymentDate,
+      avgDaysBetweenPayments,
+      expectedNextPayment,
+      paymentDaysOverdue,
+      paymentStatus,
     });
   }
 
@@ -672,46 +733,66 @@ export default function ReceivablesTrackingView() {
     ws.columns = [
       { key: 'client', width: 28 },
       { key: 'branch', width: 22 },
-      { key: 'outstanding', width: 20 },
-      { key: 'lastPayment', width: 18 },
-      { key: 'comments', width: 42 },
+      { key: 'outstanding', width: 18 },
+      { key: 'totalPmts', width: 14 },
+      { key: 'firstPmtDate', width: 18 },
+      { key: 'lastPmtDate', width: 18 },
+      { key: 'avgDays', width: 14 },
+      { key: 'expectedNext', width: 22 },
+      { key: 'daysOverdue', width: 16 },
+      { key: 'pmtStatus', width: 18 },
+      { key: 'comments', width: 40 },
       { key: 'followup', width: 18 },
     ];
 
-    ws.mergeCells('A1:F1');
+    ws.mergeCells('A1:L1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'Receivables Management Report';
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 24;
 
-    ws.mergeCells('A2:F2');
+    ws.mergeCells('A2:L2');
     ws.getCell('A2').value = `Generated: ${new Date().toLocaleDateString('en-IN')}`;
     ws.getCell('A2').font = { size: 10, italic: true, color: { argb: 'FF666666' } };
     ws.getCell('A2').alignment = { horizontal: 'center' };
 
-    ws.mergeCells('A3:F3');
+    ws.mergeCells('A3:L3');
     ws.getCell('A3').value = `Overdue Clients: ${overdueCount}   |   Collections This Month: ₹${(data?.collectionsThisMonth ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
     ws.getCell('A3').font = { size: 10, color: { argb: 'FF333333' } };
     ws.getCell('A3').alignment = { horizontal: 'center' };
 
     ws.addRow([]);
 
-    const headerRow = ws.addRow(['Client', 'Branch', 'Outstanding (₹)', 'Last Payment', 'Latest Note', 'Next Follow-up']);
+    const headerRow = ws.addRow([
+      'Client', 'Branch', 'Outstanding (₹)',
+      'Total Payments', 'First Payment Date', 'Last Payment Date',
+      'Avg Days Between Payments', 'Expected Next Payment', 'Payment Days Overdue',
+      'Payment Status', 'Latest Note', 'Next Follow-up',
+    ]);
     headerRow.height = 20;
     headerRow.eachCell(cell => {
       cell.fill = headerFill;
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       cell.border = { top: { style: 'thin' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
     });
+
+    const fmtDateXlsx = (d: string | null) =>
+      d ? new Date(d).toLocaleDateString('en-IN') : '—';
 
     for (const row of displayRows) {
       const dataRow = ws.addRow([
         row.dealerName,
         row.branch,
         row.outstanding,
-        row.lastPaymentDate ? new Date(row.lastPaymentDate).toLocaleDateString('en-IN') : '—',
+        row.totalPayments,
+        fmtDateXlsx(row.firstPaymentDate),
+        fmtDateXlsx(row.lastPaymentDate),
+        row.avgDaysBetweenPayments !== null ? row.avgDaysBetweenPayments : 'N/A',
+        fmtDateXlsx(row.expectedNextPayment),
+        row.paymentDaysOverdue !== null ? row.paymentDaysOverdue : 'N/A',
+        row.paymentStatus,
         row.comments || '',
         row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
       ]);
@@ -867,7 +948,13 @@ export default function ReceivablesTrackingView() {
               <tr className="bg-muted/60 border-b text-left">
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Client Branch</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Outstanding</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Last Payment</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Total Pmts</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">First Pmt Date</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Last Pmt Date</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Avg Days</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Expected Next Pmt</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Days Overdue</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Pmt Status</th>
                 <th className="px-4 py-3 font-semibold min-w-[240px]">Latest Note</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Next Follow-up</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Log</th>
@@ -898,9 +985,57 @@ export default function ReceivablesTrackingView() {
                     {fmt(row.outstanding)}
                   </td>
 
-                  {/* Last Payment */}
+                  {/* Total Payments */}
+                  <td className="px-4 py-3 text-right whitespace-nowrap align-top text-foreground font-medium">
+                    {row.totalPayments || '—'}
+                  </td>
+
+                  {/* First Payment Date */}
+                  <td className="px-4 py-3 whitespace-nowrap text-muted-foreground align-top">
+                    {fmtDate(row.firstPaymentDate)}
+                  </td>
+
+                  {/* Last Payment Date */}
                   <td className="px-4 py-3 whitespace-nowrap text-muted-foreground align-top">
                     {fmtDate(row.lastPaymentDate)}
+                  </td>
+
+                  {/* Avg Days Between Payments */}
+                  <td className="px-4 py-3 text-right whitespace-nowrap text-muted-foreground align-top">
+                    {row.avgDaysBetweenPayments !== null ? `${row.avgDaysBetweenPayments}d` : 'N/A'}
+                  </td>
+
+                  {/* Expected Next Payment */}
+                  <td className="px-4 py-3 whitespace-nowrap align-top">
+                    {row.expectedNextPayment ? (
+                      <span className="text-sm">{fmtDate(row.expectedNextPayment)}</span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground/50 italic">N/A</span>
+                    )}
+                  </td>
+
+                  {/* Payment Days Overdue */}
+                  <td className="px-4 py-3 text-right whitespace-nowrap align-top">
+                    {row.paymentDaysOverdue === null ? (
+                      <span className="text-muted-foreground/50">N/A</span>
+                    ) : row.paymentDaysOverdue > 0 ? (
+                      <span className="font-semibold text-red-600">{row.paymentDaysOverdue}d</span>
+                    ) : (
+                      <span className="text-emerald-600">0</span>
+                    )}
+                  </td>
+
+                  {/* Payment Status */}
+                  <td className="px-4 py-3 whitespace-nowrap align-top">
+                    {row.paymentStatus === 'OVERDUE' ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">OVERDUE</span>
+                    ) : row.paymentStatus === 'DUE SOON' ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">DUE SOON</span>
+                    ) : row.paymentStatus === 'ON TRACK' ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">ON TRACK</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{row.paymentStatus}</span>
+                    )}
                   </td>
 
                   {/* Latest Note (read-only) */}
