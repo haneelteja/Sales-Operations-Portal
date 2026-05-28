@@ -29,6 +29,7 @@ interface HistoryRow {
   client_name: string;
   requires_back_label: boolean;
   effective_from: string;
+  created_at: string;
 }
 
 const emptyPurchaseForm = (today: string) => ({
@@ -92,7 +93,7 @@ const BackLabels = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customer_back_label_history")
-        .select("id, client_name, requires_back_label, effective_from")
+        .select("id, client_name, requires_back_label, effective_from, created_at")
         .order("client_name", { ascending: true })
         .order("effective_from", { ascending: false })
         .order("created_at", { ascending: false });
