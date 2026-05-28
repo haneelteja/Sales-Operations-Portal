@@ -734,10 +734,6 @@ export default function ReceivablesTrackingView() {
       { key: 'client', width: 28 },
       { key: 'branch', width: 22 },
       { key: 'outstanding', width: 18 },
-      { key: 'totalPmts', width: 14 },
-      { key: 'firstPmtDate', width: 18 },
-      { key: 'lastPmtDate', width: 18 },
-      { key: 'avgDays', width: 14 },
       { key: 'expectedNext', width: 22 },
       { key: 'daysOverdue', width: 16 },
       { key: 'pmtStatus', width: 18 },
@@ -745,19 +741,19 @@ export default function ReceivablesTrackingView() {
       { key: 'followup', width: 18 },
     ];
 
-    ws.mergeCells('A1:L1');
+    ws.mergeCells('A1:H1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'Receivables Management Report';
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 24;
 
-    ws.mergeCells('A2:L2');
+    ws.mergeCells('A2:H2');
     ws.getCell('A2').value = `Generated: ${new Date().toLocaleDateString('en-IN')}`;
     ws.getCell('A2').font = { size: 10, italic: true, color: { argb: 'FF666666' } };
     ws.getCell('A2').alignment = { horizontal: 'center' };
 
-    ws.mergeCells('A3:L3');
+    ws.mergeCells('A3:H3');
     ws.getCell('A3').value = `Overdue Clients: ${overdueCount}   |   Collections This Month: ₹${(data?.collectionsThisMonth ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
     ws.getCell('A3').font = { size: 10, color: { argb: 'FF333333' } };
     ws.getCell('A3').alignment = { horizontal: 'center' };
@@ -766,8 +762,7 @@ export default function ReceivablesTrackingView() {
 
     const headerRow = ws.addRow([
       'Client', 'Branch', 'Outstanding (₹)',
-      'Total Payments', 'First Payment Date', 'Last Payment Date',
-      'Avg Days Between Payments', 'Expected Next Payment', 'Payment Days Overdue',
+      'Expected Next Payment', 'Payment Days Overdue',
       'Payment Status', 'Latest Note', 'Next Follow-up',
     ]);
     headerRow.height = 20;
@@ -786,10 +781,6 @@ export default function ReceivablesTrackingView() {
         row.dealerName,
         row.branch,
         row.outstanding,
-        row.totalPayments,
-        fmtDateXlsx(row.firstPaymentDate),
-        fmtDateXlsx(row.lastPaymentDate),
-        row.avgDaysBetweenPayments !== null ? row.avgDaysBetweenPayments : 'N/A',
         fmtDateXlsx(row.expectedNextPayment),
         row.paymentDaysOverdue !== null ? row.paymentDaysOverdue : 'N/A',
         row.paymentStatus,
@@ -948,10 +939,6 @@ export default function ReceivablesTrackingView() {
               <tr className="bg-muted/60 border-b text-left">
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Client Branch</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Outstanding</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Total Pmts</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">First Pmt Date</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Last Pmt Date</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Avg Days</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Expected Next Pmt</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Days Overdue</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Pmt Status</th>
@@ -983,26 +970,6 @@ export default function ReceivablesTrackingView() {
                   {/* Outstanding */}
                   <td className="px-4 py-3 text-right font-bold text-red-600 whitespace-nowrap align-top">
                     {fmt(row.outstanding)}
-                  </td>
-
-                  {/* Total Payments */}
-                  <td className="px-4 py-3 text-right whitespace-nowrap align-top text-foreground font-medium">
-                    {row.totalPayments || '—'}
-                  </td>
-
-                  {/* First Payment Date */}
-                  <td className="px-4 py-3 whitespace-nowrap text-muted-foreground align-top">
-                    {fmtDate(row.firstPaymentDate)}
-                  </td>
-
-                  {/* Last Payment Date */}
-                  <td className="px-4 py-3 whitespace-nowrap text-muted-foreground align-top">
-                    {fmtDate(row.lastPaymentDate)}
-                  </td>
-
-                  {/* Avg Days Between Payments */}
-                  <td className="px-4 py-3 text-right whitespace-nowrap text-muted-foreground align-top">
-                    {row.avgDaysBetweenPayments !== null ? `${row.avgDaysBetweenPayments}d` : 'N/A'}
                   </td>
 
                   {/* Expected Next Payment */}
