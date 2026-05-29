@@ -116,17 +116,6 @@ function inPeriod(dateStr: string | null | undefined, year: number, months: numb
   return months.length === 0 || months.includes(d.getMonth() + 1);
 }
 
-function effectiveCostPerCase(
-  sku: string,
-  productionDate: string,
-  pricing: Array<{ sku: string; cost_per_case: number | null; pricing_date: string }>,
-): number {
-  const best = pricing
-    .filter((p) => p.sku === sku && p.pricing_date <= productionDate && p.cost_per_case != null)
-    .sort((a, b) => b.pricing_date.localeCompare(a.pricing_date))[0];
-  return best?.cost_per_case ?? 0;
-}
-
 const fmtINR = (n: number) => `₹${Math.round(Math.abs(n)).toLocaleString("en-IN")}`;
 
 // ─── SummaryCard ──────────────────────────────────────────────────────────────
@@ -211,33 +200,19 @@ const Profitability: React.FC = () => {
     },
   });
 
-  const { data: productionRaw = [], isLoading: loadingProd } = useQuery({
-    queryKey: ["prof-production", startDate, endDate],
+  const { data: factoryPayablesRaw = [], isLoading: loadingFactory } = useQuery({
+    queryKey: ["prof-factory", startDate, endDate],
     queryFn: async () => {
       const { data } = await supabase
-        .from("production")
-        .select("no_of_cases, sku, production_date")
-        .gte("production_date", startDate)
-        .lte("production_date", endDate);
+        .from("factory_payables")
+        .select("customer_id, amount, transaction_date")
+        .eq("transaction_type", "production")
+        .gte("transaction_date", startDate)
+        .lte("transaction_date", endDate);
       return (data ?? []) as Array<{
-        no_of_cases: number;
-        sku: string;
-        production_date: string;
-      }>;
-    },
-  });
-
-  const { data: pricingRaw = [] } = useQuery({
-    queryKey: ["prof-pricing"],
-    staleTime: 10 * 60 * 1000,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("factory_pricing")
-        .select("sku, cost_per_case, pricing_date");
-      return (data ?? []) as Array<{
-        sku: string;
-        cost_per_case: number | null;
-        pricing_date: string;
+        customer_id: string | null;
+        amount: number;
+        transaction_date: string;
       }>;
     },
   });
@@ -285,22 +260,29 @@ const Profitability: React.FC = () => {
   });
 
   const isLoading =
-    loadingSales || loadingProd || loadingLabels || loadingBackLabels || loadingTransport;
+    loadingSales || loadingFactory || loadingLabels || loadingBackLabels || loadingTransport;
 
   // ── Core computation (period rows, unfiltered) ────────────────────────────
 
   const { rows, summary } = useMemo(() => {
     const sales = salesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
-    const production = productionRaw.filter((r) => inPeriod(r.production_date, year, months));
+    const factoryPayables = factoryPayablesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
     const labels = labelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const backLabels = backLabelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
 
-    // Global costs
-    const totalFactoryCost = production.reduce(
-      (sum, p) => sum + p.no_of_cases * effectiveCostPerCase(p.sku, p.production_date, pricingRaw),
-      0,
-    );
+    // Factory cost: direct per-client from factory_payables (production type)
+    // Records with null customer_id are allocated proportionally (handled below)
+    const directFactoryMap = new Map<string, number>();
+    let unlinkedFactory = 0;
+    for (const f of factoryPayables) {
+      if (f.customer_id) {
+        directFactoryMap.set(f.customer_id, (directFactoryMap.get(f.customer_id) ?? 0) + (f.amount ?? 0));
+      } else {
+        unlinkedFactory += f.amount ?? 0;
+      }
+    }
+
     const totalLabelsCost =
       labels.reduce((s, l) => s + (l.total_amount ?? 0), 0) +
       backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
@@ -354,7 +336,9 @@ const Profitability: React.FC = () => {
       const { clientId, clientName, branch, revenue: invoiceValue, cases } = entry;
 
       const caseFraction = totalCases > 0 ? cases / totalCases : 0;
-      const factoryCost = totalFactoryCost * caseFraction;
+      const factoryCost =
+        (directFactoryMap.get(clientId) ?? 0) +
+        unlinkedFactory * caseFraction;
       const labelsCost = totalLabelsCost * caseFraction;
 
       const transportCost =
@@ -372,7 +356,7 @@ const Profitability: React.FC = () => {
       clients: result.length,
       cases: result.reduce((s, r) => s + r.cases, 0),
       invoiceValue: result.reduce((s, r) => s + r.invoiceValue, 0),
-      factoryCost: totalFactoryCost,
+      factoryCost: result.reduce((s, r) => s + r.factoryCost, 0),
       labelsCost: totalLabelsCost,
       transportCost: result.reduce((s, r) => s + r.transportCost, 0),
       totalExpense: result.reduce((s, r) => s + r.totalExpense, 0),
@@ -380,7 +364,7 @@ const Profitability: React.FC = () => {
     };
 
     return { rows: result, summary };
-  }, [salesRaw, productionRaw, pricingRaw, labelsRaw, backLabelsRaw, transportRaw, year, months]);
+  }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, transportRaw, year, months]);
 
   // ── Filter option lists (derived from unfiltered rows) ────────────────────
 
