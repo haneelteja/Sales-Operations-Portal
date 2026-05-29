@@ -324,7 +324,7 @@ const Profitability: React.FC = () => {
       labels.reduce((s, l) => s + (l.total_amount ?? 0), 0) +
       backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
 
-    // Revenue per client
+    // Revenue per client (keyed by customer_id UUID)
     const revenueMap = new Map<string, { name: string; branch: string; revenue: number }>();
     for (const s of sales) {
       const cust = s.customers;
@@ -339,7 +339,7 @@ const Profitability: React.FC = () => {
       revenueMap.get(key)!.revenue += s.total_amount ?? 0;
     }
 
-    // Dispatch cases per client
+    // Dispatch cases per client (keyed by customer_id UUID or __name__ fallback)
     const casesMap = new Map<string, { name: string; branch: string; cases: number }>();
     for (const d of dispatch) {
       const key = d.customer_id ?? `__name__${d.client}`;
@@ -349,7 +349,38 @@ const Profitability: React.FC = () => {
       casesMap.get(key)!.cases += d.cases ?? 0;
     }
 
-    const totalCases = [...casesMap.values()].reduce((s, v) => s + v.cases, 0);
+    // Merge revenue + cases by clientName|||branch so that UUID mismatches
+    // (e.g. orders_dispatch.customer_id is null but sales has a UUID) don't
+    // produce duplicate rows for the same client.
+    const mk = (name: string, branch: string) => `${name}|||${branch}`;
+    const merged = new Map<string, {
+      clientId: string | null;
+      clientName: string;
+      branch: string;
+      revenue: number;
+      cases: number;
+    }>();
+
+    for (const [id, rev] of revenueMap) {
+      const key = mk(rev.name, rev.branch);
+      if (!merged.has(key)) {
+        merged.set(key, { clientId: id, clientName: rev.name, branch: rev.branch, revenue: 0, cases: 0 });
+      }
+      merged.get(key)!.revenue += rev.revenue;
+    }
+
+    for (const [id, disp] of casesMap) {
+      const key = mk(disp.name, disp.branch);
+      const clientId = id.startsWith("__name__") ? null : id;
+      if (!merged.has(key)) {
+        merged.set(key, { clientId, clientName: disp.name, branch: disp.branch, revenue: 0, cases: 0 });
+      } else if (!merged.get(key)!.clientId && clientId) {
+        merged.get(key)!.clientId = clientId;
+      }
+      merged.get(key)!.cases += disp.cases;
+    }
+
+    const totalCases = [...merged.values()].reduce((s, v) => s + v.cases, 0);
 
     // Transport per client
     const directTransportMap = new Map<string, number>();
@@ -365,23 +396,16 @@ const Profitability: React.FC = () => {
       }
     }
 
-    // Build unified client rows
-    const allKeys = new Set([...revenueMap.keys(), ...casesMap.keys()]);
+    // Build result rows from merged map
     const result: ProfitRow[] = [];
 
-    for (const key of allKeys) {
-      const rev = revenueMap.get(key);
-      const disp = casesMap.get(key);
-      const clientName = rev?.name ?? disp?.name ?? "Unknown";
-      const branch = rev?.branch || disp?.branch || "";
-      const invoiceValue = rev?.revenue ?? 0;
-      const cases = disp?.cases ?? 0;
+    for (const entry of merged.values()) {
+      const { clientId, clientName, branch, revenue: invoiceValue, cases } = entry;
 
       const caseFraction = totalCases > 0 ? cases / totalCases : 0;
       const factoryCost = totalFactoryCost * caseFraction;
       const labelsCost = totalLabelsCost * caseFraction;
 
-      const clientId = key.startsWith("__name__") ? null : key;
       const transportCost =
         (clientId ? (directTransportMap.get(clientId) ?? 0) : 0) +
         unlinkedTransport * caseFraction;
