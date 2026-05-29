@@ -21,6 +21,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Pagination } from "@/components/ui/pagination";
 import { PageSizeSelector } from "@/components/ui/page-size-selector";
 import OrderAnalysis from "./OrderAnalysis";
+import ClientAnalysis from "./ClientAnalysis";
 
 interface OrderRow {
   id: string;
@@ -1554,6 +1555,9 @@ const OrderManagement: React.FC = () => {
 
       {/* Order Analysis */}
       <OrderAnalysis />
+
+      {/* Client Analysis */}
+      <ClientAnalysis />
 
     </div>
   );
