@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -11,9 +12,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Info } from "lucide-react";
+import { ColumnFilter } from "@/components/ui/column-filter";
+import { Download, TrendingUp, TrendingDown, Info, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { exportJsonToExcel } from "@/services/export/excelExport";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,7 +34,59 @@ interface ProfitRow {
   margin: number;
 }
 
-type SortKey = Exclude<keyof ProfitRow, "clientId" | "clientName" | "branch">;
+interface ColFilters {
+  clientName: string[];
+  branch: string[];
+  cases: string;
+  invoiceValue: string;
+  factoryCost: string;
+  labelsCost: string;
+  transportCost: string;
+  totalExpense: string;
+  profit: string;
+  margin: string;
+}
+
+const EMPTY_FILTERS: ColFilters = {
+  clientName: [],
+  branch: [],
+  cases: "",
+  invoiceValue: "",
+  factoryCost: "",
+  labelsCost: "",
+  transportCost: "",
+  totalExpense: "",
+  profit: "",
+  margin: "",
+};
+
+const SORT_COLS = [
+  "clientName",
+  "branch",
+  "cases",
+  "invoiceValue",
+  "factoryCost",
+  "labelsCost",
+  "transportCost",
+  "totalExpense",
+  "profit",
+  "margin",
+] as const;
+
+type SortCol = (typeof SORT_COLS)[number];
+
+const EMPTY_SORTS: Record<SortCol, "asc" | "desc" | null> = {
+  clientName: null,
+  branch: null,
+  cases: null,
+  invoiceValue: null,
+  factoryCost: null,
+  labelsCost: null,
+  transportCost: null,
+  totalExpense: null,
+  profit: null,
+  margin: null,
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -74,7 +129,7 @@ function effectiveCostPerCase(
 
 const fmtINR = (n: number) => `₹${Math.round(Math.abs(n)).toLocaleString("en-IN")}`;
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── SummaryCard ──────────────────────────────────────────────────────────────
 
 function SummaryCard({
   title,
@@ -85,7 +140,7 @@ function SummaryCard({
   title: string;
   value: string;
   sub?: string;
-  accent?: "green" | "red" | "none";
+  accent?: "green" | "red";
 }) {
   return (
     <Card className={cn(
@@ -119,46 +174,19 @@ function SummaryCard({
   );
 }
 
-function SortableHead({
-  label,
-  col,
-  sortKey,
-  sortDir,
-  onSort,
-  right,
-}: {
-  label: string;
-  col: SortKey;
-  sortKey: SortKey;
-  sortDir: "asc" | "desc";
-  onSort: (col: SortKey) => void;
-  right?: boolean;
-}) {
-  const active = sortKey === col;
-  return (
-    <TableHead
-      className={cn("py-2 px-4 font-semibold cursor-pointer select-none whitespace-nowrap", right && "text-right")}
-      onClick={() => onSort(col)}
-    >
-      <div className={cn("flex items-center gap-1", right && "justify-end")}>
-        {label}
-        {active ? (
-          sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
-        ) : (
-          <ChevronDown className="h-3 w-3 opacity-30" />
-        )}
-      </div>
-    </TableHead>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const Profitability: React.FC = () => {
+  // Date period state
   const [year, setYear] = useState(CURRENT_YEAR);
   const [months, setMonths] = useState<number[]>([]);
-  const [sortKey, setSortKey] = useState<SortKey>("invoiceValue");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // Table interaction state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_FILTERS);
+  const [colSorts, setColSorts] = useState<Record<SortCol, "asc" | "desc" | null>>(EMPTY_SORTS);
+
+  const debouncedSearch = useDebouncedValue(searchTerm, 300);
 
   const { startDate, endDate } = useMemo(() => buildDateRange(year, months), [year, months]);
 
@@ -247,7 +275,7 @@ const Profitability: React.FC = () => {
   const { data: backLabelsRaw = [], isLoading: loadingBackLabels } = useQuery({
     queryKey: ["prof-back-labels", startDate, endDate],
     queryFn: async () => {
-      // back_label_purchases is not in generated types, cast needed
+      // back_label_purchases is not in generated types
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase as any)
         .from("back_label_purchases")
@@ -277,10 +305,9 @@ const Profitability: React.FC = () => {
   const isLoading =
     loadingSales || loadingDispatch || loadingProd || loadingLabels || loadingBackLabels || loadingTransport;
 
-  // ── Computation ────────────────────────────────────────────────────────────
+  // ── Core computation (period rows, unfiltered) ────────────────────────────
 
   const { rows, summary } = useMemo(() => {
-    // Re-filter by specific months when selection is non-contiguous
     const sales = salesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
     const dispatch = dispatchRaw.filter((r) => inPeriod(r.delivery_date, year, months));
     const production = productionRaw.filter((r) => inPeriod(r.production_date, year, months));
@@ -288,7 +315,7 @@ const Profitability: React.FC = () => {
     const backLabels = backLabelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
 
-    // ── Global costs ─────────────────────────────────────────────────────────
+    // Global costs
     const totalFactoryCost = production.reduce(
       (sum, p) => sum + p.no_of_cases * effectiveCostPerCase(p.sku, p.production_date, pricingRaw),
       0,
@@ -297,7 +324,7 @@ const Profitability: React.FC = () => {
       labels.reduce((s, l) => s + (l.total_amount ?? 0), 0) +
       backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
 
-    // ── Revenue per client (from sales_transactions) ──────────────────────────
+    // Revenue per client
     const revenueMap = new Map<string, { name: string; branch: string; revenue: number }>();
     for (const s of sales) {
       const cust = s.customers;
@@ -312,10 +339,9 @@ const Profitability: React.FC = () => {
       revenueMap.get(key)!.revenue += s.total_amount ?? 0;
     }
 
-    // ── Dispatch cases per client ─────────────────────────────────────────────
+    // Dispatch cases per client
     const casesMap = new Map<string, { name: string; branch: string; cases: number }>();
     for (const d of dispatch) {
-      // Prefer customer_id as key; fall back to client name
       const key = d.customer_id ?? `__name__${d.client}`;
       if (!casesMap.has(key)) {
         casesMap.set(key, { name: d.client, branch: d.branch ?? "", cases: 0 });
@@ -325,7 +351,7 @@ const Profitability: React.FC = () => {
 
     const totalCases = [...casesMap.values()].reduce((s, v) => s + v.cases, 0);
 
-    // ── Transport per client ──────────────────────────────────────────────────
+    // Transport per client
     const directTransportMap = new Map<string, number>();
     let unlinkedTransport = 0;
     for (const t of transport) {
@@ -339,7 +365,7 @@ const Profitability: React.FC = () => {
       }
     }
 
-    // ── Build unified client rows ─────────────────────────────────────────────
+    // Build unified client rows
     const allKeys = new Set([...revenueMap.keys(), ...casesMap.keys()]);
     const result: ProfitRow[] = [];
 
@@ -351,12 +377,10 @@ const Profitability: React.FC = () => {
       const invoiceValue = rev?.revenue ?? 0;
       const cases = disp?.cases ?? 0;
 
-      // Proportional allocation of global costs (by case share)
       const caseFraction = totalCases > 0 ? cases / totalCases : 0;
       const factoryCost = totalFactoryCost * caseFraction;
       const labelsCost = totalLabelsCost * caseFraction;
 
-      // Transport: direct (linked) + proportional share of unlinked transport
       const clientId = key.startsWith("__name__") ? null : key;
       const transportCost =
         (clientId ? (directTransportMap.get(clientId) ?? 0) : 0) +
@@ -366,19 +390,7 @@ const Profitability: React.FC = () => {
       const profit = invoiceValue - totalExpense;
       const margin = invoiceValue !== 0 ? (profit / invoiceValue) * 100 : 0;
 
-      result.push({
-        clientId,
-        clientName,
-        branch,
-        cases,
-        invoiceValue,
-        factoryCost,
-        labelsCost,
-        transportCost,
-        totalExpense,
-        profit,
-        margin,
-      });
+      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, transportCost, totalExpense, profit, margin });
     }
 
     const summary = {
@@ -395,37 +407,124 @@ const Profitability: React.FC = () => {
     return { rows: result, summary };
   }, [salesRaw, dispatchRaw, productionRaw, pricingRaw, labelsRaw, backLabelsRaw, transportRaw, year, months]);
 
-  // ── Sorted rows ────────────────────────────────────────────────────────────
+  // ── Filter option lists (derived from unfiltered rows) ────────────────────
 
-  const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) => {
-      const av = a[sortKey] as number;
-      const bv = b[sortKey] as number;
-      return sortDir === "asc" ? av - bv : bv - av;
-    });
-  }, [rows, sortKey, sortDir]);
+  const uniqueClients = useMemo(
+    () => [...new Set(rows.map((r) => r.clientName))].sort(),
+    [rows],
+  );
+  const uniqueBranches = useMemo(
+    () => [...new Set(rows.map((r) => r.branch).filter(Boolean))].sort(),
+    [rows],
+  );
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // ── Display rows: search + column filters + sort ──────────────────────────
+
+  const displayRows = useMemo(() => {
+    let list = rows;
+
+    // Global search (client name + branch)
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      list = list.filter(
+        (r) =>
+          r.clientName.toLowerCase().includes(q) ||
+          r.branch.toLowerCase().includes(q),
+      );
+    }
+
+    // Column multiselect filters (client, branch)
+    if (colFilters.clientName.length > 0) {
+      list = list.filter((r) => colFilters.clientName.includes(r.clientName));
+    }
+    if (colFilters.branch.length > 0) {
+      list = list.filter((r) => colFilters.branch.includes(r.branch));
+    }
+
+    // Numeric minimum-threshold filters
+    const numericCols: Array<{ key: keyof ColFilters; field: keyof ProfitRow }> = [
+      { key: "cases",         field: "cases" },
+      { key: "invoiceValue",  field: "invoiceValue" },
+      { key: "factoryCost",   field: "factoryCost" },
+      { key: "labelsCost",    field: "labelsCost" },
+      { key: "transportCost", field: "transportCost" },
+      { key: "totalExpense",  field: "totalExpense" },
+      { key: "profit",        field: "profit" },
+      { key: "margin",        field: "margin" },
+    ];
+    for (const { key, field } of numericCols) {
+      const raw = colFilters[key];
+      if (typeof raw === "string" && raw !== "") {
+        const threshold = parseFloat(raw);
+        if (!isNaN(threshold)) {
+          list = list.filter((r) => (r[field] as number) >= threshold);
+        }
+      }
+    }
+
+    // Column sort (single active column; default = invoice value desc)
+    const activeSort = SORT_COLS.find((c) => colSorts[c] !== null);
+    if (activeSort) {
+      const dir = colSorts[activeSort]!;
+      list = [...list].sort((a, b) => {
+        let av: string | number = 0;
+        let bv: string | number = 0;
+        if (activeSort === "clientName") {
+          av = a.clientName.toLowerCase(); bv = b.clientName.toLowerCase();
+        } else if (activeSort === "branch") {
+          av = a.branch.toLowerCase(); bv = b.branch.toLowerCase();
+        } else {
+          av = a[activeSort as keyof ProfitRow] as number;
+          bv = b[activeSort as keyof ProfitRow] as number;
+        }
+        if (av < bv) return dir === "asc" ? -1 : 1;
+        if (av > bv) return dir === "asc" ? 1 : -1;
+        return 0;
+      });
+    } else {
+      list = [...list].sort((a, b) => b.invoiceValue - a.invoiceValue);
+    }
+
+    return list;
+  }, [rows, debouncedSearch, colFilters, colSorts]);
+
+  // ── Filtered totals (for table footer) ───────────────────────────────────
+
+  const filteredTotals = useMemo(() => ({
+    cases: displayRows.reduce((s, r) => s + r.cases, 0),
+    invoiceValue: displayRows.reduce((s, r) => s + r.invoiceValue, 0),
+    totalExpense: displayRows.reduce((s, r) => s + r.totalExpense, 0),
+    profit: displayRows.reduce((s, r) => s + r.profit, 0),
+  }), [displayRows]);
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
 
   const toggleMonth = useCallback((m: number) => {
     setMonths((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
   }, []);
 
-  const handleSort = useCallback(
-    (col: SortKey) => {
-      if (sortKey === col) {
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      } else {
-        setSortKey(col);
-        setSortDir("desc");
-      }
-    },
-    [sortKey],
-  );
+  const handleFilterChange = useCallback((col: keyof ColFilters, value: string | string[]) => {
+    setColFilters((prev) => ({ ...prev, [col]: value }));
+  }, []);
+
+  const handleClearFilter = useCallback((col: keyof ColFilters) => {
+    setColFilters((prev) => ({
+      ...prev,
+      [col]: Array.isArray(prev[col]) ? [] : "",
+    }));
+  }, []);
+
+  const handleSortChange = useCallback((col: SortCol, dir: "asc" | "desc" | null) => {
+    setColSorts((prev) => {
+      const next = { ...EMPTY_SORTS };
+      next[col] = dir;
+      return next;
+    });
+  }, []);
 
   const handleExport = useCallback(async () => {
-    if (!sortedRows.length) return;
-    const data = sortedRows.map((r) => ({
+    if (!displayRows.length) return;
+    const data = displayRows.map((r) => ({
       Client: r.clientName,
       Branch: r.branch || "—",
       "Cases Dispatched": r.cases,
@@ -442,13 +541,19 @@ const Profitability: React.FC = () => {
         ? `_${months.map((m) => MONTH_LABELS[m - 1]).join("-")}`
         : "_Full_Year";
     await exportJsonToExcel(data, "Profitability", `Profitability_${year}${suffix}.xlsx`);
-  }, [sortedRows, year, months]);
+  }, [displayRows, year, months]);
 
-  // ── Derived values ─────────────────────────────────────────────────────────
+  // ── Derived display values ────────────────────────────────────────────────
 
   const overallMargin =
     summary.invoiceValue > 0 ? (summary.profit / summary.invoiceValue) * 100 : 0;
   const isProfitable = summary.profit >= 0;
+
+  const filteredMargin =
+    filteredTotals.invoiceValue > 0
+      ? (filteredTotals.profit / filteredTotals.invoiceValue) * 100
+      : 0;
+  const filteredProfitable = filteredTotals.profit >= 0;
 
   const periodLabel =
     months.length === 0
@@ -457,7 +562,13 @@ const Profitability: React.FC = () => {
       ? `${MONTH_LABELS[months[0] - 1]} ${year}`
       : `${months.map((m) => MONTH_LABELS[m - 1]).join(", ")} ${year}`;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const hasActiveFilters =
+    !!debouncedSearch ||
+    colFilters.clientName.length > 0 ||
+    colFilters.branch.length > 0 ||
+    Object.values(colFilters).some((v) => typeof v === "string" && v !== "");
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 space-y-5">
@@ -473,7 +584,7 @@ const Profitability: React.FC = () => {
           variant="outline"
           size="sm"
           onClick={handleExport}
-          disabled={sortedRows.length === 0}
+          disabled={displayRows.length === 0}
           className="shrink-0"
         >
           <Download className="h-4 w-4 mr-1.5" />
@@ -485,7 +596,6 @@ const Profitability: React.FC = () => {
       <Card>
         <CardContent className="pt-4 pb-4">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            {/* Year selector */}
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">Year</span>
               <select
@@ -495,14 +605,10 @@ const Profitability: React.FC = () => {
                 className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 {YEARS.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
+                  <option key={y} value={y}>{y}</option>
                 ))}
               </select>
             </div>
-
-            {/* Month toggles */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-sm font-medium text-muted-foreground mr-0.5">Months</span>
               <Button
@@ -529,7 +635,7 @@ const Profitability: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Summary cards */}
+      {/* Summary cards (period-wide, unaffected by table filters) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard title="Active Clients" value={summary.clients.toString()} />
         <SummaryCard title="Total Cases" value={summary.cases.toLocaleString("en-IN")} />
@@ -537,11 +643,9 @@ const Profitability: React.FC = () => {
         <Card className={cn(isProfitable ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50")}>
           <CardContent className="pt-4 pb-4 px-4">
             <div className="flex items-center gap-1">
-              {isProfitable ? (
-                <TrendingUp className="h-3.5 w-3.5 text-green-600" />
-              ) : (
-                <TrendingDown className="h-3.5 w-3.5 text-red-600" />
-              )}
+              {isProfitable
+                ? <TrendingUp className="h-3.5 w-3.5 text-green-600" />
+                : <TrendingDown className="h-3.5 w-3.5 text-red-600" />}
               <p className={cn("text-xs font-medium uppercase tracking-wide", isProfitable ? "text-green-700" : "text-red-700")}>
                 Net Profit
               </p>
@@ -564,35 +668,231 @@ const Profitability: React.FC = () => {
       <div className="flex items-start gap-2 text-xs text-muted-foreground bg-slate-50 border rounded-md px-3 py-2">
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
-          Factory and label costs are global and allocated to each client proportionally based on their share of total dispatched cases.
-          Transport costs linked directly to a client are applied as-is; unlinked transport is also allocated by case share.
+          Factory and label costs are global and allocated to each client proportionally by their share of total dispatched cases.
+          Unlinked transport is also allocated by case share.
+          Numeric column filters show rows where the value is ≥ the entered threshold.
         </span>
       </div>
 
       {/* Per-client table */}
       <Card>
-        <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Client-wise Breakdown
-          </CardTitle>
+        <CardHeader className="pb-3 pt-4 px-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Client-wise Breakdown
+              {hasActiveFilters && (
+                <span className="ml-2 normal-case text-xs font-normal text-blue-600">
+                  ({displayRows.length} of {rows.length} clients)
+                </span>
+              )}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs text-muted-foreground"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setColFilters(EMPTY_FILTERS);
+                    setColSorts(EMPTY_SORTS);
+                  }}
+                >
+                  Clear all filters
+                </Button>
+              )}
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search client or branch…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-8 pl-8 w-56 text-sm"
+                />
+              </div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table className="text-sm">
               <TableHeader>
                 <TableRow className="bg-slate-50">
-                  <TableHead className="py-2 px-4 font-semibold whitespace-nowrap">Client</TableHead>
-                  <TableHead className="py-2 px-4 font-semibold whitespace-nowrap">Branch</TableHead>
-                  <SortableHead label="Cases" col="cases" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
-                  <SortableHead label="Invoice Value" col="invoiceValue" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
-                  <SortableHead label="Factory Cost" col="factoryCost" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
-                  <SortableHead label="Labels Cost" col="labelsCost" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
-                  <SortableHead label="Transport" col="transportCost" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
-                  <SortableHead label="Total Expense" col="totalExpense" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
-                  <SortableHead label="Profit / Loss" col="profit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
-                  <SortableHead label="Margin %" col="margin" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} right />
+                  {/* Client */}
+                  <TableHead className="py-2 pl-4 pr-1 font-semibold whitespace-nowrap">
+                    <div className="flex items-center gap-0.5">
+                      Client
+                      <ColumnFilter
+                        columnKey="clientName"
+                        columnName="Client"
+                        filterValue={colFilters.clientName}
+                        onFilterChange={(v) => handleFilterChange("clientName", v)}
+                        onClearFilter={() => handleClearFilter("clientName")}
+                        sortDirection={colSorts.clientName}
+                        onSortChange={(d) => handleSortChange("clientName", d)}
+                        dataType="multiselect"
+                        options={uniqueClients}
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Branch */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap">
+                    <div className="flex items-center gap-0.5">
+                      Branch
+                      <ColumnFilter
+                        columnKey="branch"
+                        columnName="Branch"
+                        filterValue={colFilters.branch}
+                        onFilterChange={(v) => handleFilterChange("branch", v)}
+                        onClearFilter={() => handleClearFilter("branch")}
+                        sortDirection={colSorts.branch}
+                        onSortChange={(d) => handleSortChange("branch", d)}
+                        dataType="multiselect"
+                        options={uniqueBranches}
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Cases */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Cases
+                      <ColumnFilter
+                        columnKey="cases"
+                        columnName="Cases"
+                        filterValue={colFilters.cases}
+                        onFilterChange={(v) => handleFilterChange("cases", v as string)}
+                        onClearFilter={() => handleClearFilter("cases")}
+                        sortDirection={colSorts.cases}
+                        onSortChange={(d) => handleSortChange("cases", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Invoice Value */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Invoice Value
+                      <ColumnFilter
+                        columnKey="invoiceValue"
+                        columnName="Invoice Value"
+                        filterValue={colFilters.invoiceValue}
+                        onFilterChange={(v) => handleFilterChange("invoiceValue", v as string)}
+                        onClearFilter={() => handleClearFilter("invoiceValue")}
+                        sortDirection={colSorts.invoiceValue}
+                        onSortChange={(d) => handleSortChange("invoiceValue", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Factory Cost */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Factory Cost
+                      <ColumnFilter
+                        columnKey="factoryCost"
+                        columnName="Factory Cost"
+                        filterValue={colFilters.factoryCost}
+                        onFilterChange={(v) => handleFilterChange("factoryCost", v as string)}
+                        onClearFilter={() => handleClearFilter("factoryCost")}
+                        sortDirection={colSorts.factoryCost}
+                        onSortChange={(d) => handleSortChange("factoryCost", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Labels Cost */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Labels Cost
+                      <ColumnFilter
+                        columnKey="labelsCost"
+                        columnName="Labels Cost"
+                        filterValue={colFilters.labelsCost}
+                        onFilterChange={(v) => handleFilterChange("labelsCost", v as string)}
+                        onClearFilter={() => handleClearFilter("labelsCost")}
+                        sortDirection={colSorts.labelsCost}
+                        onSortChange={(d) => handleSortChange("labelsCost", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Transport */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Transport
+                      <ColumnFilter
+                        columnKey="transportCost"
+                        columnName="Transport"
+                        filterValue={colFilters.transportCost}
+                        onFilterChange={(v) => handleFilterChange("transportCost", v as string)}
+                        onClearFilter={() => handleClearFilter("transportCost")}
+                        sortDirection={colSorts.transportCost}
+                        onSortChange={(d) => handleSortChange("transportCost", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Total Expense */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Total Expense
+                      <ColumnFilter
+                        columnKey="totalExpense"
+                        columnName="Total Expense"
+                        filterValue={colFilters.totalExpense}
+                        onFilterChange={(v) => handleFilterChange("totalExpense", v as string)}
+                        onClearFilter={() => handleClearFilter("totalExpense")}
+                        sortDirection={colSorts.totalExpense}
+                        onSortChange={(d) => handleSortChange("totalExpense", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Profit / Loss */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Profit / Loss
+                      <ColumnFilter
+                        columnKey="profit"
+                        columnName="Profit / Loss"
+                        filterValue={colFilters.profit}
+                        onFilterChange={(v) => handleFilterChange("profit", v as string)}
+                        onClearFilter={() => handleClearFilter("profit")}
+                        sortDirection={colSorts.profit}
+                        onSortChange={(d) => handleSortChange("profit", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
+                  {/* Margin % */}
+                  <TableHead className="py-2 pl-1 pr-4 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Margin %
+                      <ColumnFilter
+                        columnKey="margin"
+                        columnName="Margin %"
+                        filterValue={colFilters.margin}
+                        onFilterChange={(v) => handleFilterChange("margin", v as string)}
+                        onClearFilter={() => handleClearFilter("margin")}
+                        sortDirection={colSorts.margin}
+                        onSortChange={(d) => handleSortChange("margin", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {isLoading ? (
                   <TableRow>
@@ -600,59 +900,47 @@ const Profitability: React.FC = () => {
                       Loading…
                     </TableCell>
                   </TableRow>
-                ) : sortedRows.length === 0 ? (
+                ) : displayRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
-                      No data for the selected period
+                      {hasActiveFilters ? "No clients match the current filters" : "No data for the selected period"}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  sortedRows.map((r) => (
+                  displayRows.map((r) => (
                     <TableRow
                       key={`${r.clientName}|||${r.branch}`}
                       className={r.profit < 0 ? "bg-red-50 hover:bg-red-100" : "hover:bg-slate-50"}
                     >
-                      <TableCell className="font-medium py-2.5 px-4 whitespace-nowrap">{r.clientName}</TableCell>
-                      <TableCell className="text-muted-foreground py-2.5 px-4 whitespace-nowrap">
+                      <TableCell className="font-medium py-2.5 pl-4 pr-2 whitespace-nowrap">{r.clientName}</TableCell>
+                      <TableCell className="text-muted-foreground py-2.5 px-2 whitespace-nowrap">
                         {r.branch || "—"}
                       </TableCell>
-                      <TableCell className="py-2.5 px-4 text-right font-mono">
+                      <TableCell className="py-2.5 px-2 text-right font-mono">
                         {r.cases.toLocaleString("en-IN")}
                       </TableCell>
-                      <TableCell className="py-2.5 px-4 text-right font-medium">
+                      <TableCell className="py-2.5 px-2 text-right font-medium">
                         {fmtINR(r.invoiceValue)}
                       </TableCell>
-                      <TableCell className="py-2.5 px-4 text-right text-muted-foreground">
+                      <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {fmtINR(r.factoryCost)}
                       </TableCell>
-                      <TableCell className="py-2.5 px-4 text-right text-muted-foreground">
+                      <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {fmtINR(r.labelsCost)}
                       </TableCell>
-                      <TableCell className="py-2.5 px-4 text-right text-muted-foreground">
+                      <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {r.transportCost > 0 ? fmtINR(r.transportCost) : "—"}
                       </TableCell>
-                      <TableCell className="py-2.5 px-4 text-right">
+                      <TableCell className="py-2.5 px-2 text-right">
                         {fmtINR(r.totalExpense)}
                       </TableCell>
-                      <TableCell
-                        className={cn(
-                          "py-2.5 px-4 text-right font-semibold",
-                          r.profit >= 0 ? "text-green-700" : "text-red-700",
-                        )}
-                      >
-                        {r.profit < 0 ? "−" : ""}
-                        {fmtINR(r.profit)}
+                      <TableCell className={cn("py-2.5 px-2 text-right font-semibold", r.profit >= 0 ? "text-green-700" : "text-red-700")}>
+                        {r.profit < 0 ? "−" : ""}{fmtINR(r.profit)}
                       </TableCell>
-                      <TableCell
-                        className={cn(
-                          "py-2.5 px-4 text-right font-medium",
-                          r.margin >= 20
-                            ? "text-green-700"
-                            : r.margin >= 0
-                            ? "text-amber-700"
-                            : "text-red-700",
-                        )}
-                      >
+                      <TableCell className={cn(
+                        "py-2.5 pl-2 pr-4 text-right font-medium",
+                        r.margin >= 20 ? "text-green-700" : r.margin >= 0 ? "text-amber-700" : "text-red-700",
+                      )}>
                         {r.margin.toFixed(1)}%
                       </TableCell>
                     </TableRow>
@@ -662,22 +950,21 @@ const Profitability: React.FC = () => {
             </Table>
           </div>
 
-          {/* Totals footer */}
-          {sortedRows.length > 0 && (
+          {/* Totals footer (reflects filtered view) */}
+          {displayRows.length > 0 && (
             <div className="border-t px-4 py-3 bg-slate-50 flex flex-wrap gap-x-8 gap-y-1 text-sm font-medium">
-              <span className="text-muted-foreground font-normal">Totals</span>
-              <span>Cases: <strong>{summary.cases.toLocaleString("en-IN")}</strong></span>
-              <span>Invoice: <strong>{fmtINR(summary.invoiceValue)}</strong></span>
-              <span>Expense: <strong>{fmtINR(summary.totalExpense)}</strong></span>
-              <span className={isProfitable ? "text-green-700" : "text-red-700"}>
-                {isProfitable ? "Profit" : "Loss"}:{" "}
-                <strong>
-                  {isProfitable ? "" : "−"}
-                  {fmtINR(summary.profit)}
-                </strong>
+              <span className="text-muted-foreground font-normal">
+                {hasActiveFilters ? `Filtered totals (${displayRows.length} clients)` : "Totals"}
               </span>
-              <span className={isProfitable ? "text-green-700" : "text-red-700"}>
-                Margin: <strong>{overallMargin.toFixed(1)}%</strong>
+              <span>Cases: <strong>{filteredTotals.cases.toLocaleString("en-IN")}</strong></span>
+              <span>Invoice: <strong>{fmtINR(filteredTotals.invoiceValue)}</strong></span>
+              <span>Expense: <strong>{fmtINR(filteredTotals.totalExpense)}</strong></span>
+              <span className={filteredProfitable ? "text-green-700" : "text-red-700"}>
+                {filteredProfitable ? "Profit" : "Loss"}:{" "}
+                <strong>{filteredProfitable ? "" : "−"}{fmtINR(filteredTotals.profit)}</strong>
+              </span>
+              <span className={filteredProfitable ? "text-green-700" : "text-red-700"}>
+                Margin: <strong>{filteredMargin.toFixed(1)}%</strong>
               </span>
             </div>
           )}
