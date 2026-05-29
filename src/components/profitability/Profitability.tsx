@@ -197,34 +197,16 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("customer_id, total_amount, transaction_date, customers(client_name, branch)")
+        .select("customer_id, total_amount, quantity, transaction_date, customers(client_name, branch)")
         .eq("transaction_type", "sale")
         .gte("transaction_date", startDate)
         .lte("transaction_date", endDate);
       return (data ?? []) as Array<{
         customer_id: string;
         total_amount: number;
+        quantity: number | null;
         transaction_date: string;
         customers: { client_name: string; branch: string | null } | null;
-      }>;
-    },
-  });
-
-  const { data: dispatchRaw = [], isLoading: loadingDispatch } = useQuery({
-    queryKey: ["prof-dispatch", startDate, endDate],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("orders_dispatch")
-        .select("customer_id, client, branch, cases, delivery_date")
-        .not("delivery_date", "is", null)
-        .gte("delivery_date", startDate)
-        .lte("delivery_date", endDate);
-      return (data ?? []) as Array<{
-        customer_id: string | null;
-        client: string;
-        branch: string | null;
-        cases: number;
-        delivery_date: string;
       }>;
     },
   });
@@ -303,13 +285,12 @@ const Profitability: React.FC = () => {
   });
 
   const isLoading =
-    loadingSales || loadingDispatch || loadingProd || loadingLabels || loadingBackLabels || loadingTransport;
+    loadingSales || loadingProd || loadingLabels || loadingBackLabels || loadingTransport;
 
   // ── Core computation (period rows, unfiltered) ────────────────────────────
 
   const { rows, summary } = useMemo(() => {
     const sales = salesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
-    const dispatch = dispatchRaw.filter((r) => inPeriod(r.delivery_date, year, months));
     const production = productionRaw.filter((r) => inPeriod(r.production_date, year, months));
     const labels = labelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const backLabels = backLabelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
@@ -324,63 +305,33 @@ const Profitability: React.FC = () => {
       labels.reduce((s, l) => s + (l.total_amount ?? 0), 0) +
       backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
 
-    // Revenue per client (keyed by customer_id UUID)
-    const revenueMap = new Map<string, { name: string; branch: string; revenue: number }>();
-    for (const s of sales) {
-      const cust = s.customers;
-      const key = s.customer_id;
-      if (!revenueMap.has(key)) {
-        revenueMap.set(key, {
-          name: cust?.client_name ?? "Unknown",
-          branch: cust?.branch ?? "",
-          revenue: 0,
-        });
-      }
-      revenueMap.get(key)!.revenue += s.total_amount ?? 0;
-    }
-
-    // Dispatch cases per client (keyed by customer_id UUID or __name__ fallback)
-    const casesMap = new Map<string, { name: string; branch: string; cases: number }>();
-    for (const d of dispatch) {
-      const key = d.customer_id ?? `__name__${d.client}`;
-      if (!casesMap.has(key)) {
-        casesMap.set(key, { name: d.client, branch: d.branch ?? "", cases: 0 });
-      }
-      casesMap.get(key)!.cases += d.cases ?? 0;
-    }
-
-    // Merge revenue + cases by clientName|||branch so that UUID mismatches
-    // (e.g. orders_dispatch.customer_id is null but sales has a UUID) don't
-    // produce duplicate rows for the same client.
-    const mk = (name: string, branch: string) => `${name}|||${branch}`;
-    const merged = new Map<string, {
-      clientId: string | null;
+    // Aggregate revenue + cases (qty) per client from sales_transactions
+    const clientMap = new Map<string, {
+      clientId: string;
       clientName: string;
       branch: string;
       revenue: number;
       cases: number;
     }>();
-
-    for (const [id, rev] of revenueMap) {
-      const key = mk(rev.name, rev.branch);
-      if (!merged.has(key)) {
-        merged.set(key, { clientId: id, clientName: rev.name, branch: rev.branch, revenue: 0, cases: 0 });
+    for (const s of sales) {
+      const cust = s.customers;
+      const key = s.customer_id;
+      if (!clientMap.has(key)) {
+        clientMap.set(key, {
+          clientId: key,
+          clientName: cust?.client_name ?? "Unknown",
+          branch: cust?.branch ?? "",
+          revenue: 0,
+          cases: 0,
+        });
       }
-      merged.get(key)!.revenue += rev.revenue;
+      const entry = clientMap.get(key)!;
+      entry.revenue += s.total_amount ?? 0;
+      entry.cases += s.quantity ?? 0;
     }
 
-    for (const [id, disp] of casesMap) {
-      const key = mk(disp.name, disp.branch);
-      const clientId = id.startsWith("__name__") ? null : id;
-      if (!merged.has(key)) {
-        merged.set(key, { clientId, clientName: disp.name, branch: disp.branch, revenue: 0, cases: 0 });
-      } else if (!merged.get(key)!.clientId && clientId) {
-        merged.get(key)!.clientId = clientId;
-      }
-      merged.get(key)!.cases += disp.cases;
-    }
-
-    const totalCases = [...merged.values()].reduce((s, v) => s + v.cases, 0);
+    const totalCases = [...clientMap.values()].reduce((s, v) => s + v.cases, 0);
+    const merged = clientMap;
 
     // Transport per client
     const directTransportMap = new Map<string, number>();
@@ -396,7 +347,7 @@ const Profitability: React.FC = () => {
       }
     }
 
-    // Build result rows from merged map
+    // Build result rows
     const result: ProfitRow[] = [];
 
     for (const entry of merged.values()) {
@@ -407,7 +358,7 @@ const Profitability: React.FC = () => {
       const labelsCost = totalLabelsCost * caseFraction;
 
       const transportCost =
-        (clientId ? (directTransportMap.get(clientId) ?? 0) : 0) +
+        (directTransportMap.get(clientId) ?? 0) +
         unlinkedTransport * caseFraction;
 
       const totalExpense = factoryCost + labelsCost + transportCost;
@@ -429,7 +380,7 @@ const Profitability: React.FC = () => {
     };
 
     return { rows: result, summary };
-  }, [salesRaw, dispatchRaw, productionRaw, pricingRaw, labelsRaw, backLabelsRaw, transportRaw, year, months]);
+  }, [salesRaw, productionRaw, pricingRaw, labelsRaw, backLabelsRaw, transportRaw, year, months]);
 
   // ── Filter option lists (derived from unfiltered rows) ────────────────────
 
