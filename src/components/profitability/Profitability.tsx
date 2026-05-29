@@ -197,13 +197,13 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("customer_id, total_amount, quantity, transaction_date, customers(client_name, branch)")
+        .select("customer_id, amount, quantity, transaction_date, customers(client_name, branch)")
         .eq("transaction_type", "sale")
         .gte("transaction_date", startDate)
         .lte("transaction_date", endDate);
       return (data ?? []) as Array<{
         customer_id: string;
-        total_amount: number;
+        amount: number;
         quantity: number | null;
         transaction_date: string;
         customers: { client_name: string; branch: string | null } | null;
@@ -326,7 +326,7 @@ const Profitability: React.FC = () => {
         });
       }
       const entry = clientMap.get(key)!;
-      entry.revenue += s.total_amount ?? 0;
+      entry.revenue += s.amount ?? 0;
       entry.cases += s.quantity ?? 0;
     }
 
