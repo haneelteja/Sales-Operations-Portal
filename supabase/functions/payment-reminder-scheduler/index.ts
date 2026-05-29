@@ -297,7 +297,16 @@ serve(async (req) => {
             continue;
           }
 
-          const result = await res.json().catch(() => ({}));
+          // Read body once as text, then try to parse as JSON so we always have the raw body for error reporting
+          let rawBody = '';
+          let result: { success?: boolean; messageLogId?: string; error?: string } = {};
+          try {
+            rawBody = await res.text();
+            result = rawBody ? JSON.parse(rawBody) : {};
+          } catch (_) {
+            // Non-JSON response (HTML error page, Supabase gateway error, cold-start failure, etc.)
+            return { success: false, error: `HTTP ${res.status}: ${rawBody.slice(0, 300)}` };
+          }
 
           // Supabase rate limit returned as 200 with error message inside the body
           if (!result.success && typeof result.error === 'string' && result.error.toLowerCase().includes('rate limit')) {
@@ -307,7 +316,12 @@ serve(async (req) => {
             continue;
           }
 
-          return result;
+          // If the call failed but the function returned no error string, attach the HTTP status so it's visible in logs
+          if (!result.success && !result.error) {
+            result.error = `HTTP ${res.status} from whatsapp-send (empty error body)`;
+          }
+
+          return result as { success: boolean; messageLogId?: string; error?: string };
         }
         return { success: false, error: 'Rate limit: max retries exceeded' };
       };
