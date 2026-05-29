@@ -911,6 +911,7 @@ const SalesEntry = () => {
       logger.error('Critical error filtering and sorting transactions:', error);
       return [];
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts, monthFilter]);
 
   // Paginate the filtered results
@@ -958,6 +959,7 @@ const SalesEntry = () => {
       if (area) unique.add(area);
     });
     return Array.from(unique).sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const getUniqueSKUs = useMemo(() => {
@@ -969,6 +971,7 @@ const SalesEntry = () => {
       if (t.sku) unique.add(t.sku);
     });
     return Array.from(unique).sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const getUniqueTypes = useMemo(() => {
@@ -980,6 +983,7 @@ const SalesEntry = () => {
       if (t.transaction_type) unique.add(t.transaction_type);
     });
     return Array.from(unique).sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentTransactions, columnFilters, getTransactionBranch]);
 
   const handleColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {

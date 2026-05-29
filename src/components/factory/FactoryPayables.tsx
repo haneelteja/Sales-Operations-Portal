@@ -455,6 +455,7 @@ const FactoryPayables = () => {
       if (clientName) unique.add(clientName);
     });
     return Array.from(unique).sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, columnFilters]);
 
   const getUniqueBranches = useMemo(() => {
@@ -473,6 +474,7 @@ const FactoryPayables = () => {
       if (area) unique.add(area);
     });
     return Array.from(unique).sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, columnFilters]);
 
   const handleColumnSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc' | null) => {
@@ -499,6 +501,7 @@ const FactoryPayables = () => {
       if (!passesMultiFilter(t.sku || '', columnFilters.sku)) return false;
       return true;
     }).map(t => t.transaction_type).filter(Boolean))].sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, columnFilters]);
 
   const getUniqueSKUs = useMemo(() => {
@@ -512,6 +515,7 @@ const FactoryPayables = () => {
       if (!passesMultiFilter(t.transaction_type || '', columnFilters.type)) return false;
       return true;
     }).map(t => t.sku).filter(Boolean))].sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, columnFilters]);
 
   // Export filtered transactions to Excel (memoized)

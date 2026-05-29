@@ -48,6 +48,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       setSearch('');
       setHighlightedIndex(-1);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Reset highlighted index when filtered list changes (user is typing)

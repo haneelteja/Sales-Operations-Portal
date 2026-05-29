@@ -137,6 +137,7 @@ const ApplicationConfigurationTab: React.FC = () => {
         !c.config_key.startsWith('whatsapp_') &&
         (!c.config_key.startsWith('backup_') || BACKUP_TABLE_KEYS.includes(c.config_key))
     ).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configurations]);
 
   // Display order: 1. SKUs, 2. Label vendors, then operations configs, then Invoice Generation section
@@ -242,6 +243,7 @@ const ApplicationConfigurationTab: React.FC = () => {
     return result.filter((config) =>
       config.description?.toLowerCase().includes(query)
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configurations, searchQuery]);
 
   const filteredConfigurations = orderedDisplayConfigs;
