@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Wallet,
   ClipboardList,
+  TrendingUp,
 } from "lucide-react";
 
 import {
@@ -56,6 +57,7 @@ const menuItems: MenuItem[] = [
   { id: "labels", title: "Labels", icon: Tag },
   { id: "configurations", title: "Configurations", icon: Cog },
   { id: "reports", title: "Reports", icon: FileText },
+  { id: "profitability", title: "Profitability", icon: TrendingUp },
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
   { id: "application-configuration", title: "Application Configuration", icon: Settings, roles: ['manager'] }, // Only visible to managers
   { id: "whatsapp-configuration", title: "WhatsApp Configurations", icon: MessageSquare, roles: ['manager'] }, // Only visible to managers
