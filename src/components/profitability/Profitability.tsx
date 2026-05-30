@@ -731,23 +731,6 @@ const Profitability: React.FC = () => {
                     </div>
                   </TableHead>
 
-                  {/* Invoice Value */}
-                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
-                    <div className="flex items-center justify-end gap-0.5">
-                      Invoice Value
-                      <ColumnFilter
-                        columnKey="invoiceValue"
-                        columnName="Invoice Value"
-                        filterValue={colFilters.invoiceValue}
-                        onFilterChange={(v) => handleFilterChange("invoiceValue", v as string)}
-                        onClearFilter={() => handleClearFilter("invoiceValue")}
-                        sortDirection={colSorts.invoiceValue}
-                        onSortChange={(d) => handleSortChange("invoiceValue", d)}
-                        dataType="number"
-                      />
-                    </div>
-                  </TableHead>
-
                   {/* Factory Cost */}
                   <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-0.5">
@@ -816,6 +799,23 @@ const Profitability: React.FC = () => {
                     </div>
                   </TableHead>
 
+                  {/* Invoice Value */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Invoice Value
+                      <ColumnFilter
+                        columnKey="invoiceValue"
+                        columnName="Invoice Value"
+                        filterValue={colFilters.invoiceValue}
+                        onFilterChange={(v) => handleFilterChange("invoiceValue", v as string)}
+                        onClearFilter={() => handleClearFilter("invoiceValue")}
+                        sortDirection={colSorts.invoiceValue}
+                        onSortChange={(d) => handleSortChange("invoiceValue", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
                   {/* Profit / Loss */}
                   <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-0.5">
@@ -878,9 +878,6 @@ const Profitability: React.FC = () => {
                       <TableCell className="py-2.5 px-2 text-right font-mono">
                         {r.cases.toLocaleString("en-IN")}
                       </TableCell>
-                      <TableCell className="py-2.5 px-2 text-right font-medium">
-                        {fmtINR(r.invoiceValue)}
-                      </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {fmtINR(r.factoryCost)}
                       </TableCell>
@@ -892,6 +889,9 @@ const Profitability: React.FC = () => {
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right">
                         {fmtINR(r.totalExpense)}
+                      </TableCell>
+                      <TableCell className="py-2.5 px-2 text-right font-medium">
+                        {fmtINR(r.invoiceValue)}
                       </TableCell>
                       <TableCell className={cn("py-2.5 px-2 text-right font-semibold", r.profit >= 0 ? "text-green-700" : "text-red-700")}>
                         {r.profit < 0 ? "−" : ""}{fmtINR(r.profit)}
