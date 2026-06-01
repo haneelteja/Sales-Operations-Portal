@@ -108,13 +108,13 @@ const OrderAnalysis: React.FC = () => {
   // ── Data Queries ──────────────────────────────────────────────────────────────
 
   const { data: rawOrders = [] } = useQuery({
-    queryKey: ["orders"],
+    queryKey: ["orders-analysis"],
     ...getQueryConfig("orders"),
     queryFn: async () => {
       const { data } = await supabase
         .from("orders")
-        .select("client, branch, date, created_at");
-      return (data || []) as Array<{ client: string; branch: string; date: string | null; created_at: string }>;
+        .select("client, branch, order_date, created_at");
+      return (data || []) as Array<{ client: string; branch: string; order_date: string | null; created_at: string }>;
     },
   });
 
@@ -161,7 +161,7 @@ const OrderAnalysis: React.FC = () => {
       else dateMap.set(key, [d]);
     };
 
-    rawOrders.forEach((o) => addDate(o.client, o.branch, o.date || o.created_at));
+    rawOrders.forEach((o) => addDate(o.client, o.branch, o.order_date || o.created_at));
     rawDispatch.forEach((d) => addDate(d.client, d.branch, d.delivery_date));
 
     const outstandingMap = new Map<string, number>();
