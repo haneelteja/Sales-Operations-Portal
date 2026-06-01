@@ -119,7 +119,7 @@ const OrderAnalysis: React.FC = () => {
   });
 
   const { data: rawDispatch = [] } = useQuery({
-    queryKey: ["orders-dispatch"],
+    queryKey: ["orders-dispatch-analysis"],
     ...getQueryConfig("orders-dispatch"),
     queryFn: async () => {
       const { data } = await supabase
