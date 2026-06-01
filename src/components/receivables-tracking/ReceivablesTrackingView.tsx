@@ -702,18 +702,25 @@ export default function ReceivablesTrackingView() {
     staleTime: 60000,
   });
 
+  const ASSIGNEE_PALETTE_CLASSES = [
+    'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-red-500', 'bg-violet-500',
+    'bg-cyan-500', 'bg-orange-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500',
+  ];
+
   const assigneeList: AssigneeEntry[] = useMemo(() => {
     try {
       const parsed = JSON.parse(assigneeListRaw ?? '[]');
       if (!Array.isArray(parsed)) return [];
-      return parsed.map((x): AssigneeEntry | null => {
-        if (typeof x === 'string') return { name: x, bgClass: 'bg-gray-400' };
-        if (x && typeof x.name === 'string') return { name: x.name, bgClass: x.bgClass || 'bg-gray-400' };
+      return parsed.map((x, i): AssigneeEntry | null => {
+        const defaultBg = ASSIGNEE_PALETTE_CLASSES[i % ASSIGNEE_PALETTE_CLASSES.length];
+        if (typeof x === 'string') return { name: x, bgClass: defaultBg };
+        if (x && typeof x.name === 'string') return { name: x.name, bgClass: x.bgClass || defaultBg };
         return null;
       }).filter((x): x is AssigneeEntry => x !== null && x.name !== '');
     } catch {
       return [];
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assigneeListRaw]);
 
   const assigneeMap: Record<string, string> = useMemo(() => {
