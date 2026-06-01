@@ -42,6 +42,7 @@ interface DispatchRow {
   branch: string;
   sku: string;
   cases: number;
+  order_date?: string;
   delivery_date: string;
 }
 
@@ -101,6 +102,7 @@ const OrderManagement: React.FC = () => {
     branch: "",
     sku: "",
     cases: "",
+    order_date: "",
     delivery_date: "",
   });
   const [dispatchColumnSorts, setDispatchColumnSorts] = useState<{
@@ -110,6 +112,7 @@ const OrderManagement: React.FC = () => {
     branch: null,
     sku: null,
     cases: null,
+    order_date: null,
     delivery_date: 'desc',
   });
 
@@ -247,7 +250,7 @@ const OrderManagement: React.FC = () => {
     mutationFn: async (orderId: string) => {
       const { data: orderData } = await supabase
         .from("orders")
-        .select("client, branch, sku, number_of_cases, tentative_delivery_date")
+        .select("client, branch, sku, number_of_cases, order_date, tentative_delivery_date")
         .eq("id", orderId)
         .single();
 
@@ -260,6 +263,7 @@ const OrderManagement: React.FC = () => {
           branch: orderData.branch,
           sku: orderData.sku,
           cases: orderData.number_of_cases ?? 0,
+          order_date: orderData.order_date ?? new Date().toISOString().split("T")[0],
           delivery_date: orderData.tentative_delivery_date,
         }]);
 
@@ -371,7 +375,7 @@ const OrderManagement: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from("orders_dispatch")
-          .select("id, client, branch, sku, cases, delivery_date")
+          .select("id, client, branch, sku, cases, order_date, delivery_date")
           .order("delivery_date", { ascending: false });
 
         if (error) {
@@ -797,6 +801,7 @@ const OrderManagement: React.FC = () => {
       if (dispatchColumnFilters.branch && !order.branch?.toLowerCase().includes(dispatchColumnFilters.branch.toLowerCase())) return false;
       if (dispatchColumnFilters.sku && !order.sku?.toLowerCase().includes(dispatchColumnFilters.sku.toLowerCase())) return false;
       if (dispatchColumnFilters.cases && order.cases?.toString() !== dispatchColumnFilters.cases) return false;
+      if (dispatchColumnFilters.order_date && !order.order_date?.includes(dispatchColumnFilters.order_date)) return false;
       if (dispatchColumnFilters.delivery_date && !order.delivery_date?.includes(dispatchColumnFilters.delivery_date)) return false;
 
       return true;
@@ -830,6 +835,10 @@ const OrderManagement: React.FC = () => {
         case 'cases':
           aValue = a.cases || 0;
           bValue = b.cases || 0;
+          break;
+        case 'order_date':
+          aValue = new Date(a.order_date || a.delivery_date).getTime();
+          bValue = new Date(b.order_date || b.delivery_date).getTime();
           break;
         case 'delivery_date':
           aValue = new Date(a.delivery_date).getTime();
@@ -870,6 +879,7 @@ const OrderManagement: React.FC = () => {
       Branch: row.branch,
       SKU: row.sku,
       Cases: row.cases,
+      "Order Date": row.order_date || "",
       "Delivery Date": row.delivery_date,
     }));
 
@@ -1492,6 +1502,22 @@ const OrderManagement: React.FC = () => {
                     </TableHead>
                     <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
                       <div className="flex items-center gap-2 text-gray-800">
+                        <span>Order Date</span>
+                        <ColumnFilter
+                          columnKey="order_date"
+                          columnName="Order Date"
+                          filterValue={dispatchColumnFilters.order_date}
+                          onFilterChange={(value) => handleDispatchColumnFilterChange('order_date', value as string)}
+                          onClearFilter={() => handleDispatchColumnFilterChange('order_date', '')}
+                          sortDirection={dispatchColumnSorts.order_date}
+                          onSortChange={(direction) => handleDispatchColumnSortChange('order_date', direction)}
+                          dataType="date"
+                          triggerClassName="text-gray-800 hover:text-gray-900 hover:bg-gray-200/50"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="border-b border-green-200/50 text-gray-800 font-semibold">
+                      <div className="flex items-center gap-2 text-gray-800">
                         <span>Delivery Date</span>
                         <ColumnFilter
                           columnKey="delivery_date"
@@ -1515,12 +1541,13 @@ const OrderManagement: React.FC = () => {
                       <TableCell>{order.branch || "-"}</TableCell>
                       <TableCell>{order.sku || "-"}</TableCell>
                       <TableCell className="text-right">{order.cases ?? "-"}</TableCell>
+                      <TableCell>{order.order_date || "-"}</TableCell>
                       <TableCell>{order.delivery_date || "-"}</TableCell>
                     </TableRow>
                   ))}
                   {!filteredAndSortedDispatch.length && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-gray-600 py-8">
+                      <TableCell colSpan={6} className="text-center text-sm text-gray-600 py-8">
                         No dispatch records found.
                       </TableCell>
                     </TableRow>
