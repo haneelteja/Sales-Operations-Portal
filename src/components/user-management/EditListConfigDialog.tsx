@@ -122,6 +122,9 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
       if (configKey === 'label_vendors') {
         queryClient.invalidateQueries({ queryKey: ['label-vendors-config'] });
       }
+      if (configKey === 'assignee_list') {
+        queryClient.invalidateQueries({ queryKey: ['assignee-list-config'] });
+      }
       toast({ title: 'Success', description: 'Saved successfully.' });
       onOpenChange(false);
     },

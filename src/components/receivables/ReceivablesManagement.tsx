@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,7 +6,7 @@ import {
   Loader2, Search, TrendingUp, CreditCard, Users, AlertTriangle,
   ChevronDown, MapPin, X, IndianRupee, Package, Calendar,
   Phone, MessageCircle, FileText, Receipt, ArrowUpDown, ChevronUp,
-  StickyNote, Clock, Plus, Send,
+  StickyNote, Clock, Plus, Send, UserCircle,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -888,7 +888,7 @@ function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boole
 
 // ── Customer card ─────────────────────────────────────────────────────────────
 
-function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, latestFollowupDate, latestNote, onFollowupSaved }: {
+function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, latestFollowupDate, latestNote, onFollowupSaved, assignee, assigneeList, onAssigneeChange }: {
   c: CustomerRow;
   isExpanded: boolean;
   onToggle: () => void;
@@ -897,6 +897,9 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, late
   latestFollowupDate: string | null;
   latestNote: string | null;
   onFollowupSaved: () => void;
+  assignee: string | null;
+  assigneeList: string[];
+  onAssigneeChange: (name: string | null) => void;
 }) {
   const qc = useQueryClient();
   const { profile, user } = useAuth();
@@ -1144,6 +1147,26 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, late
         )}
       </div>
 
+      {/* ── Assignee ── */}
+      {assigneeList.length > 0 && (
+        <div className="px-4 pb-2" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
+            <UserCircle className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <select
+              value={assignee ?? ''}
+              onChange={e => onAssigneeChange(e.target.value || null)}
+              aria-label="Assigned to"
+              className="flex-1 text-xs border border-border rounded-lg px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+            >
+              <option value="">Unassigned</option>
+              {assigneeList.map(a => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* ── Latest note snippet ── */}
       {latestNote && (
         <div className="px-4 pb-2" onClick={e => e.stopPropagation()}>
@@ -1274,6 +1297,72 @@ const ReceivablesManagement: React.FC = () => {
     queryFn: fetchLatestFollowupInfo,
     staleTime: 30000,
   });
+
+  const queryClient = useQueryClient();
+
+  const { data: customerAssignees = [] } = useQuery({
+    queryKey: ['customer-assignees'],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase
+        .from('customer_assignee')
+        .select('customer_id, assignee_name');
+      if (error) throw error;
+      return rows ?? [];
+    },
+    staleTime: 30000,
+  });
+
+  const { data: assigneeListRaw } = useQuery({
+    queryKey: ['assignee-list-config'],
+    queryFn: async () => {
+      const { data: row } = await supabase
+        .from('invoice_configurations')
+        .select('config_value')
+        .eq('config_key', 'assignee_list')
+        .maybeSingle();
+      return row?.config_value ?? '[]';
+    },
+    staleTime: 60000,
+  });
+
+  const assigneeList: string[] = useMemo(() => {
+    try {
+      const parsed = JSON.parse(assigneeListRaw ?? '[]');
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }, [assigneeListRaw]);
+
+  const assigneeMap: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const row of customerAssignees) {
+      map[row.customer_id] = row.assignee_name;
+    }
+    return map;
+  }, [customerAssignees]);
+
+  const assigneeMutation = useMutation({
+    mutationFn: async ({ customer_id, assignee_name }: { customer_id: string; assignee_name: string | null }) => {
+      if (!assignee_name) {
+        const { error } = await supabase.from('customer_assignee').delete().eq('customer_id', customer_id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('customer_assignee').upsert(
+          { customer_id, assignee_name, updated_at: new Date().toISOString() },
+          { onConflict: 'customer_id' }
+        );
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer-assignees'] });
+    },
+  });
+
+  const handleAssigneeChange = useCallback((customer_id: string, name: string | null) => {
+    assigneeMutation.mutate({ customer_id, assignee_name: name });
+  }, [assigneeMutation]);
 
   const uniqueAreas = useMemo(() => {
     if (!data) return [];
@@ -1510,6 +1599,9 @@ const ReceivablesManagement: React.FC = () => {
               latestFollowupDate={followupInfo[c.customer_id]?.followup_date ?? null}
               latestNote={followupInfo[c.customer_id]?.note ?? null}
               onFollowupSaved={() => refetchFollowups()}
+              assignee={assigneeMap[c.customer_id] ?? null}
+              assigneeList={assigneeList}
+              onAssigneeChange={(name) => handleAssigneeChange(c.customer_id, name)}
             />
           ))
         )}

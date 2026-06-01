@@ -52,6 +52,7 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isExpenseGroupsDialogOpen, setIsExpenseGroupsDialogOpen] = useState(false);
   const [isTentativeDeliveryDaysDialogOpen, setIsTentativeDeliveryDaysDialogOpen] = useState(false);
   const [isLabelVendorsDialogOpen, setIsLabelVendorsDialogOpen] = useState(false);
+  const [isAssigneeListDialogOpen, setIsAssigneeListDialogOpen] = useState(false);
   const [isInvoiceFormatOpen, setIsInvoiceFormatOpen] = useState(false);
   const [invoiceFormatValue, setInvoiceFormatValue] = useState('simple');
   const [isRunningBackup, setIsRunningBackup] = useState(false);
@@ -183,7 +184,22 @@ const ApplicationConfigurationTab: React.FC = () => {
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
     seen.add('label_vendors');
 
-    // Operations configs (rows 2-4)
+    // Row 2: Assignee list
+    result.push({
+      id: '',
+      config_key: 'assignee_list',
+      config_value: '[]',
+      config_type: 'string',
+      description: 'Assignee list — people who can be assigned to follow up with customers in Receivables Management',
+      updated_by: null,
+      updated_at: '',
+      created_at: '',
+      isCustom: true,
+      customKey: 'assignee_list',
+    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
+    seen.add('assignee_list');
+
+    // Operations configs (rows 3-5)
     for (const key of order) {
       if (seen.has(key)) continue;
       const config = configMap.get(key);
@@ -465,6 +481,16 @@ const ApplicationConfigurationTab: React.FC = () => {
                             variant="outline"
                             size="sm"
                             onClick={() => setIsLabelVendorsDialogOpen(true)}
+                            className="flex items-center gap-2"
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit
+                          </Button>
+                        ) : config.config_key === 'assignee_list' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsAssigneeListDialogOpen(true)}
                             className="flex items-center gap-2"
                           >
                             <Edit className="h-4 w-4" />
@@ -838,6 +864,16 @@ const ApplicationConfigurationTab: React.FC = () => {
       <EditVendorPricingDialog
         open={isLabelVendorsDialogOpen}
         onOpenChange={setIsLabelVendorsDialogOpen}
+      />
+
+      {/* Assignee List Dialog */}
+      <EditListConfigDialog
+        open={isAssigneeListDialogOpen}
+        onOpenChange={setIsAssigneeListDialogOpen}
+        configKey="assignee_list"
+        title="Assignee List"
+        description="Add or remove assignees. These names appear in the Receivables Management assignee dropdown for each customer."
+        placeholder="e.g. Ravi Kumar"
       />
 
       {/* Payment Reminder Schedules */}
