@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -673,6 +673,72 @@ export default function ReceivablesTrackingView() {
     refetchOnMount: true,
   });
 
+  const queryClient = useQueryClient();
+
+  const { data: customerAssignees = [] } = useQuery({
+    queryKey: ['customer-assignees'],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase
+        .from('customer_assignee')
+        .select('customer_id, assignee_name');
+      if (error) throw error;
+      return rows ?? [];
+    },
+    staleTime: 30000,
+  });
+
+  const { data: assigneeListRaw } = useQuery({
+    queryKey: ['assignee-list-config'],
+    queryFn: async () => {
+      const { data: row } = await supabase
+        .from('invoice_configurations')
+        .select('config_value')
+        .eq('config_key', 'assignee_list')
+        .maybeSingle();
+      return row?.config_value ?? '[]';
+    },
+    staleTime: 60000,
+  });
+
+  const assigneeList: string[] = useMemo(() => {
+    try {
+      const parsed = JSON.parse(assigneeListRaw ?? '[]');
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }, [assigneeListRaw]);
+
+  const assigneeMap: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const row of customerAssignees) {
+      map[row.customer_id] = row.assignee_name;
+    }
+    return map;
+  }, [customerAssignees]);
+
+  const assigneeMutation = useMutation({
+    mutationFn: async ({ customer_id, assignee_name }: { customer_id: string; assignee_name: string | null }) => {
+      if (!assignee_name) {
+        const { error } = await supabase.from('customer_assignee').delete().eq('customer_id', customer_id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('customer_assignee').upsert(
+          { customer_id, assignee_name, updated_at: new Date().toISOString() },
+          { onConflict: 'customer_id' }
+        );
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer-assignees'] });
+    },
+  });
+
+  const handleAssigneeChange = useCallback((customerId: string, name: string | null) => {
+    assigneeMutation.mutate({ customer_id: customerId, assignee_name: name });
+  }, [assigneeMutation]);
+
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const displayRows = useMemo(() => {
@@ -739,21 +805,22 @@ export default function ReceivablesTrackingView() {
       { key: 'pmtStatus', width: 18 },
       { key: 'comments', width: 40 },
       { key: 'followup', width: 18 },
+      { key: 'assignee', width: 20 },
     ];
 
-    ws.mergeCells('A1:H1');
+    ws.mergeCells('A1:I1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'Receivables Management Report';
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 24;
 
-    ws.mergeCells('A2:H2');
+    ws.mergeCells('A2:I2');
     ws.getCell('A2').value = `Generated: ${new Date().toLocaleDateString('en-IN')}`;
     ws.getCell('A2').font = { size: 10, italic: true, color: { argb: 'FF666666' } };
     ws.getCell('A2').alignment = { horizontal: 'center' };
 
-    ws.mergeCells('A3:H3');
+    ws.mergeCells('A3:I3');
     ws.getCell('A3').value = `Overdue Clients: ${overdueCount}   |   Collections This Month: ₹${(data?.collectionsThisMonth ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
     ws.getCell('A3').font = { size: 10, color: { argb: 'FF333333' } };
     ws.getCell('A3').alignment = { horizontal: 'center' };
@@ -763,7 +830,7 @@ export default function ReceivablesTrackingView() {
     const headerRow = ws.addRow([
       'Client', 'Branch', 'Outstanding (₹)',
       'Expected Next Payment', 'Payment Days Overdue',
-      'Payment Status', 'Latest Note', 'Next Follow-up',
+      'Payment Status', 'Latest Note', 'Next Follow-up', 'Assignee',
     ]);
     headerRow.height = 20;
     headerRow.eachCell(cell => {
@@ -786,6 +853,7 @@ export default function ReceivablesTrackingView() {
         row.paymentStatus,
         row.comments || '',
         row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
+        assigneeMap[row.customerId] || '—',
       ]);
       dataRow.eachCell({ includeEmpty: true }, (cell, col) => {
         cell.fill = row.isOverdue ? overdueFill : normalFill;
@@ -944,6 +1012,7 @@ export default function ReceivablesTrackingView() {
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Pmt Status</th>
                 <th className="px-4 py-3 font-semibold min-w-[240px]">Latest Note</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Next Follow-up</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Assignee</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Log</th>
                 <th className="px-4 py-3 font-semibold whitespace-nowrap">Ledger</th>
               </tr>
@@ -1020,6 +1089,25 @@ export default function ReceivablesTrackingView() {
                       <span className="text-sm">{fmtDate(row.nextFollowupDate)}</span>
                     ) : (
                       <span className="text-sm text-muted-foreground/50 italic">Not set</span>
+                    )}
+                  </td>
+
+                  {/* Assignee */}
+                  <td className="px-4 py-3 align-top">
+                    {assigneeList.length > 0 ? (
+                      <select
+                        value={assigneeMap[row.customerId] ?? ''}
+                        onChange={e => handleAssigneeChange(row.customerId, e.target.value || null)}
+                        aria-label="Assignee"
+                        className="text-xs border border-border rounded-md px-2 py-1 bg-background outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground min-w-[110px]"
+                      >
+                        <option value="">Unassigned</option>
+                        {assigneeList.map(a => (
+                          <option key={a} value={a}>{a}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/50 italic">—</span>
                     )}
                   </td>
 
