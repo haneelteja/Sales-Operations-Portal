@@ -1177,7 +1177,7 @@ export default function ReceivablesTrackingView() {
                           className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
                             assigneeMap[row.customerId]
                               ? (assigneeList.find(a => a.name === assigneeMap[row.customerId])?.bgClass ?? 'bg-gray-400')
-                              : 'bg-transparent'
+                              : 'bg-gray-300'
                           }`}
                         />
                         <select
