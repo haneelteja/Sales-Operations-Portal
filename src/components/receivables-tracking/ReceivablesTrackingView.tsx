@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X, Wallet, FileText, Receipt } from 'lucide-react';
+import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X, Wallet, FileText, Receipt, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ExcelJS from 'exceljs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -47,7 +47,7 @@ interface FollowupNote {
   created_by: string | null;
 }
 
-type SortKey = 'outstanding-desc' | 'outstanding-asc' | 'name' | 'last-payment' | 'followup';
+type SortCol = 'name' | 'outstanding' | 'expectedNext' | 'daysOverdue' | 'pmtStatus' | 'followup' | 'assignee';
 
 interface AssigneeEntry { name: string; bgClass: string; }
 
@@ -651,7 +651,10 @@ function FollowupNotesDrawer({
 
 export default function ReceivablesTrackingView() {
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('outstanding-desc');
+  const [sortCol, setSortCol] = useState<SortCol>('outstanding');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterAssignee, setFilterAssignee] = useState('');
   const [activeNotes, setActiveNotes] = useState<{
     customerId: string;
     dealerName: string;
@@ -755,6 +758,15 @@ export default function ReceivablesTrackingView() {
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
+  const handleSort = useCallback((col: SortCol) => {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
+    }
+  }, [sortCol]);
+
   const displayRows = useMemo(() => {
     if (!data?.rows) return [];
 
@@ -770,22 +782,36 @@ export default function ReceivablesTrackingView() {
       );
     }
 
+    if (filterStatus) {
+      rows = rows.filter(r => r.paymentStatus === filterStatus);
+    }
+
+    if (filterAssignee) {
+      rows = rows.filter(r => (assigneeMap[r.customerId] ?? '') === filterAssignee);
+    }
+
     return [...rows].sort((a, b) => {
-      switch (sortKey) {
-        case 'name': return a.dealerName.localeCompare(b.dealerName);
-        case 'outstanding-asc': return a.outstanding - b.outstanding;
-        case 'last-payment':
-          return (b.lastPaymentDate ?? '').localeCompare(a.lastPaymentDate ?? '');
+      let cmp = 0;
+      switch (sortCol) {
+        case 'name': cmp = a.dealerName.localeCompare(b.dealerName); break;
+        case 'outstanding': cmp = a.outstanding - b.outstanding; break;
+        case 'expectedNext':
+          cmp = (a.expectedNextPayment ?? '').localeCompare(b.expectedNextPayment ?? ''); break;
+        case 'daysOverdue':
+          cmp = (a.paymentDaysOverdue ?? -1) - (b.paymentDaysOverdue ?? -1); break;
+        case 'pmtStatus': cmp = a.paymentStatus.localeCompare(b.paymentStatus); break;
         case 'followup':
-          if (!a.nextFollowupDate && !b.nextFollowupDate) return 0;
-          if (!a.nextFollowupDate) return 1;
-          if (!b.nextFollowupDate) return -1;
-          return a.nextFollowupDate.localeCompare(b.nextFollowupDate);
-        default:
-          return b.outstanding - a.outstanding;
+          if (!a.nextFollowupDate && !b.nextFollowupDate) { cmp = 0; break; }
+          if (!a.nextFollowupDate) { cmp = 1; break; }
+          if (!b.nextFollowupDate) { cmp = -1; break; }
+          cmp = a.nextFollowupDate.localeCompare(b.nextFollowupDate); break;
+        case 'assignee':
+          cmp = (assigneeMap[a.customerId] ?? '').localeCompare(assigneeMap[b.customerId] ?? ''); break;
+        default: cmp = b.outstanding - a.outstanding;
       }
+      return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, search, sortKey, today]);
+  }, [data?.rows, search, sortCol, sortDir, filterStatus, filterAssignee, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -988,18 +1014,39 @@ export default function ReceivablesTrackingView() {
           />
         </div>
 
-        <Select value={sortKey} onValueChange={v => setSortKey(v as SortKey)}>
-          <SelectTrigger className="w-[210px]">
-            <SelectValue placeholder="Sort by..." />
+        <Select value={filterStatus || '__all__'} onValueChange={v => setFilterStatus(v === '__all__' ? '' : v)}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="outstanding-desc">Outstanding (High → Low)</SelectItem>
-            <SelectItem value="outstanding-asc">Outstanding (Low → High)</SelectItem>
-            <SelectItem value="name">Client Name (A → Z)</SelectItem>
-            <SelectItem value="last-payment">Last Payment (Recent first)</SelectItem>
-            <SelectItem value="followup">Follow-up (Soonest first)</SelectItem>
+            <SelectItem value="__all__">All Statuses</SelectItem>
+            <SelectItem value="OVERDUE">Overdue</SelectItem>
+            <SelectItem value="DUE SOON">Due Soon</SelectItem>
+            <SelectItem value="ON TRACK">On Track</SelectItem>
+            <SelectItem value="No Payments">No Payments</SelectItem>
+            <SelectItem value="Only 1 Payment">Only 1 Payment</SelectItem>
           </SelectContent>
         </Select>
+
+        {assigneeList.length > 0 && (
+          <Select value={filterAssignee || '__all__'} onValueChange={v => setFilterAssignee(v === '__all__' ? '' : v)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Filter by assignee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All Assignees</SelectItem>
+              <SelectItem value="">Unassigned</SelectItem>
+              {assigneeList.map(a => (
+                <SelectItem key={a.name} value={a.name}>
+                  <span className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 inline-block ${a.bgClass}`} />
+                    {a.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Button variant="outline" onClick={handleExport}>
           <Download className="h-4 w-4 mr-2" />
@@ -1019,16 +1066,32 @@ export default function ReceivablesTrackingView() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/60 border-b text-left">
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Client Branch</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Outstanding</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Expected Next Pmt</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap text-right">Days Overdue</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Pmt Status</th>
-                <th className="px-4 py-3 font-semibold min-w-[240px]">Latest Note</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Next Follow-up</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Assignee</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Log</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Ledger</th>
+                {(['name', 'outstanding', 'expectedNext', 'daysOverdue', 'pmtStatus', null, 'followup', 'assignee', null, null] as const).map((col, i) => {
+                  const labels = ['Client Branch', 'Outstanding', 'Expected Next Pmt', 'Days Overdue', 'Pmt Status', 'Latest Note', 'Next Follow-up', 'Assignee', 'Log', 'Ledger'];
+                  const rightAlign = i === 1 || i === 3;
+                  const minW = i === 5 ? 'min-w-[240px]' : '';
+                  if (!col) {
+                    return <th key={i} className={`px-4 py-3 font-semibold whitespace-nowrap ${rightAlign ? 'text-right' : ''} ${minW}`}>{labels[i]}</th>;
+                  }
+                  const isActive = sortCol === col;
+                  return (
+                    <th
+                      key={i}
+                      className={`px-4 py-3 font-semibold whitespace-nowrap cursor-pointer select-none hover:bg-muted/80 transition-colors ${rightAlign ? 'text-right' : ''} ${minW}`}
+                      onClick={() => handleSort(col as SortCol)}
+                    >
+                      <span className={`inline-flex items-center gap-1 ${rightAlign ? 'flex-row-reverse' : ''}`}>
+                        {labels[i]}
+                        {isActive
+                          ? sortDir === 'asc'
+                            ? <ChevronUp className="h-3.5 w-3.5 text-blue-600" />
+                            : <ChevronDown className="h-3.5 w-3.5 text-blue-600" />
+                          : <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground/40" />
+                        }
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
