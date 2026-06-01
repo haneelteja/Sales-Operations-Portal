@@ -264,7 +264,7 @@ const OrderManagement: React.FC = () => {
           sku: orderData.sku,
           cases: orderData.number_of_cases ?? 0,
           order_date: orderData.order_date ?? new Date().toISOString().split("T")[0],
-          delivery_date: orderData.tentative_delivery_date,
+          delivery_date: new Date().toISOString().split("T")[0],
         }]);
 
       if (dispatchError) throw dispatchError;
