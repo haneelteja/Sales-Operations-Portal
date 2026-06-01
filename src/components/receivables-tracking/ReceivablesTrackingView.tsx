@@ -49,6 +49,8 @@ interface FollowupNote {
 
 type SortKey = 'outstanding-desc' | 'outstanding-asc' | 'name' | 'last-payment' | 'followup';
 
+interface AssigneeEntry { name: string; bgClass: string; }
+
 interface LedgerRow {
   date: string;
   particulars: string;
@@ -700,10 +702,15 @@ export default function ReceivablesTrackingView() {
     staleTime: 60000,
   });
 
-  const assigneeList: string[] = useMemo(() => {
+  const assigneeList: AssigneeEntry[] = useMemo(() => {
     try {
       const parsed = JSON.parse(assigneeListRaw ?? '[]');
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((x): AssigneeEntry | null => {
+        if (typeof x === 'string') return { name: x, bgClass: 'bg-gray-400' };
+        if (x && typeof x.name === 'string') return { name: x.name, bgClass: x.bgClass || 'bg-gray-400' };
+        return null;
+      }).filter((x): x is AssigneeEntry => x !== null && x.name !== '');
     } catch {
       return [];
     }
@@ -1095,17 +1102,26 @@ export default function ReceivablesTrackingView() {
                   {/* Assignee */}
                   <td className="px-4 py-3 align-top">
                     {assigneeList.length > 0 ? (
-                      <select
-                        value={assigneeMap[row.customerId] ?? ''}
-                        onChange={e => handleAssigneeChange(row.customerId, e.target.value || null)}
-                        aria-label="Assignee"
-                        className="text-xs border border-border rounded-md px-2 py-1 bg-background outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground min-w-[110px]"
-                      >
-                        <option value="">Unassigned</option>
-                        {assigneeList.map(a => (
-                          <option key={a} value={a}>{a}</option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-1.5 min-w-[130px]">
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
+                            assigneeMap[row.customerId]
+                              ? (assigneeList.find(a => a.name === assigneeMap[row.customerId])?.bgClass ?? 'bg-gray-400')
+                              : 'bg-transparent'
+                          }`}
+                        />
+                        <select
+                          value={assigneeMap[row.customerId] ?? ''}
+                          onChange={e => handleAssigneeChange(row.customerId, e.target.value || null)}
+                          aria-label="Assignee"
+                          className="text-xs border border-border rounded-md px-2 py-1 bg-background outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground flex-1"
+                        >
+                          <option value="">Unassigned</option>
+                          {assigneeList.map(a => (
+                            <option key={a.name} value={a.name}>{a.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     ) : (
                       <span className="text-xs text-muted-foreground/50 italic">—</span>
                     )}

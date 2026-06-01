@@ -26,6 +26,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+const ASSIGNEE_PALETTE = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-red-500', 'bg-violet-500',
+  'bg-cyan-500', 'bg-orange-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500',
+];
+
 interface EditListConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,6 +50,20 @@ function parseJsonArray(val: string): string[] {
   }
 }
 
+function parseAssigneeNames(val: string): string[] {
+  try {
+    const parsed = JSON.parse(val || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((x) => {
+      if (typeof x === 'string') return x;
+      if (x && typeof x.name === 'string') return x.name;
+      return '';
+    }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
   open,
   onOpenChange,
@@ -58,6 +77,7 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<string[]>([]);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
+  const isAssigneeList = configKey === 'assignee_list';
 
   const { data: config, isLoading } = useQuery({
     queryKey: [queryKey, configKey],
@@ -75,10 +95,11 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
 
   useEffect(() => {
     if (open) {
-      setRows(config ? parseJsonArray(config.config_value || '[]') : []);
+      const parse = isAssigneeList ? parseAssigneeNames : parseJsonArray;
+      setRows(config ? parse(config.config_value || '[]') : []);
       setHasLocalChanges(false);
     }
-  }, [open, config]);
+  }, [open, config, isAssigneeList]);
 
   const addRow = () => {
     setRows((prev) => [...prev, '']);
@@ -102,7 +123,9 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
   const saveMutation = useMutation({
     mutationFn: async (values: string[]) => {
       const trimmed = values.map((v) => v.trim()).filter(Boolean);
-      const configValue = JSON.stringify(trimmed);
+      const configValue = isAssigneeList
+        ? JSON.stringify(trimmed.map((name, i) => ({ name, bgClass: ASSIGNEE_PALETTE[i % ASSIGNEE_PALETTE.length] })))
+        : JSON.stringify(trimmed);
       if (!config?.id) throw new Error('Config row not found. Please refresh and try again.');
       const { error } = await supabase
         .from('invoice_configurations')
@@ -159,13 +182,21 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[85%]">Value</TableHead>
+                    {isAssigneeList && <TableHead className="w-10">Color</TableHead>}
+                    <TableHead>Value</TableHead>
                     <TableHead className="w-[15%] text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row, index) => (
                     <TableRow key={index}>
+                      {isAssigneeList && (
+                        <TableCell>
+                            <div
+                            className={`h-4 w-4 rounded-full flex-shrink-0 ${ASSIGNEE_PALETTE[index % ASSIGNEE_PALETTE.length]}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Input
                           value={row}
