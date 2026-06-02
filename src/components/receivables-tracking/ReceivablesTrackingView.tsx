@@ -928,6 +928,16 @@ export default function ReceivablesTrackingView() {
   const fmtDate = (d: string | null) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-') : '—';
 
+  const getFollowupStyle = (dateStr: string | null | undefined): { badge: string; text: string } => {
+    if (!dateStr) return { badge: 'bg-gray-100 text-gray-500 border-gray-200', text: 'text-gray-400' };
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d = new Date(dateStr); d.setHours(0, 0, 0, 0);
+    const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
+    if (diff < 0) return { badge: 'bg-red-100 text-red-700 border-red-200', text: 'text-red-600' };
+    if (diff <= 1) return { badge: 'bg-amber-100 text-amber-700 border-amber-200', text: 'text-amber-600' };
+    return { badge: 'bg-green-100 text-green-700 border-green-200', text: 'text-green-600' };
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1166,11 +1176,18 @@ export default function ReceivablesTrackingView() {
 
                   {/* Next Follow-up Date (read-only) */}
                   <td className="px-4 py-3 whitespace-nowrap align-top">
-                    {row.nextFollowupDate ? (
-                      <span className="text-sm">{fmtDate(row.nextFollowupDate)}</span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground/50 italic">Not set</span>
-                    )}
+                    {(() => {
+                      const style = getFollowupStyle(row.nextFollowupDate || null);
+                      return row.nextFollowupDate ? (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${style.badge}`}>
+                          {fmtDate(row.nextFollowupDate)}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-400 border-gray-200 italic">
+                          Not set
+                        </span>
+                      );
+                    })()}
                   </td>
 
                   {/* Assignee */}
