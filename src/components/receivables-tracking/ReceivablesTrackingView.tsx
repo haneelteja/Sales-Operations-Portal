@@ -926,7 +926,7 @@ export default function ReceivablesTrackingView() {
     `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
   const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-IN') : '—';
+    d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-') : '—';
 
   if (isLoading) {
     return (
