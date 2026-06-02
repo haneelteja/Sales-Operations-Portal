@@ -787,7 +787,11 @@ export default function ReceivablesTrackingView() {
     }
 
     if (filterAssignee) {
-      rows = rows.filter(r => (assigneeMap[r.customerId] ?? '') === filterAssignee);
+      if (filterAssignee === '__unassigned__') {
+        rows = rows.filter(r => !assigneeMap[r.customerId]);
+      } else {
+        rows = rows.filter(r => assigneeMap[r.customerId] === filterAssignee);
+      }
     }
 
     return [...rows].sort((a, b) => {
@@ -1035,7 +1039,7 @@ export default function ReceivablesTrackingView() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All Assignees</SelectItem>
-              <SelectItem value="">Unassigned</SelectItem>
+              <SelectItem value="__unassigned__">Unassigned</SelectItem>
               {assigneeList.map(a => (
                 <SelectItem key={a.name} value={a.name}>
                   <span className="flex items-center gap-2">
