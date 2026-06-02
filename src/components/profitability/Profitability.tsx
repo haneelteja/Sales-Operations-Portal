@@ -249,13 +249,14 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("transport_expenses")
-        .select("client_id, amount, expense_date")
+        .select("client_id, amount, expense_date, customers(client_name, branch)")
         .gte("expense_date", startDate)
         .lte("expense_date", endDate);
       return (data ?? []) as Array<{
         client_id: string | null;
         amount: number;
         expense_date: string;
+        customers: { client_name: string; branch: string | null } | null;
       }>;
     },
   });
@@ -326,18 +327,17 @@ const Profitability: React.FC = () => {
       }
     }
 
-    // Transport per client+branch
+    // Transport per client+branch — use joined customers data (same pattern as factory)
+    // so duplicate customer_ids and clients with no sales in the period are handled correctly.
+    // Unlinked entries (no client) are not allocated proportionally.
     const directTransportMap = new Map<string, number>();
-    let unlinkedTransport = 0;
     for (const t of transport) {
-      if (t.client_id) {
+      if (t.customers?.client_name) {
+        const mapKey = `${t.customers.client_name}|||${t.customers.branch ?? ""}`;
+        directTransportMap.set(mapKey, (directTransportMap.get(mapKey) ?? 0) + (t.amount ?? 0));
+      } else if (t.client_id) {
         const mapKey = custKeyMap.get(t.client_id) ?? t.client_id;
-        directTransportMap.set(
-          mapKey,
-          (directTransportMap.get(mapKey) ?? 0) + (t.amount ?? 0),
-        );
-      } else {
-        unlinkedTransport += t.amount ?? 0;
+        directTransportMap.set(mapKey, (directTransportMap.get(mapKey) ?? 0) + (t.amount ?? 0));
       }
     }
 
@@ -353,9 +353,7 @@ const Profitability: React.FC = () => {
         unlinkedFactory * caseFraction;
       const labelsCost = totalLabelsCost * caseFraction;
 
-      const transportCost =
-        (directTransportMap.get(clientBranchKey) ?? 0) +
-        unlinkedTransport * caseFraction;
+      const transportCost = directTransportMap.get(clientBranchKey) ?? 0;
 
       const totalExpense = factoryCost + labelsCost + transportCost;
       const profit = invoiceValue - totalExpense;
@@ -640,7 +638,7 @@ const Profitability: React.FC = () => {
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
           Factory and label costs are global and allocated to each client proportionally by their share of total dispatched cases.
-          Unlinked transport is also allocated by case share.
+          Transport cost shows only direct entries linked to each client.
           Numeric column filters show rows where the value is ≥ the entered threshold.
         </span>
       </div>
