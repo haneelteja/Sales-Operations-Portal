@@ -124,8 +124,8 @@ const OrderAnalysis: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("orders_dispatch")
-        .select("client, branch, delivery_date");
-      return (data || []) as Array<{ client: string; branch: string; delivery_date: string }>;
+        .select("client, branch, order_date, delivery_date");
+      return (data || []) as Array<{ client: string; branch: string; order_date: string | null; delivery_date: string }>;
     },
   });
 
@@ -162,7 +162,7 @@ const OrderAnalysis: React.FC = () => {
     };
 
     rawOrders.forEach((o) => addDate(o.client, o.branch, o.order_date || o.created_at));
-    rawDispatch.forEach((d) => addDate(d.client, d.branch, d.delivery_date));
+    rawDispatch.forEach((d) => addDate(d.client, d.branch, d.order_date || d.delivery_date));
 
     const outstandingMap = new Map<string, number>();
     rawTx.forEach((tx) => {
