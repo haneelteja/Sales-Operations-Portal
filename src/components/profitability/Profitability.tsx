@@ -205,7 +205,7 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_payables")
-        .select("customer_id, amount, transaction_date")
+        .select("customer_id, amount, transaction_date, customers(client_name, branch)")
         .eq("transaction_type", "production")
         .gte("transaction_date", startDate)
         .lte("transaction_date", endDate);
@@ -213,6 +213,7 @@ const Profitability: React.FC = () => {
         customer_id: string | null;
         amount: number;
         transaction_date: string;
+        customers: { client_name: string; branch: string | null } | null;
       }>;
     },
   });
@@ -309,11 +310,15 @@ const Profitability: React.FC = () => {
     const totalCases = [...clientMap.values()].reduce((s, v) => s + v.cases, 0);
 
     // Factory cost: keyed by client+branch so all SKUs for the same client+branch are summed.
-    // customer_id is translated to client+branch key via custKeyMap when available.
+    // Use the joined customers row directly so records with any customer_id for the same
+    // client+branch (including duplicate customer records) are always merged correctly.
     const directFactoryMap = new Map<string, number>();
     let unlinkedFactory = 0;
     for (const f of factoryPayables) {
-      if (f.customer_id) {
+      if (f.customers?.client_name) {
+        const mapKey = `${f.customers.client_name}|||${f.customers.branch ?? ""}`;
+        directFactoryMap.set(mapKey, (directFactoryMap.get(mapKey) ?? 0) + (f.amount ?? 0));
+      } else if (f.customer_id) {
         const mapKey = custKeyMap.get(f.customer_id) ?? f.customer_id;
         directFactoryMap.set(mapKey, (directFactoryMap.get(mapKey) ?? 0) + (f.amount ?? 0));
       } else {
