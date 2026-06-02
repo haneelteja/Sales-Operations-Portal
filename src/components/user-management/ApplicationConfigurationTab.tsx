@@ -184,7 +184,17 @@ const ApplicationConfigurationTab: React.FC = () => {
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
     seen.add('label_vendors');
 
-    // Row 2: Assignee list
+    // Operations configs (rows 2-4)
+    for (const key of order) {
+      if (seen.has(key)) continue;
+      const config = configMap.get(key);
+      if (config) {
+        result.push(config);
+        seen.add(key);
+      }
+    }
+
+    // Row 5: Assignee list
     result.push({
       id: '',
       config_key: 'assignee_list',
@@ -199,17 +209,7 @@ const ApplicationConfigurationTab: React.FC = () => {
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
     seen.add('assignee_list');
 
-    // Operations configs (rows 3-5)
-    for (const key of order) {
-      if (seen.has(key)) continue;
-      const config = configMap.get(key);
-      if (config) {
-        result.push(config);
-        seen.add(key);
-      }
-    }
-
-    // Row 5: SKUs (custom - not from config table)
+    // Row 6: SKUs (custom - not from config table)
     result.push({
       id: '',
       config_key: 'sku_configurations',
