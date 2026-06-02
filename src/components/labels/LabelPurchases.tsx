@@ -601,6 +601,13 @@ const LabelPurchases = () => {
     });
   }, []);
 
+  const handleSortDir = useCallback((column: string, dir: "asc" | "desc" | null) => {
+    setColumnSorts(prev => ({
+      ...Object.keys(prev).reduce((acc, key) => ({ ...acc, [key]: null }), {} as typeof prev),
+      [column]: dir,
+    }));
+  }, []);
+
   const clearAllFilters = useCallback(() => {
     setSearchTerm("");
     setMonthFilter("");
@@ -790,7 +797,7 @@ const LabelPurchases = () => {
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Date
-                    <ColumnFilter columnKey="purchase_date" columnName="Date" filterValue={columnFilters.purchase_date} onFilterChange={(v) => handleColumnFilterChange('purchase_date', v)} dataType="date" />
+                    <ColumnFilter columnKey="purchase_date" columnName="Date" filterValue={columnFilters.purchase_date} onFilterChange={(v) => handleColumnFilterChange('purchase_date', v)} sortDirection={columnSorts.purchase_date} onSortChange={(d) => handleSortDir('purchase_date', d)} dataType="date" />
                   </div>
                 </TableHead>
                 {/* Client */}
@@ -800,7 +807,7 @@ const LabelPurchases = () => {
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Client
-                    <ColumnFilter columnKey="client" columnName="Client" filterValue={columnFilters.client} onFilterChange={(v) => handleColumnFilterChange('client', v)} dataType="text" />
+                    <ColumnFilter columnKey="client" columnName="Client" filterValue={columnFilters.client} onFilterChange={(v) => handleColumnFilterChange('client', v)} sortDirection={columnSorts.client} onSortChange={(d) => handleSortDir('client', d)} dataType="text" />
                   </div>
                 </TableHead>
                 {/* SKU */}
@@ -812,7 +819,7 @@ const LabelPurchases = () => {
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Quantity
-                    <ColumnFilter columnKey="quantity" columnName="Quantity" filterValue={columnFilters.quantity} onFilterChange={(v) => handleColumnFilterChange('quantity', v)} dataType="number" />
+                    <ColumnFilter columnKey="quantity" columnName="Quantity" filterValue={columnFilters.quantity} onFilterChange={(v) => handleColumnFilterChange('quantity', v)} sortDirection={columnSorts.quantity} onSortChange={(d) => handleSortDir('quantity', d)} dataType="number" />
                   </div>
                 </TableHead>
                 {/* Cost */}
@@ -822,7 +829,7 @@ const LabelPurchases = () => {
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Cost/Label
-                    <ColumnFilter columnKey="cost_per_label" columnName="Cost per Label" filterValue={columnFilters.cost_per_label} onFilterChange={(v) => handleColumnFilterChange('cost_per_label', v)} dataType="number" />
+                    <ColumnFilter columnKey="cost_per_label" columnName="Cost per Label" filterValue={columnFilters.cost_per_label} onFilterChange={(v) => handleColumnFilterChange('cost_per_label', v)} sortDirection={columnSorts.cost_per_label} onSortChange={(d) => handleSortDir('cost_per_label', d)} dataType="number" />
                   </div>
                 </TableHead>
                 {/* Total */}
@@ -832,7 +839,7 @@ const LabelPurchases = () => {
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Total
-                    <ColumnFilter columnKey="total_amount" columnName="Total Amount" filterValue={columnFilters.total_amount} onFilterChange={(v) => handleColumnFilterChange('total_amount', v)} dataType="number" />
+                    <ColumnFilter columnKey="total_amount" columnName="Total Amount" filterValue={columnFilters.total_amount} onFilterChange={(v) => handleColumnFilterChange('total_amount', v)} sortDirection={columnSorts.total_amount} onSortChange={(d) => handleSortDir('total_amount', d)} dataType="number" />
                   </div>
                 </TableHead>
                 {/* Vendor */}
@@ -842,7 +849,7 @@ const LabelPurchases = () => {
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                     Vendor
-                    <ColumnFilter columnKey="vendor" columnName="Vendor" filterValue={columnFilters.vendor} onFilterChange={(v) => handleColumnFilterChange('vendor', v)} dataType="text" />
+                    <ColumnFilter columnKey="vendor" columnName="Vendor" filterValue={columnFilters.vendor} onFilterChange={(v) => handleColumnFilterChange('vendor', v)} sortDirection={columnSorts.vendor} onSortChange={(d) => handleSortDir('vendor', d)} dataType="text" />
                   </div>
                 </TableHead>
                 {/* Actions */}
