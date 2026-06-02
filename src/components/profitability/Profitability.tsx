@@ -271,23 +271,12 @@ const Profitability: React.FC = () => {
     const backLabels = backLabelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
 
-    // Factory cost: direct per-client from factory_payables (production type)
-    // Records with null customer_id are allocated proportionally (handled below)
-    const directFactoryMap = new Map<string, number>();
-    let unlinkedFactory = 0;
-    for (const f of factoryPayables) {
-      if (f.customer_id) {
-        directFactoryMap.set(f.customer_id, (directFactoryMap.get(f.customer_id) ?? 0) + (f.amount ?? 0));
-      } else {
-        unlinkedFactory += f.amount ?? 0;
-      }
-    }
-
     const totalLabelsCost =
       labels.reduce((s, l) => s + (l.total_amount ?? 0), 0) +
       backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
 
-    // Aggregate revenue + cases (qty) per client from sales_transactions
+    // Aggregate revenue + cases (qty) per client+branch from sales_transactions.
+    // Key = "clientName|||branch" so the same client+branch always merges into one row.
     const clientMap = new Map<string, {
       clientId: string;
       clientName: string;
@@ -295,14 +284,19 @@ const Profitability: React.FC = () => {
       revenue: number;
       cases: number;
     }>();
+    // Also build customer_id → client+branch key for later lookups
+    const custKeyMap = new Map<string, string>();
     for (const s of sales) {
       const cust = s.customers;
-      const key = s.customer_id;
+      const clientName = cust?.client_name ?? "Unknown";
+      const branch = cust?.branch ?? "";
+      const key = `${clientName}|||${branch}`;
+      custKeyMap.set(s.customer_id, key);
       if (!clientMap.has(key)) {
         clientMap.set(key, {
-          clientId: key,
-          clientName: cust?.client_name ?? "Unknown",
-          branch: cust?.branch ?? "",
+          clientId: s.customer_id,
+          clientName,
+          branch,
           revenue: 0,
           cases: 0,
         });
@@ -313,16 +307,29 @@ const Profitability: React.FC = () => {
     }
 
     const totalCases = [...clientMap.values()].reduce((s, v) => s + v.cases, 0);
-    const merged = clientMap;
 
-    // Transport per client
+    // Factory cost: keyed by client+branch so all SKUs for the same client+branch are summed.
+    // customer_id is translated to client+branch key via custKeyMap when available.
+    const directFactoryMap = new Map<string, number>();
+    let unlinkedFactory = 0;
+    for (const f of factoryPayables) {
+      if (f.customer_id) {
+        const mapKey = custKeyMap.get(f.customer_id) ?? f.customer_id;
+        directFactoryMap.set(mapKey, (directFactoryMap.get(mapKey) ?? 0) + (f.amount ?? 0));
+      } else {
+        unlinkedFactory += f.amount ?? 0;
+      }
+    }
+
+    // Transport per client+branch
     const directTransportMap = new Map<string, number>();
     let unlinkedTransport = 0;
     for (const t of transport) {
       if (t.client_id) {
+        const mapKey = custKeyMap.get(t.client_id) ?? t.client_id;
         directTransportMap.set(
-          t.client_id,
-          (directTransportMap.get(t.client_id) ?? 0) + (t.amount ?? 0),
+          mapKey,
+          (directTransportMap.get(mapKey) ?? 0) + (t.amount ?? 0),
         );
       } else {
         unlinkedTransport += t.amount ?? 0;
@@ -332,17 +339,17 @@ const Profitability: React.FC = () => {
     // Build result rows
     const result: ProfitRow[] = [];
 
-    for (const entry of merged.values()) {
+    for (const [clientBranchKey, entry] of clientMap.entries()) {
       const { clientId, clientName, branch, revenue: invoiceValue, cases } = entry;
 
       const caseFraction = totalCases > 0 ? cases / totalCases : 0;
       const factoryCost =
-        (directFactoryMap.get(clientId) ?? 0) +
+        (directFactoryMap.get(clientBranchKey) ?? 0) +
         unlinkedFactory * caseFraction;
       const labelsCost = totalLabelsCost * caseFraction;
 
       const transportCost =
-        (directTransportMap.get(clientId) ?? 0) +
+        (directTransportMap.get(clientBranchKey) ?? 0) +
         unlinkedTransport * caseFraction;
 
       const totalExpense = factoryCost + labelsCost + transportCost;
