@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -I {} basename {})",
+      "PowerShell(cd \"c:\\\\Users\\\\Haneel Teja\\\\Cursor Applications\\\\Aamodha-Operations-Portal---V1\"; git diff HEAD -- src/components/factory/FactoryPayables.tsx src/components/user-management/UserManagement.tsx src/components/user-management/WhatsAppConfigurationTab.tsx src/hooks/useInvoiceGeneration.ts src/lib/search/searchService.ts src/services/whatsappService.ts | Select-Object -First 200)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit -m 'Fix column name: type → transaction_type in outstanding recalculation trigger *)",
+      "Bash(xargs grep -l \"cost_per\")"
+    ]
+  }
+}

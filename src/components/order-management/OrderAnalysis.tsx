@@ -113,12 +113,12 @@ const OrderAnalysis: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("transaction_type, amount, transaction_date, customers(client_name, branch)");
+        .select("transaction_type, amount, transaction_date, customers(client_name, branch, is_deprecated)");
       return (data || []) as Array<{
         transaction_type: string;
         amount: number | null;
         transaction_date: string | null;
-        customers: { client_name: string; branch: string } | null;
+        customers: { client_name: string; branch: string; is_deprecated: boolean } | null;
       }>;
     },
   });
@@ -135,6 +135,7 @@ const OrderAnalysis: React.FC = () => {
     rawTx.forEach((tx) => {
       const cust = tx.customers;
       if (!cust?.client_name) return;
+      if (cust.is_deprecated) return;
       const key = `${cust.client_name.trim()}|||${(cust.branch || "").trim()}`;
 
       // Outstanding balance

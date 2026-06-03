@@ -55,6 +55,7 @@ const LabelAvailability = () => {
         .from("customers")
         .select("id, client_name")
         .eq("is_active", true)
+        .eq("is_deprecated", false)
         .order("client_name", { ascending: true });
 
       if (error) throw error;

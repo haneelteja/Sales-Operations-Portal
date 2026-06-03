@@ -275,6 +275,7 @@ const SalesEntry = () => {
           .from("customers")
           .select("id, client_name, branch, sku, price_per_case, pricing_date, created_at, whatsapp_number")
           .eq("is_active", true)
+          .eq("is_deprecated", false)
           .order("client_name", { ascending: true });
         
         if (error) {

@@ -108,7 +108,8 @@ const BackLabels = () => {
       const { data } = await supabase
         .from("customers")
         .select("id, client_name")
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .eq("is_deprecated", false);
       return data || [];
     },
   });
