@@ -162,7 +162,7 @@ const OrderAnalysis: React.FC = () => {
     };
 
     rawOrders.forEach((o) => addDate(o.client, o.branch, o.order_date || o.created_at));
-    rawDispatch.forEach((d) => addDate(d.client, d.branch, d.order_date || d.delivery_date));
+    rawDispatch.forEach((d) => addDate(d.client, d.branch, d.delivery_date || d.order_date));
 
     const outstandingMap = new Map<string, number>();
     rawTx.forEach((tx) => {
