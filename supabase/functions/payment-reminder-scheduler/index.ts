@@ -408,7 +408,10 @@ serve(async (req) => {
     // Send summary email — best-effort, non-blocking
     const totalSent = results.reduce((s, r) => s + (r.newlySent ?? 0), 0);
     const totalFailed = results.reduce((s, r) => s + (r.failed ?? 0), 0);
-    if (totalSent > 0 || totalFailed > 0) {
+    // Only email when at least one message was sent. Pure-failure runs are logged in
+    // payment_reminder_logs (failure_reason column) but do not trigger a summary email
+    // to avoid daily spam when the WhatsApp API is consistently failing.
+    if (totalSent > 0) {
       const istNow = new Date(new Date().getTime() + (5 * 60 + 30) * 60 * 1000)
         .toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
       const scheduleRows = results.map((r) =>
