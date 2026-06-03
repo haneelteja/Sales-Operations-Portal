@@ -34,6 +34,11 @@ interface LabelStock {
   total: number;
 }
 
+interface InventoryStock {
+  client_id: string;
+  cases: number;
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -75,6 +80,39 @@ export const DeprecatedClientsDialog: React.FC<Props> = ({ open, onOpenChange })
     },
   });
 
+  const { data: inventoryStocks = [] } = useQuery<InventoryStock[]>({
+    queryKey: ["inventory-stocks-for-deprecated"],
+    enabled: open,
+    queryFn: async () => {
+      const [prodRes, salesRes] = await Promise.all([
+        supabase
+          .from("factory_payables")
+          .select("customer_id, quantity")
+          .eq("transaction_type", "production"),
+        supabase
+          .from("sales_transactions")
+          .select("customer_id, quantity")
+          .eq("transaction_type", "sale"),
+      ]);
+      const prod = new Map<string, number>();
+      for (const row of prodRes.data ?? []) {
+        if (row.customer_id)
+          prod.set(row.customer_id, (prod.get(row.customer_id) ?? 0) + (row.quantity ?? 0));
+      }
+      const sold = new Map<string, number>();
+      for (const row of salesRes.data ?? []) {
+        if (row.customer_id)
+          sold.set(row.customer_id, (sold.get(row.customer_id) ?? 0) + (row.quantity ?? 0));
+      }
+      const allIds = new Set([...prod.keys(), ...sold.keys()]);
+      return [...allIds].map((id) => ({
+        client_id: id,
+        cases: (prod.get(id) ?? 0) - (sold.get(id) ?? 0),
+      }));
+    },
+  });
+
+  const inventoryMap = new Map(inventoryStocks.map((i) => [i.client_id, i.cases]));
   const labelStockMap = new Map(labelStocks.map((l) => [l.client_id, l.total]));
 
   const deprecated = allCustomers.filter((c) => c.is_deprecated);
@@ -144,6 +182,7 @@ export const DeprecatedClientsDialog: React.FC<Props> = ({ open, onOpenChange })
                       <TableRow className="bg-gray-50">
                         <TableHead>Client</TableHead>
                         <TableHead>Branch</TableHead>
+                        <TableHead className="text-right">Inventory (cases)</TableHead>
                         <TableHead className="text-right">Label Stock</TableHead>
                         <TableHead className="text-right">Action</TableHead>
                       </TableRow>
@@ -151,10 +190,20 @@ export const DeprecatedClientsDialog: React.FC<Props> = ({ open, onOpenChange })
                     <TableBody>
                       {deprecated.map((c) => {
                         const stock = labelStockMap.get(c.id) ?? 0;
+                        const cases = inventoryMap.get(c.id) ?? 0;
                         return (
                           <TableRow key={c.id}>
                             <TableCell className="font-medium">{c.client_name}</TableCell>
                             <TableCell className="text-muted-foreground">{c.branch || "—"}</TableCell>
+                            <TableCell className="text-right">
+                              {cases > 0 ? (
+                                <Badge className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100">
+                                  {cases.toLocaleString("en-IN")} cases
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">—</span>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right">
                               {stock > 0 ? (
                                 <Badge className="bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100">
