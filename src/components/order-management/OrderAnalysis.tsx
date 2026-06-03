@@ -107,38 +107,17 @@ const OrderAnalysis: React.FC = () => {
 
   // ── Data Queries ──────────────────────────────────────────────────────────────
 
-  const { data: rawOrders = [] } = useQuery({
-    queryKey: ["orders-analysis"],
-    ...getQueryConfig("orders"),
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("orders")
-        .select("client, branch, order_date, created_at");
-      return (data || []) as Array<{ client: string; branch: string; order_date: string | null; created_at: string }>;
-    },
-  });
-
-  const { data: rawDispatch = [] } = useQuery({
-    queryKey: ["orders-dispatch-analysis"],
-    ...getQueryConfig("orders-dispatch"),
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("orders_dispatch")
-        .select("client, branch, order_date, delivery_date");
-      return (data || []) as Array<{ client: string; branch: string; order_date: string | null; delivery_date: string }>;
-    },
-  });
-
   const { data: rawTx = [] } = useQuery({
-    queryKey: ["order-analysis-outstanding"],
+    queryKey: ["order-analysis-transactions"],
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("transaction_type, amount, customers(client_name, branch)");
+        .select("transaction_type, amount, transaction_date, customers(client_name, branch)");
       return (data || []) as Array<{
         transaction_type: string;
         amount: number | null;
+        transaction_date: string | null;
         customers: { client_name: string; branch: string } | null;
       }>;
     },
@@ -151,30 +130,30 @@ const OrderAnalysis: React.FC = () => {
     today.setHours(0, 0, 0, 0);
 
     const dateMap = new Map<string, string[]>();
-    const addDate = (client: string, branch: string, date: string | null | undefined) => {
-      if (!client || !date) return;
-      const d = date.split("T")[0];
-      if (!d || d === "null") return;
-      const key = `${client.trim()}|||${(branch || "").trim()}`;
-      const arr = dateMap.get(key);
-      if (arr) arr.push(d);
-      else dateMap.set(key, [d]);
-    };
-
-    rawOrders.forEach((o) => addDate(o.client, o.branch, o.order_date || o.created_at));
-    rawDispatch.forEach((d) => addDate(d.client, d.branch, d.delivery_date || d.order_date));
-
     const outstandingMap = new Map<string, number>();
+
     rawTx.forEach((tx) => {
       const cust = tx.customers;
       if (!cust?.client_name) return;
       const key = `${cust.client_name.trim()}|||${(cust.branch || "").trim()}`;
+
+      // Outstanding balance
       const prev = outstandingMap.get(key) ?? 0;
       const amt = tx.amount ?? 0;
       outstandingMap.set(
         key,
         tx.transaction_type === "sale" ? prev + amt : tx.transaction_type === "payment" ? prev - amt : prev
       );
+
+      // Order date history — only from sale transactions
+      if (tx.transaction_type === "sale" && tx.transaction_date) {
+        const d = tx.transaction_date.split("T")[0];
+        if (d && d !== "null") {
+          const arr = dateMap.get(key);
+          if (arr) arr.push(d);
+          else dateMap.set(key, [d]);
+        }
+      }
     });
 
     const result: AnalysisRow[] = [];
@@ -225,7 +204,7 @@ const OrderAnalysis: React.FC = () => {
       if (so !== 0) return so;
       return b.daysOverdue - a.daysOverdue;
     });
-  }, [rawOrders, rawDispatch, rawTx]);
+  }, [rawTx]);
 
   // ── Unique values for filter dropdowns ────────────────────────────────────────
 
@@ -326,7 +305,7 @@ const OrderAnalysis: React.FC = () => {
           <div>
             <CardTitle className="text-base font-semibold">Order Analysis — Expected Next Order</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Per client &amp; branch · Avg days between orders based on full order history (pending + dispatched)
+              Per client &amp; branch · Avg days between orders based on client transaction history
             </p>
           </div>
           <div className="flex-1 min-w-[200px] max-w-xs">
