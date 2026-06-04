@@ -1,4 +1,2 @@
-SELECT vendor_id, payment_amount, payment_date, payment_method
-FROM label_payments
-WHERE payment_date BETWEEN '2026-01-01' AND '2026-03-31'
-ORDER BY payment_date;
+UPDATE customers SET client_name='Angana Caters' WHERE client_name='Anagana Caters';
+SELECT 'Done' as status;
