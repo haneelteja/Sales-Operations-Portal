@@ -1,5 +1,4 @@
-SELECT lp.client_id, c.client_name, lp.sku, lp.quantity, lp.total_amount, lp.vendor_id, lp.description
-FROM label_purchases lp
-LEFT JOIN customers c ON c.id = lp.client_id
-WHERE lp.purchase_date = '2026-03-31'
-ORDER BY c.client_name NULLS LAST, lp.description;
+SELECT vendor_id, payment_amount, payment_date, payment_method
+FROM label_payments
+WHERE payment_date BETWEEN '2026-01-01' AND '2026-03-31'
+ORDER BY payment_date;
