@@ -276,6 +276,8 @@ serve(async (req) => {
 
       let sent = 0;
       let failed = 0;
+      const sentCustomers: Array<{ name: string; outstanding: string; daysOverdue: number }> = [];
+      const failedCustomers: Array<{ name: string; reason: string }> = [];
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       const sendWithRateLimitRetry = async (body: object): Promise<{ success: boolean; messageLogId?: string; error?: string }> => {
@@ -380,6 +382,12 @@ serve(async (req) => {
           await sleep(1000);
         }
 
+        if (status === 'sent') {
+          sentCustomers.push({ name: customer.dealer_name, outstanding: outstandingFormatted, daysOverdue: daysOverdueActual });
+        } else {
+          failedCustomers.push({ name: customer.dealer_name, reason: failureReason ?? 'Unknown error' });
+        }
+
         await supabase.from('payment_reminder_logs').insert({
           schedule_id: schedule.id,
           customer_id: customer.id,
@@ -400,6 +408,8 @@ serve(async (req) => {
         newlySent: sent,
         failed,
         notYetOverdue,
+        sentCustomers,
+        failedCustomers,
       });
     }
 
@@ -414,15 +424,46 @@ serve(async (req) => {
     if (totalSent > 0) {
       const istNow = new Date(new Date().getTime() + (5 * 60 + 30) * 60 * 1000)
         .toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-      const scheduleRows = results.map((r) =>
-        `<tr>
-          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb">${r.scheduleName}</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${r.daysOverdue ?? '—'} days</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${r.eligible ?? 0}</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center;color:#16a34a"><strong>${r.newlySent ?? 0}</strong></td>
-          <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:center;color:${(r.failed ?? 0) > 0 ? '#dc2626' : '#6b7280'}">${r.failed ?? 0}</td>
-        </tr>`
-      ).join('');
+
+      const scheduleBlocks = results
+        .filter((r) => (r.newlySent ?? 0) > 0 || (r.failed ?? 0) > 0)
+        .map((r) => {
+          const sentRows = (r.sentCustomers ?? []).map((c: { name: string; outstanding: string; daysOverdue: number }, i: number) =>
+            `<tr style="background:${i % 2 === 0 ? '#ffffff' : '#f9fafb'}">
+              <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${c.name}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;color:#b45309">${c.outstanding}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280">${c.daysOverdue} days</td>
+            </tr>`
+          ).join('');
+
+          const failedBlock = (r.failedCustomers ?? []).length > 0
+            ? `<div style="margin-top:12px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px">
+                <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#dc2626">Failed to send (${r.failedCustomers.length})</p>
+                ${(r.failedCustomers as Array<{ name: string; reason: string }>).map((c) => `<p style="margin:2px 0;font-size:13px;color:#7f1d1d">${c.name} — ${c.reason}</p>`).join('')}
+              </div>`
+            : '';
+
+          return `
+            <div style="margin-bottom:28px">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                <span style="font-size:15px;font-weight:700;color:#111827">${r.scheduleName}</span>
+                <span style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:2px 8px;border-radius:12px">${r.daysOverdue ?? '—'}-day overdue</span>
+                <span style="font-size:12px;color:#16a34a;background:#f0fdf4;padding:2px 8px;border-radius:12px;font-weight:600">${r.newlySent ?? 0} sent</span>
+              </div>
+              ${(r.sentCustomers ?? []).length > 0 ? `
+              <table style="border-collapse:collapse;width:100%;font-size:13px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden">
+                <thead>
+                  <tr style="background:#f3f4f6">
+                    <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:600">Customer</th>
+                    <th style="padding:8px 12px;text-align:right;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:600">Outstanding</th>
+                    <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:600">Overdue</th>
+                  </tr>
+                </thead>
+                <tbody>${sentRows}</tbody>
+              </table>` : ''}
+              ${failedBlock}
+            </div>`;
+        }).join('');
 
       fetch(`${supabaseUrl}/functions/v1/send-email`, {
         method: 'POST',
@@ -432,26 +473,30 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           to: notificationEmail,
-          subject: `Payment Reminders Sent — ${totalSent} sent, ${totalFailed} failed (${istNow} IST)`,
+          subject: `✅ Payment Reminders: ${totalSent} sent${totalFailed > 0 ? `, ${totalFailed} failed` : ''} — ${istNow}`,
           html: `
-            <h2 style="margin:0 0 16px">Payment Reminder Summary</h2>
-            <p><strong>Run time:</strong> ${istNow} IST</p>
-            <p><strong>Trigger:</strong> ${force ? 'Manual' : 'Scheduled (cron)'}</p>
-            <p><strong>Total sent:</strong> <span style="color:#16a34a">${totalSent}</span> &nbsp;|&nbsp; <strong>Total failed:</strong> <span style="color:#dc2626">${totalFailed}</span></p>
-            <table style="border-collapse:collapse;width:100%;margin-top:16px;font-size:14px">
-              <thead>
-                <tr style="background:#f3f4f6">
-                  <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb">Schedule</th>
-                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Overdue</th>
-                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Eligible</th>
-                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Sent</th>
-                  <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e5e7eb">Failed</th>
-                </tr>
-              </thead>
-              <tbody>${scheduleRows}</tbody>
-            </table>
-            <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-            <p style="color:#6b7280;font-size:12px"><em>Automated message from Aamodha Operations Portal.</em></p>
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827">
+              <div style="background:#1e3a5f;padding:20px 24px;border-radius:8px 8px 0 0">
+                <h2 style="margin:0;color:#ffffff;font-size:18px">Payment Reminder Summary</h2>
+                <p style="margin:4px 0 0;color:#93c5fd;font-size:13px">${istNow} &nbsp;·&nbsp; ${force ? 'Manual trigger' : 'Scheduled (cron)'}</p>
+              </div>
+              <div style="background:#ffffff;padding:20px 24px;border:1px solid #e5e7eb;border-top:none">
+                <div style="display:flex;gap:16px;margin-bottom:24px">
+                  <div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;text-align:center">
+                    <div style="font-size:28px;font-weight:700;color:#16a34a">${totalSent}</div>
+                    <div style="font-size:12px;color:#15803d;margin-top:2px">Reminders Sent</div>
+                  </div>
+                  ${totalFailed > 0 ? `<div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;text-align:center">
+                    <div style="font-size:28px;font-weight:700;color:#dc2626">${totalFailed}</div>
+                    <div style="font-size:12px;color:#b91c1c;margin-top:2px">Failed</div>
+                  </div>` : ''}
+                </div>
+                ${scheduleBlocks}
+              </div>
+              <div style="background:#f9fafb;padding:12px 24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;text-align:center">
+                <p style="margin:0;color:#9ca3af;font-size:11px">Automated message from Aamodha Operations Portal</p>
+              </div>
+            </div>
           `,
         }),
       }).catch((err) => console.error('[payment-reminder-scheduler] summary email error:', err));
