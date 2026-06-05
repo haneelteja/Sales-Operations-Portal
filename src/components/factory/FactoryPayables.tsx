@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, lazy, Suspense } from "react";
 const FactoryPricingTab = lazy(() => import("./FactoryPricingTab"));
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getQueryConfig } from "@/lib/query-configs";
@@ -92,6 +93,7 @@ const FactoryPayables = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { invalidateRelated } = useCacheInvalidation();
+  const log = useAuditLog();
 
   // Fetch factory pricing data
   const { data: factoryPricing } = useQuery({
@@ -594,7 +596,8 @@ const FactoryPayables = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'CREATE', entityType: 'factory_production', description: `Factory production recorded: ${variables.quantity} cases of ${variables.sku} on ${variables.transaction_date}`, newValues: { sku: variables.sku, quantity: variables.quantity, date: variables.transaction_date } });
       toast({ title: "Success", description: "Production transaction recorded!" });
       setProductionForm({
         sku: "",
@@ -628,7 +631,8 @@ const FactoryPayables = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'CREATE', entityType: 'factory_payment', description: `Factory payment recorded: ₹${variables.amount} on ${variables.transaction_date}`, newValues: { amount: variables.amount, date: variables.transaction_date, description: variables.description } });
       toast({ title: "Success", description: "Payment to Elma Industries recorded!" });
       setPaymentForm({
         amount: "",
@@ -664,7 +668,8 @@ const FactoryPayables = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'factory_payable', entityId: variables.id, description: `Factory ${variables.transaction_type} updated (ID: ${variables.id})`, newValues: { ...variables } });
       toast({ title: "Success", description: "Transaction updated successfully!" });
       setEditingTransaction(null);
       setEditDialogOpen(false);
@@ -689,7 +694,8 @@ const FactoryPayables = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'DELETE', entityType: 'factory_payable', entityId: variables, description: `Factory transaction deleted (ID: ${variables})` });
       toast({ title: "Success", description: "Transaction deleted successfully!" });
       invalidateRelated('factory_payables');
     },

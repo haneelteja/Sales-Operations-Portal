@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { logAction } from '@/lib/auditLogger';
 import {
   Loader2, Search, TrendingUp, CreditCard, Users, AlertTriangle,
   ChevronDown, MapPin, X, IndianRupee, Package, Calendar,
@@ -719,6 +720,7 @@ function FollowupNotesDrawer({ c, open, onClose }: { c: CustomerRow; open: boole
   const mutation = useMutation({
     mutationFn: () => saveFollowupNote(c.customer_id, note.trim(), followupDate || null, operatorName),
     onSuccess: () => {
+      logAction({ action: 'CREATE', entityType: 'followup_note', description: `Followup note added for ${c.customer_name ?? 'client'}: "${note.trim().slice(0, 60)}"` });
       qc.invalidateQueries({ queryKey: ['followup-notes', c.customer_id] });
       setNote('');
       setFollowupDate('');
@@ -908,6 +910,7 @@ function CustomerCard({ c, isExpanded, onToggle, onViewLedger, onViewNotes, late
   const followupMutation = useMutation({
     mutationFn: () => saveFollowupNote(c.customer_id, draftNote.trim() || 'Follow-up date updated', draftDate || null, operatorName),
     onSuccess: () => {
+      logAction({ action: 'UPDATE', entityType: 'followup_note', description: `Followup updated for ${c.customer_name ?? 'client'}: date=${draftDate}` });
       qc.invalidateQueries({ queryKey: ['followup-notes', c.customer_id] });
       onFollowupSaved();
       setEditingFollowup(false);

@@ -19,6 +19,7 @@ const WhatsAppConfigurationTab = lazy(() => import("@/components/user-management
 const ReceivablesManagement = lazy(() => import("@/components/receivables/ReceivablesManagement"));
 const ReceivablesTrackingView = lazy(() => import("@/components/receivables-tracking/ReceivablesTrackingView"));
 const Profitability = lazy(() => import("@/components/profitability/Profitability"));
+const AuditLogs = lazy(() => import("@/components/logs/AuditLogs"));
 
 // Loading component for route transitions
 const RouteLoader = () => (
@@ -94,6 +95,23 @@ const Index = () => {
         return (
           <Suspense fallback={<RouteLoader />}>
             <Profitability />
+          </Suspense>
+        );
+      case "audit-logs":
+        if (profile?.role !== 'manager') {
+          return (
+            <Alert className="m-6">
+              <Shield className="h-4 w-4" />
+              <AlertDescription>
+                Access denied. Audit Logs are only available to managers.
+                Your current role: {profile?.role || 'Unknown'}
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return (
+          <Suspense fallback={<RouteLoader />}>
+            <AuditLogs />
           </Suspense>
         );
       case "user-management":

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, memo, useRef, useEffect } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { LabelPurchase, LabelPurchaseForm, MutationFunction } from "@/types";
@@ -162,6 +163,7 @@ const LabelPurchases = () => {
   const today = new Date().toISOString().split('T')[0];
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
 
   const { data: customers } = useQuery({
     queryKey: ["customers"],
@@ -293,7 +295,8 @@ const LabelPurchases = () => {
         throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'CREATE', entityType: 'label_purchase', description: `Label purchase recorded: ${variables.quantity} labels @ ₹${variables.cost_per_label} on ${variables.purchase_date}`, newValues: { quantity: variables.quantity, cost_per_label: variables.cost_per_label, sku: variables.sku, date: variables.purchase_date } });
       toast({ title: "Success", description: "Label purchase recorded!" });
       setForm({
         vendor_id: "",
@@ -345,7 +348,8 @@ const LabelPurchases = () => {
         throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'label_purchase', entityId: variables.id, description: `Label purchase updated (ID: ${variables.id})`, newValues: { quantity: variables.quantity, cost_per_label: variables.cost_per_label, sku: variables.sku, date: variables.purchase_date } });
       toast({ title: "Success", description: "Label purchase updated!" });
       setEditingPurchase(null);
       setEditForm({ vendor_id: "", client_id: "", sku: "", quantity: "", cost_per_label: "", total_amount: "", purchase_date: "", description: "" });
@@ -365,7 +369,8 @@ const LabelPurchases = () => {
       const { error } = await supabase.from("label_purchases").delete().eq("id", id);
       if (error) { console.error("Database error:", error); throw error; }
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'DELETE', entityType: 'label_purchase', entityId: variables, description: `Label purchase deleted (ID: ${variables})` });
       toast({ title: "Success", description: "Label purchase deleted!" });
       queryClient.invalidateQueries({ queryKey: ["label-purchases"] });
       queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });

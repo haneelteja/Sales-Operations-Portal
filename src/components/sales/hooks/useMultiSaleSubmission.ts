@@ -4,6 +4,7 @@ import { useCacheInvalidation } from '@/hooks/useCacheInvalidation';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
 import { isAutoInvoiceEnabled } from '@/services/invoiceConfigService';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import type { Customer, SalesTransaction } from '@/types';
 import type { SaleForm } from '@/types';
 import type { SalesItem } from '@/components/sales/hooks/useSalesItemsManager';
@@ -47,6 +48,7 @@ export function useMultiSaleSubmission({
 }: UseMultiSaleSubmissionOptions) {
   const { toast } = useToast();
   const { invalidateRelated } = useCacheInvalidation();
+  const log = useAuditLog();
 
   return useMutation({
     mutationFn: async (): Promise<{ transactions: SalesTransaction[]; customerId: string }> => {
@@ -155,6 +157,7 @@ export function useMultiSaleSubmission({
       return { transactions: insertedTransactions, customerId: saleForm.customer_id };
     },
     onSuccess: async ({ transactions, customerId }) => {
+      log({ action: 'CREATE', entityType: 'sale', entityId: transactions[0]?.id, description: `Multi-SKU sale recorded: ${salesItems.length} item${salesItems.length > 1 ? 's' : ''} for ₹${calculateTotalAmount().toFixed(2)} on ${saleForm.transaction_date}`, newValues: { items: salesItems.length, total: calculateTotalAmount(), date: saleForm.transaction_date } });
       toast({
         title: 'Success',
         description: `Successfully recorded ${salesItems.length} sale${salesItems.length > 1 ? 's' : ''} with total amount ₹${calculateTotalAmount().toFixed(4)} and corresponding factory transactions!`,

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, handleSupabaseError } from '@/integrations/supabase/client';
 import { getWhatsAppTemplates } from '@/services/whatsappService';
@@ -353,6 +354,7 @@ const CampaignRecipients: React.FC<{ campaignId: string; campaignName: string }>
 
 export const FestivalCampaignsSection: React.FC = () => {
   const { toast } = useToast();
+  const log = useAuditLog();
   const queryClient = useQueryClient();
 
   // Form state
@@ -610,6 +612,7 @@ export const FestivalCampaignsSection: React.FC = () => {
       if (recErr) throw new Error(handleSupabaseError(recErr));
     },
     onSuccess: () => {
+      log({ action: 'CREATE', entityType: 'festival_campaign', description: `Festival campaign scheduled: "${campaignName}"` });
       queryClient.invalidateQueries({ queryKey: ['festival-campaigns'] });
       toast({ title: 'Campaign scheduled', description: 'Messages will be sent at the scheduled time.' });
       // Reset form
@@ -632,6 +635,7 @@ export const FestivalCampaignsSection: React.FC = () => {
     if (error) {
       toast({ title: 'Error', description: handleSupabaseError(error), variant: 'destructive' });
     } else {
+      log({ action: 'UPDATE', entityType: 'festival_campaign', entityId: id, description: `Festival campaign cancelled (ID: ${id})` });
       queryClient.invalidateQueries({ queryKey: ['festival-campaigns'] });
       toast({ title: 'Campaign cancelled' });
     }

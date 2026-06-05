@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +63,7 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
   onSuccess,
 }) => {
   const { toast } = useToast();
+  const log = useAuditLog();
   const queryClient = useQueryClient();
 
   const [rows, setRows] = useState<SkuRow[]>([]);
@@ -247,6 +249,7 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
       if (errors.length) throw new Error(errors.join('; '));
     },
     onSuccess: () => {
+      log({ action: 'UPDATE', entityType: 'sku_configuration', description: 'SKU configurations saved' });
       queryClient.invalidateQueries({ queryKey: ['sku-configurations'] });
       toast({ title: 'Success', description: 'SKU configurations saved.' });
       onSuccess?.();

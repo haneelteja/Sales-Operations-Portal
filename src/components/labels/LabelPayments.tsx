@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,7 @@ const LabelPayments = () => {
   const today = new Date().toISOString().split('T')[0];
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
 
   // Fetch label vendors from configuration
   const { data: labelVendors } = useQuery({
@@ -140,7 +142,8 @@ const LabelPayments = () => {
         });
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'CREATE', entityType: 'label_payment', description: `Label payment recorded: ₹${variables.payment_amount} via ${variables.payment_method} on ${variables.payment_date}`, newValues: { amount: variables.payment_amount, method: variables.payment_method, date: variables.payment_date } });
       toast({ title: "Success", description: "Label payment recorded!" });
       setForm({
         payment_amount: "",
@@ -170,7 +173,8 @@ const LabelPayments = () => {
         .eq("id", data.id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'label_payment', entityId: variables.id, description: `Label payment updated: ₹${variables.payment_amount} via ${variables.payment_method}`, newValues: { amount: variables.payment_amount, method: variables.payment_method, date: variables.payment_date } });
       toast({ title: "Success", description: "Label payment updated!" });
       setEditingPayment(null);
       queryClient.invalidateQueries({ queryKey: ["label-payments"] });
@@ -185,7 +189,8 @@ const LabelPayments = () => {
       const { error } = await supabase.from("label_payments").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'DELETE', entityType: 'label_payment', entityId: variables, description: `Label payment deleted (ID: ${variables})` });
       toast({ title: "Success", description: "Label payment deleted!" });
       queryClient.invalidateQueries({ queryKey: ["label-payments"] });
     },

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, memo, useEffect } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
@@ -82,6 +83,7 @@ const ConfigurationManagement = () => {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
   const { invalidateRelated } = useCacheInvalidation();
 
   // Customer Management queries and mutations
@@ -193,7 +195,8 @@ const ConfigurationManagement = () => {
         throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables.id, description: `Client configuration updated: ${variables.client_name} — ${variables.branch}`, newValues: { client_name: variables.client_name, branch: variables.branch, sku: variables.sku, price_per_case: variables.price_per_case } });
       toast({ title: "Success", description: "Customer updated successfully!" });
       setIsEditCustomerOpen(false);
       setEditingCustomer(null);
@@ -218,14 +221,15 @@ const ConfigurationManagement = () => {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables, description: `Client deactivated (ID: ${variables})` });
       toast({ title: "Success", description: "Customer deactivated successfully!" });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
+      toast({
+        title: "Error",
         description: "Failed to deactivate customer: " + error.message,
         variant: "destructive"
       });
@@ -243,7 +247,8 @@ const ConfigurationManagement = () => {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables, description: `Client reactivated (ID: ${variables})` });
       toast({ title: "Success", description: "Customer reactivated successfully!" });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });

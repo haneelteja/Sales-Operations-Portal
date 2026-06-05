@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useCacheInvalidation } from '@/hooks/useCacheInvalidation';
 import { useToast } from '@/hooks/use-toast';
 import { isAutoInvoiceEnabled } from '@/services/invoiceConfigService';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import type { Customer, PaymentForm, SaleForm, SalesTransaction } from '@/types';
 
 type CustomerDirectoryRecord = {
@@ -50,6 +51,7 @@ export function useTransactionMutations({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { invalidateRelated } = useCacheInvalidation();
+  const log = useAuditLog();
 
   const paymentMutation = useMutation({
     mutationFn: async (data: PaymentForm) => {
@@ -88,7 +90,8 @@ export function useTransactionMutations({
 
       return paymentData;
     },
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
+      log({ action: 'CREATE', entityType: 'client_payment', entityId: result?.id, description: `Payment recorded: ₹${variables.amount} on ${variables.transaction_date}`, newValues: { amount: variables.amount, date: variables.transaction_date, description: variables.description } });
       toast({ title: 'Success', description: 'Payment recorded successfully!' });
       onPaymentSuccess();
       queryClient.invalidateQueries({ queryKey: ['sales-summary'] });
@@ -193,7 +196,8 @@ export function useTransactionMutations({
 
       return { updatedTransaction, customerId: data.customer_id };
     },
-    onSuccess: async ({ updatedTransaction, customerId }) => {
+    onSuccess: async ({ updatedTransaction, customerId }, variables) => {
+      log({ action: 'UPDATE', entityType: 'sales_transaction', entityId: variables.id, description: `Transaction updated: ${variables.sku ?? 'payment'} on ${variables.transaction_date}`, newValues: { amount: variables.amount, sku: variables.sku, quantity: variables.quantity, date: variables.transaction_date } });
       toast({ title: 'Success', description: 'Transaction updated successfully!' });
       onUpdateSuccess();
       invalidateRelated('sales_transactions');
@@ -266,7 +270,8 @@ export function useTransactionMutations({
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'DELETE', entityType: 'sales_transaction', entityId: variables, description: `Transaction deleted (ID: ${variables})` });
       toast({ title: 'Success', description: 'Transaction deleted successfully!' });
       invalidateRelated('sales_transactions');
       invalidateRelated('factory_payables');

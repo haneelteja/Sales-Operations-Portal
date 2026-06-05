@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import {
@@ -51,6 +52,7 @@ export const ClientContactsDialog: React.FC<ClientContactsDialogProps> = ({
   branch,
 }) => {
   const { toast } = useToast();
+  const log = useAuditLog();
   const queryClient = useQueryClient();
   const [contacts, setContacts] = useState<ContactRow[]>([]);
 
@@ -107,6 +109,7 @@ export const ClientContactsDialog: React.FC<ClientContactsDialogProps> = ({
       }
     },
     onSuccess: () => {
+      log({ action: 'UPDATE', entityType: 'client_contacts', description: `Client contacts updated for ${clientName} — ${branch}`, newValues: { client_name: clientName, branch } });
       queryClient.invalidateQueries({ queryKey: ["client-contacts", clientName, branch] });
       toast({ title: "Contacts saved" });
       onOpenChange(false);

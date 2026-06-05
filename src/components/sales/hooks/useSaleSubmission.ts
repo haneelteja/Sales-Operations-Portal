@@ -4,6 +4,7 @@ import { useCacheInvalidation } from '@/hooks/useCacheInvalidation';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
 import { isAutoInvoiceEnabled } from '@/services/invoiceConfigService';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import type { Customer, SalesTransaction, SaleForm } from '@/types';
 
 type CustomerDirectoryRecord = Customer & {
@@ -45,6 +46,7 @@ export function useSaleSubmission({
 }: UseSaleSubmissionOptions) {
   const { toast } = useToast();
   const { invalidateRelated } = useCacheInvalidation();
+  const log = useAuditLog();
 
   return useMutation({
     mutationFn: async (data: SaleForm) => {
@@ -188,7 +190,9 @@ export function useSaleSubmission({
 
       return insertedTransactions as SalesTransaction[];
     },
-    onSuccess: async (insertedTransactions) => {
+    onSuccess: async (insertedTransactions, variables) => {
+      const t = insertedTransactions[0];
+      log({ action: 'CREATE', entityType: 'sale', entityId: t?.id, description: `Sale recorded: ${variables.quantity ?? '?'} cases of ${variables.sku ?? '?'} for ₹${variables.amount} on ${variables.transaction_date}`, newValues: { sku: variables.sku, quantity: variables.quantity, amount: variables.amount, date: variables.transaction_date } });
       toast({ title: 'Success', description: 'Sale recorded successfully!' });
 
       const autoEnabled = await isAutoInvoiceEnabled();

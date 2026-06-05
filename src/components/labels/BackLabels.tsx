@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ const emptyPurchaseForm = (today: string) => ({
 const BackLabels = () => {
   const today = new Date().toISOString().split("T")[0];
   const { toast } = useToast();
+  const log = useAuditLog();
   const queryClient = useQueryClient();
 
   const [form, setForm] = useState(emptyPurchaseForm(today));
@@ -214,7 +216,8 @@ const BackLabels = () => {
       });
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'CREATE', entityType: 'back_label_purchase', description: `Back label purchase recorded: ${variables.quantity} labels @ ₹${variables.cost_per_label} on ${variables.purchase_date}`, newValues: { quantity: variables.quantity, cost_per_label: variables.cost_per_label, date: variables.purchase_date } });
       toast({ title: "Success", description: "Back label purchase recorded!" });
       setForm(emptyPurchaseForm(today));
       invalidatePurchases();
@@ -237,7 +240,8 @@ const BackLabels = () => {
         .eq("id", f.id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'back_label_purchase', entityId: variables.id, description: `Back label purchase updated (ID: ${variables.id})`, newValues: { quantity: variables.quantity, cost_per_label: variables.cost_per_label, date: variables.purchase_date } });
       toast({ title: "Success", description: "Back label purchase updated!" });
       setEditDialogOpen(false);
       setEditingPurchase(null);
@@ -251,7 +255,8 @@ const BackLabels = () => {
       const { error } = await supabase.from("back_label_purchases").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'DELETE', entityType: 'back_label_purchase', entityId: variables, description: `Back label purchase deleted (ID: ${variables})` });
       toast({ title: "Success", description: "Purchase deleted!" });
       invalidatePurchases();
     },
@@ -263,7 +268,8 @@ const BackLabels = () => {
       const { error } = await supabase.from("customer_back_label_history").insert(row);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'CREATE', entityType: 'back_label_config', description: `Back label config updated: ${variables.client_name} — requires_back_label: ${variables.requires_back_label} from ${variables.effective_from}`, newValues: { client_name: variables.client_name, requires_back_label: variables.requires_back_label, effective_from: variables.effective_from } });
       toast({ title: "Success", description: "Back label configuration updated!" });
       invalidateHistory();
     },
@@ -275,7 +281,8 @@ const BackLabels = () => {
       const { error } = await supabase.from("customer_back_label_history").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: 'DELETE', entityType: 'back_label_config', entityId: variables, description: `Back label config entry deleted (ID: ${variables})` });
       toast({ title: "Success", description: "History entry deleted!" });
       invalidateHistory();
     },

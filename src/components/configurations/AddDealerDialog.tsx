@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import type { Customer } from "@/types";
@@ -152,6 +153,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   onSuccess,
 }) => {
   const { toast } = useToast();
+  const log = useAuditLog();
   const queryClient = useQueryClient();
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [isExistingClient, setIsExistingClient] = useState(false);
@@ -469,7 +471,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         }
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      log({ action: isPairHistoryMode ? 'CREATE' : 'UPDATE', entityType: 'client_configuration', description: `Client pricing saved for ${variables?.[0]?.client_name ?? 'client'} — ${variables?.[0]?.branch ?? ''}` });
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });

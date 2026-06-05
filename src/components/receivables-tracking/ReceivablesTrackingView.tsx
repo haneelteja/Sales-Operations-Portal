@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { logAction } from '@/lib/auditLogger';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -747,7 +748,8 @@ export default function ReceivablesTrackingView() {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      logAction({ action: 'UPDATE', entityType: 'customer_assignee', description: `Assignee updated for customer ${variables.customer_id}: ${variables.assignee_name ?? 'unassigned'}`, newValues: { customer_id: variables.customer_id, assignee_name: variables.assignee_name } });
       queryClient.invalidateQueries({ queryKey: ['customer-assignees'] });
     },
   });
