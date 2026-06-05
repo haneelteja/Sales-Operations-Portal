@@ -524,8 +524,9 @@ const LabelPurchases = () => {
         const vendorName = purchase.vendor_id?.toLowerCase() || '';
         const customer = customers?.find(c => c.id === purchase.client_id);
         const clientName = customer?.client_name?.toLowerCase() || '';
+        const skuName = purchase.sku?.toLowerCase() || '';
         const description = purchase.description?.toLowerCase() || '';
-        if (!vendorName.includes(searchLower) && !clientName.includes(searchLower) && !description.includes(searchLower)) {
+        if (!vendorName.includes(searchLower) && !clientName.includes(searchLower) && !skuName.includes(searchLower) && !description.includes(searchLower)) {
           return false;
         }
       }
@@ -537,6 +538,7 @@ const LabelPurchases = () => {
         const customer = customers?.find(c => c.id === purchase.client_id);
         if (!(customer?.client_name?.toLowerCase() || '').includes(columnFilters.client.toLowerCase())) return false;
       }
+      if (columnFilters.sku && !(purchase.sku?.toLowerCase() || '').includes(columnFilters.sku.toLowerCase())) return false;
       if (columnFilters.quantity && purchase.quantity.toString() !== columnFilters.quantity) return false;
       if (columnFilters.cost_per_label && purchase.cost_per_label.toString() !== columnFilters.cost_per_label) return false;
       if (columnFilters.total_amount && purchase.total_amount.toString() !== columnFilters.total_amount) return false;
@@ -812,7 +814,12 @@ const LabelPurchases = () => {
                   </div>
                 </TableHead>
                 {/* SKU */}
-                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">SKU</TableHead>
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
+                  <div className="flex items-center gap-2">
+                    SKU
+                    <ColumnFilter columnKey="sku" columnName="SKU" filterValue={columnFilters.sku} onFilterChange={(v) => handleColumnFilterChange('sku', v)} sortDirection={null} onSortChange={() => {}} dataType="text" />
+                  </div>
+                </TableHead>
                 {/* Quantity */}
                 <TableHead className="text-right bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center justify-end gap-2">
