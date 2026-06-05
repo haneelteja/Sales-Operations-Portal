@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Trash2, Download, Search, Filter } from "lucide-react";
+import { Pencil, Trash2, Download, Search, ArrowUpDown, X } from "lucide-react";
+import { ColumnFilter } from "@/components/ui/column-filter";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { PageSizeSelector } from '@/components/ui/page-size-selector';
 
@@ -37,7 +39,6 @@ const LabelPayments = () => {
     description: ""
   });
 
-
   const [editingPayment, setEditingPayment] = useState<LabelPayment | null>(null);
   const [editForm, setEditForm] = useState<LabelPaymentForm>({
     payment_amount: "",
@@ -52,14 +53,29 @@ const LabelPayments = () => {
   const [paymentsPageSize, setPaymentsPageSize] = useState(5);
   const [paymentsMonthFilter, setPaymentsMonthFilter] = useState('');
 
-  // State for filtering and sorting
+  // Vendor outstanding sort state
   const [vendorOutstandingSearch, setVendorOutstandingSearch] = useState("");
   const [vendorOutstandingSortField, setVendorOutstandingSortField] = useState<"vendor_name" | "total_purchased" | "total_paid" | "outstanding">("vendor_name");
   const [vendorOutstandingSortDirection, setVendorOutstandingSortDirection] = useState<"asc" | "desc">("asc");
-  
+
+  // Payments table search + per-column filters + sorts
   const [paymentsSearch, setPaymentsSearch] = useState("");
-  const [paymentsSortField, setPaymentsSortField] = useState<"payment_date" | "vendor_id" | "payment_amount" | "payment_method">("payment_date");
-  const [paymentsSortDirection, setPaymentsSortDirection] = useState<"asc" | "desc">("desc");
+  const debouncedPaymentsSearch = useDebouncedValue(paymentsSearch, 300);
+
+  const [columnFilters, setColumnFilters] = useState({
+    payment_date: "",
+    vendor: "",
+    payment_amount: "",
+    payment_method: "",
+    description: "",
+  });
+
+  const [columnSorts, setColumnSorts] = useState({
+    payment_date: "desc" as "asc" | "desc" | null,
+    vendor: null as "asc" | "desc" | null,
+    payment_amount: null as "asc" | "desc" | null,
+    payment_method: null as "asc" | "desc" | null,
+  });
 
   const today = new Date().toISOString().split('T')[0];
   const { toast } = useToast();
@@ -78,7 +94,6 @@ const LabelPayments = () => {
       try {
         const parsed = JSON.parse(data.config_value || "[]");
         if (!Array.isArray(parsed)) return [] as string[];
-        // Support both old flat string[] and new object[] format
         const vendors = parsed.map((e: unknown) =>
           typeof e === 'string' ? e : (e as { vendor?: string })?.vendor
         ).filter((v): v is string => !!v);
@@ -95,9 +110,7 @@ const LabelPayments = () => {
         .from("label_purchases")
         .select("vendor_id, total_amount, purchase_date")
         .order("purchase_date", { ascending: false });
-
       if (error) throw error;
-      
       return data || [];
     },
   });
@@ -109,9 +122,7 @@ const LabelPayments = () => {
         .from("label_payments")
         .select("id, payment_amount, payment_date, payment_method, vendor_id, description")
         .order("payment_date", { ascending: false });
-
       if (error) throw error;
-      
       return data || [];
     },
   });
@@ -127,7 +138,6 @@ const LabelPayments = () => {
           vendor_id: data.vendor_id,
           description: data.description || null
         });
-
       if (error) throw error;
     },
     onSuccess: () => {
@@ -142,11 +152,7 @@ const LabelPayments = () => {
       queryClient.invalidateQueries({ queryKey: ["label-payments"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to record payment: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to record payment: " + error.message, variant: "destructive" });
     },
   });
 
@@ -162,7 +168,6 @@ const LabelPayments = () => {
           description: data.description || null
         })
         .eq("id", data.id);
-
       if (error) throw error;
     },
     onSuccess: () => {
@@ -171,21 +176,13 @@ const LabelPayments = () => {
       queryClient.invalidateQueries({ queryKey: ["label-payments"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to update payment: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to update payment: " + error.message, variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("label_payments")
-        .delete()
-        .eq("id", id);
-
+      const { error } = await supabase.from("label_payments").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -193,31 +190,20 @@ const LabelPayments = () => {
       queryClient.invalidateQueries({ queryKey: ["label-payments"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to delete payment: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to delete payment: " + error.message, variant: "destructive" });
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!form.payment_amount || !form.payment_method || !form.vendor_id) {
-      toast({
-        title: "Error",
-        description: "Payment Amount, Payment Method, and Vendor are required",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Payment Amount, Payment Method, and Vendor are required", variant: "destructive" });
       return;
     }
-
     if (form.payment_date < "2024-01-01" || form.payment_date > today) {
       toast({ title: "Error", description: "Payment Date must be between 1 Jan 2024 and today", variant: "destructive" });
       return;
     }
-
     mutation.mutate(form);
   };
 
@@ -249,91 +235,47 @@ const LabelPayments = () => {
     }
   };
 
-
-  const totalPayments = payments?.reduce((sum, payment) => sum + payment.payment_amount, 0) || 0;
-
   // Calculate vendor outstanding amounts
   const vendorOutstanding = React.useMemo(() => {
     if (!purchases || !payments) return [];
 
-    // Helper function to check if a string is a UUID
     const isUUID = (str: string) => {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       return uuidRegex.test(str);
     };
 
-    // Helper function to normalize vendor names (case-insensitive matching)
-    const normalizeVendorName = (name: string) => {
-      return name.trim().toLowerCase();
-    };
+    const normalizeVendorName = (name: string) => name.trim().toLowerCase();
 
-    // Get all unique vendors from purchases
     const vendorMap = new Map<string, { vendor_name: string; total_purchased: number; total_paid: number; outstanding: number }>();
 
-    // Calculate total purchased per vendor
     purchases.forEach((purchase) => {
-      // Handle both UUID and text vendor_ids
       if (purchase.vendor_id && typeof purchase.vendor_id === 'string') {
-        let vendorName = '';
-        
-        if (isUUID(purchase.vendor_id)) {
-          // For UUID vendor_ids, map to vendor name
-          vendorName = 'GMG'; // Maps UUID to GMG vendor
-        } else {
-          // For text vendor_ids, use directly
-          vendorName = purchase.vendor_id.trim();
-        }
-        
+        const vendorName = isUUID(purchase.vendor_id) ? 'GMG' : purchase.vendor_id.trim();
         const normalizedName = normalizeVendorName(vendorName);
         const totalAmount = parseFloat(purchase.total_amount) || 0;
-        
         const existing = vendorMap.get(normalizedName);
         if (existing) {
           existing.total_purchased += totalAmount;
         } else {
-          vendorMap.set(normalizedName, {
-            vendor_name: vendorName,
-            total_purchased: totalAmount,
-            total_paid: 0,
-            outstanding: 0
-          });
+          vendorMap.set(normalizedName, { vendor_name: vendorName, total_purchased: totalAmount, total_paid: 0, outstanding: 0 });
         }
       }
     });
 
-    // Calculate total paid per vendor
     payments.forEach((payment) => {
-      // Handle both UUID and text vendor_ids
       if (payment.vendor_id && typeof payment.vendor_id === 'string') {
-        let vendorName = '';
-        
-        if (isUUID(payment.vendor_id)) {
-          // For UUID vendor_ids, use the same fallback approach
-          vendorName = 'GMG'; // Maps UUID to GMG vendor
-        } else {
-          // For text vendor_ids, use directly
-          vendorName = payment.vendor_id.trim();
-        }
-        
+        const vendorName = isUUID(payment.vendor_id) ? 'GMG' : payment.vendor_id.trim();
         const normalizedName = normalizeVendorName(vendorName);
         const paymentAmount = parseFloat(payment.payment_amount) || 0;
-        
         const existing = vendorMap.get(normalizedName);
         if (existing) {
           existing.total_paid += paymentAmount;
         } else {
-          // Vendor exists in payments but not in purchases
-          vendorMap.set(normalizedName, {
-            vendor_name: vendorName,
-            total_purchased: 0,
-            total_paid: paymentAmount,
-            outstanding: 0
-          });
+          vendorMap.set(normalizedName, { vendor_name: vendorName, total_purchased: 0, total_paid: paymentAmount, outstanding: 0 });
         }
       }
     });
 
-    // Calculate outstanding amounts
     const outstandingData = Array.from(vendorMap.values()).map(vendor => ({
       ...vendor,
       outstanding: vendor.total_purchased - vendor.total_paid
@@ -342,26 +284,18 @@ const LabelPayments = () => {
     return outstandingData.sort((a, b) => a.vendor_name.localeCompare(b.vendor_name));
   }, [purchases, payments]);
 
-  // Filter and sort vendor outstanding data
   const filteredAndSortedVendorOutstanding = React.useMemo(() => {
-    const filtered = vendorOutstanding.filter((vendor) => {
-      return vendor.vendor_name.toLowerCase().includes(vendorOutstandingSearch.toLowerCase());
-    });
-
+    const filtered = vendorOutstanding.filter((vendor) =>
+      vendor.vendor_name.toLowerCase().includes(vendorOutstandingSearch.toLowerCase())
+    );
     filtered.sort((a, b) => {
       const aValue = a[vendorOutstandingSortField];
       const bValue = b[vendorOutstandingSortField];
-      
       let comparison = 0;
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        comparison = aValue.localeCompare(bValue);
-      } else if (typeof aValue === 'number' && typeof bValue === 'number') {
-        comparison = aValue - bValue;
-      }
-      
+      if (typeof aValue === 'string' && typeof bValue === 'string') comparison = aValue.localeCompare(bValue);
+      else if (typeof aValue === 'number' && typeof bValue === 'number') comparison = aValue - bValue;
       return vendorOutstandingSortDirection === 'asc' ? comparison : -comparison;
     });
-
     return filtered;
   }, [vendorOutstanding, vendorOutstandingSearch, vendorOutstandingSortField, vendorOutstandingSortDirection]);
 
@@ -373,7 +307,7 @@ const LabelPayments = () => {
     return [...months].sort().reverse();
   }, [payments]);
 
-  // Filter and sort payments data
+  // Filter and sort payments with per-column filters
   const filteredAndSortedPayments = React.useMemo(() => {
     if (!payments) return [];
 
@@ -382,52 +316,50 @@ const LabelPayments = () => {
       : payments;
 
     const filtered = baseList.filter((payment) => {
-      return (
-        payment.vendor_id.toLowerCase().includes(paymentsSearch.toLowerCase()) ||
-        payment.payment_method.toLowerCase().includes(paymentsSearch.toLowerCase()) ||
-        payment.description?.toLowerCase().includes(paymentsSearch.toLowerCase())
-      );
+      // Global search
+      if (debouncedPaymentsSearch) {
+        const q = debouncedPaymentsSearch.toLowerCase();
+        const matches =
+          payment.vendor_id.toLowerCase().includes(q) ||
+          payment.payment_method.toLowerCase().includes(q) ||
+          (payment.description?.toLowerCase() || '').includes(q);
+        if (!matches) return false;
+      }
+
+      // Per-column filters
+      if (columnFilters.vendor && !payment.vendor_id.toLowerCase().includes(columnFilters.vendor.toLowerCase())) return false;
+      if (columnFilters.payment_method && !payment.payment_method.toLowerCase().includes(columnFilters.payment_method.toLowerCase())) return false;
+      if (columnFilters.description && !(payment.description?.toLowerCase() || '').includes(columnFilters.description.toLowerCase())) return false;
+      if (columnFilters.payment_amount && payment.payment_amount.toString() !== columnFilters.payment_amount) return false;
+      if (columnFilters.payment_date) {
+        const dateStr = new Date(payment.payment_date).toLocaleDateString();
+        if (!dateStr.includes(columnFilters.payment_date)) return false;
+      }
+
+      return true;
     });
 
     filtered.sort((a, b) => {
-      let aValue, bValue;
-      
-      switch (paymentsSortField) {
-        case 'payment_date':
-          aValue = new Date(a.payment_date).getTime();
-          bValue = new Date(b.payment_date).getTime();
-          break;
-        case 'vendor_id':
-          aValue = a.vendor_id;
-          bValue = b.vendor_id;
-          break;
-        case 'payment_amount':
-          aValue = a.payment_amount;
-          bValue = b.payment_amount;
-          break;
-        case 'payment_method':
-          aValue = a.payment_method;
-          bValue = b.payment_method;
-          break;
-        default:
-          aValue = a.payment_date;
-          bValue = b.payment_date;
+      for (const [column, direction] of Object.entries(columnSorts)) {
+        if (!direction) continue;
+        let aValue: string | number | Date;
+        let bValue: string | number | Date;
+        switch (column) {
+          case 'payment_date': aValue = new Date(a.payment_date); bValue = new Date(b.payment_date); break;
+          case 'vendor': aValue = a.vendor_id || ''; bValue = b.vendor_id || ''; break;
+          case 'payment_amount': aValue = a.payment_amount || 0; bValue = b.payment_amount || 0; break;
+          case 'payment_method': aValue = a.payment_method || ''; bValue = b.payment_method || ''; break;
+          default: continue;
+        }
+        if (aValue < bValue) return direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return direction === 'asc' ? 1 : -1;
       }
-      
-      let comparison = 0;
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        comparison = aValue.localeCompare(bValue);
-      } else if (typeof aValue === 'number' && typeof bValue === 'number') {
-        comparison = aValue - bValue;
-      }
-      
-      return paymentsSortDirection === 'asc' ? comparison : -comparison;
+      return 0;
     });
 
     return filtered;
-  }, [payments, paymentsSearch, paymentsSortField, paymentsSortDirection, paymentsMonthFilter]);
+  }, [payments, debouncedPaymentsSearch, columnFilters, columnSorts, paymentsMonthFilter]);
 
-  // Handle sort functions
   const handleVendorOutstandingSort = (field: "vendor_name" | "total_purchased" | "total_paid" | "outstanding") => {
     if (vendorOutstandingSortField === field) {
       setVendorOutstandingSortDirection(vendorOutstandingSortDirection === 'asc' ? 'desc' : 'asc');
@@ -437,14 +369,36 @@ const LabelPayments = () => {
     }
   };
 
-  const handlePaymentsSort = (field: "payment_date" | "vendor_id" | "payment_amount" | "payment_method") => {
-    if (paymentsSortField === field) {
-      setPaymentsSortDirection(paymentsSortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setPaymentsSortField(field);
-      setPaymentsSortDirection('asc');
-    }
-  };
+  const handleColumnFilterChange = useCallback((column: string, value: string) => {
+    setColumnFilters(prev => ({ ...prev, [column]: value }));
+    setPaymentsPage(1);
+  }, []);
+
+  const handleColumnSortChange = useCallback((column: string) => {
+    setColumnSorts(prev => {
+      const current = prev[column as keyof typeof prev];
+      const next: "asc" | "desc" | null = current === "asc" ? "desc" : current === "desc" ? null : "asc";
+      return Object.keys(prev).reduce((acc, key) => {
+        acc[key as keyof typeof prev] = key === column ? next : null;
+        return acc;
+      }, {} as typeof prev);
+    });
+  }, []);
+
+  const handleSortDir = useCallback((column: string, dir: "asc" | "desc" | null) => {
+    setColumnSorts(prev => ({
+      ...Object.keys(prev).reduce((acc, key) => ({ ...acc, [key]: null }), {} as typeof prev),
+      [column]: dir,
+    }));
+  }, []);
+
+  const clearPaymentFilters = useCallback(() => {
+    setPaymentsSearch("");
+    setPaymentsMonthFilter("");
+    setPaymentsPage(1);
+    setColumnFilters({ payment_date: "", vendor: "", payment_amount: "", payment_method: "", description: "" });
+    setColumnSorts({ payment_date: "desc", vendor: null, payment_amount: null, payment_method: null });
+  }, []);
 
   const paymentsTotalPages = Math.max(1, Math.ceil(filteredAndSortedPayments.length / paymentsPageSize));
   const paginatedPayments = useMemo(() => {
@@ -452,7 +406,6 @@ const LabelPayments = () => {
     return filteredAndSortedPayments.slice(start, start + paymentsPageSize);
   }, [filteredAndSortedPayments, paymentsPage, paymentsPageSize]);
 
-  // Export functions
   const handleExportVendorOutstanding = async () => {
     const exportData = filteredAndSortedVendorOutstanding.map(vendor => ({
       'Vendor': vendor.vendor_name,
@@ -460,7 +413,6 @@ const LabelPayments = () => {
       'Total Paid (₹)': vendor.total_paid,
       'Outstanding (₹)': vendor.outstanding
     }));
-
     await exportJsonToExcel(exportData, 'Vendor Outstanding', `vendor-outstanding-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
@@ -472,7 +424,6 @@ const LabelPayments = () => {
       'Method': payment.payment_method,
       'Description': payment.description || ''
     }));
-
     await exportJsonToExcel(exportData, 'Label Payments', `label-payments-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
@@ -572,7 +523,7 @@ const LabelPayments = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead 
+                <TableHead
                   className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
                   onClick={() => handleVendorOutstandingSort('vendor_name')}
                 >
@@ -583,7 +534,7 @@ const LabelPayments = () => {
                     )}
                   </div>
                 </TableHead>
-                <TableHead 
+                <TableHead
                   className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
                   onClick={() => handleVendorOutstandingSort('total_purchased')}
                 >
@@ -594,7 +545,7 @@ const LabelPayments = () => {
                     )}
                   </div>
                 </TableHead>
-                <TableHead 
+                <TableHead
                   className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
                   onClick={() => handleVendorOutstandingSort('total_paid')}
                 >
@@ -605,7 +556,7 @@ const LabelPayments = () => {
                     )}
                   </div>
                 </TableHead>
-                <TableHead 
+                <TableHead
                   className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
                   onClick={() => handleVendorOutstandingSort('outstanding')}
                 >
@@ -633,10 +584,7 @@ const LabelPayments = () => {
               ) : (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                    {vendorOutstanding.length === 0 
-                      ? "No vendor data available"
-                      : "No vendors found matching your search criteria."
-                    }
+                    {vendorOutstanding.length === 0 ? "No vendor data available" : "No vendors found matching your search criteria."}
                   </TableCell>
                 </TableRow>
               )}
@@ -645,17 +593,23 @@ const LabelPayments = () => {
         </div>
       </div>
 
+      {/* Label Payments Table */}
       <div className="space-y-4">
-        <div className="flex flex-wrap justify-between items-center gap-2">
-          <h3 className="text-lg font-semibold">Label Payments</h3>
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-semibold">Label Payments</h3>
+            <p className="text-sm text-muted-foreground">
+              Showing {filteredAndSortedPayments.length} of {payments?.length || 0} payments
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
                 placeholder="Search payments..."
                 value={paymentsSearch}
                 onChange={(e) => { setPaymentsSearch(e.target.value); setPaymentsPage(1); }}
-                className="pl-10 w-64"
+                className="pl-10 w-full sm:w-64"
               />
             </div>
             {availablePaymentMonths.length > 0 && (
@@ -673,89 +627,114 @@ const LabelPayments = () => {
                 })}
               </select>
             )}
-            <Button onClick={handleExportPayments} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
+            <Button variant="outline" onClick={clearPaymentFilters} className="flex items-center gap-2">
+              <X className="h-4 w-4" />
+              Clear Filters
+            </Button>
+            <Button onClick={handleExportPayments} variant="outline" className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
               Export Excel
             </Button>
           </div>
         </div>
+
         <div className="border rounded-lg">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handlePaymentsSort('payment_date')}
-                >
+                {/* Payment Date */}
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('payment_date')} className="h-6 w-6 p-0">
+                      <ArrowUpDown className="h-4 w-4" />
+                    </Button>
                     Payment Date
-                    {paymentsSortField === 'payment_date' && (
-                      <span className="text-xs">{paymentsSortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
+                    <ColumnFilter
+                      columnKey="payment_date"
+                      columnName="Payment Date"
+                      filterValue={columnFilters.payment_date}
+                      onFilterChange={(v) => handleColumnFilterChange('payment_date', v)}
+                      sortDirection={columnSorts.payment_date}
+                      onSortChange={(d) => handleSortDir('payment_date', d)}
+                      dataType="date"
+                    />
                   </div>
                 </TableHead>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handlePaymentsSort('vendor_id')}
-                >
+                {/* Vendor */}
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('vendor')} className="h-6 w-6 p-0">
+                      <ArrowUpDown className="h-4 w-4" />
+                    </Button>
                     Vendor
-                    {paymentsSortField === 'vendor_id' && (
-                      <span className="text-xs">{paymentsSortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
+                    <ColumnFilter
+                      columnKey="vendor"
+                      columnName="Vendor"
+                      filterValue={columnFilters.vendor}
+                      onFilterChange={(v) => handleColumnFilterChange('vendor', v)}
+                      sortDirection={columnSorts.vendor}
+                      onSortChange={(d) => handleSortDir('vendor', d)}
+                      dataType="text"
+                    />
                   </div>
                 </TableHead>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handlePaymentsSort('payment_amount')}
-                >
+                {/* Amount */}
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('payment_amount')} className="h-6 w-6 p-0">
+                      <ArrowUpDown className="h-4 w-4" />
+                    </Button>
                     Amount (₹)
-                    {paymentsSortField === 'payment_amount' && (
-                      <span className="text-xs">{paymentsSortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
+                    <ColumnFilter
+                      columnKey="payment_amount"
+                      columnName="Amount"
+                      filterValue={columnFilters.payment_amount}
+                      onFilterChange={(v) => handleColumnFilterChange('payment_amount', v)}
+                      sortDirection={columnSorts.payment_amount}
+                      onSortChange={(d) => handleSortDir('payment_amount', d)}
+                      dataType="number"
+                    />
                   </div>
                 </TableHead>
-                <TableHead 
-                  className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handlePaymentsSort('payment_method')}
-                >
+                {/* Method */}
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => handleColumnSortChange('payment_method')} className="h-6 w-6 p-0">
+                      <ArrowUpDown className="h-4 w-4" />
+                    </Button>
                     Method
-                    {paymentsSortField === 'payment_method' && (
-                      <span className="text-xs">{paymentsSortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
+                    <ColumnFilter
+                      columnKey="payment_method"
+                      columnName="Method"
+                      filterValue={columnFilters.payment_method}
+                      onFilterChange={(v) => handleColumnFilterChange('payment_method', v)}
+                      sortDirection={columnSorts.payment_method}
+                      onSortChange={(d) => handleSortDir('payment_method', d)}
+                      dataType="text"
+                    />
                   </div>
                 </TableHead>
+                {/* Description */}
                 <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Description</TableHead>
+                {/* Actions */}
                 <TableHead className="text-right bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredAndSortedPayments && filteredAndSortedPayments.length > 0 ? (
+              {filteredAndSortedPayments.length > 0 ? (
                 paginatedPayments.map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      {payment.vendor_id || 'N/A'}
-                    </TableCell>
+                    <TableCell>{payment.vendor_id || 'N/A'}</TableCell>
                     <TableCell className="font-medium">₹{payment.payment_amount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell>{payment.payment_method}</TableCell>
-                    <TableCell>{payment.description || '-'}</TableCell>
+                    <TableCell>{payment.description || '—'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditClick(payment)}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleEditClick(payment)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDelete(payment.id)}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleDelete(payment.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -765,48 +744,33 @@ const LabelPayments = () => {
               ) : (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-muted-foreground">
-                    {payments && payments.length === 0 
+                    {payments && payments.length === 0
                       ? "No label payments found"
-                      : "No payments found matching your search criteria."
-                    }
+                      : "No payments found matching your search criteria."}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </div>
-      </div>
 
-      {/* Payments Pagination */}
-      <div className="flex items-center justify-between pt-2">
-        <PageSizeSelector
-          pageSize={paymentsPageSize}
-          onPageSizeChange={(s) => { setPaymentsPageSize(s); setPaymentsPage(1); }}
-          totalRecords={filteredAndSortedPayments.length}
-        />
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">
-            {filteredAndSortedPayments.length > 0
-              ? `${((paymentsPage - 1) * paymentsPageSize) + 1}–${Math.min(paymentsPage * paymentsPageSize, filteredAndSortedPayments.length)} of ${filteredAndSortedPayments.length}`
-              : '0 records'}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={paymentsPage === 1}
-            onClick={() => setPaymentsPage(p => p - 1)}
-          >
-            ←
-          </Button>
-          <span className="text-sm font-medium px-2">{paymentsPage} / {paymentsTotalPages}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={paymentsPage === paymentsTotalPages}
-            onClick={() => setPaymentsPage(p => p + 1)}
-          >
-            →
-          </Button>
+        {/* Pagination */}
+        <div className="flex items-center justify-between pt-2">
+          <PageSizeSelector
+            pageSize={paymentsPageSize}
+            onPageSizeChange={(s) => { setPaymentsPageSize(s); setPaymentsPage(1); }}
+            totalRecords={filteredAndSortedPayments.length}
+          />
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              {filteredAndSortedPayments.length > 0
+                ? `${((paymentsPage - 1) * paymentsPageSize) + 1}–${Math.min(paymentsPage * paymentsPageSize, filteredAndSortedPayments.length)} of ${filteredAndSortedPayments.length}`
+                : '0 records'}
+            </span>
+            <Button variant="outline" size="sm" disabled={paymentsPage === 1} onClick={() => setPaymentsPage(p => p - 1)}>←</Button>
+            <span className="text-sm font-medium px-2">{paymentsPage} / {paymentsTotalPages}</span>
+            <Button variant="outline" size="sm" disabled={paymentsPage === paymentsTotalPages} onClick={() => setPaymentsPage(p => p + 1)}>→</Button>
+          </div>
         </div>
       </div>
 
@@ -878,13 +842,7 @@ const LabelPayments = () => {
               </div>
 
               <div className="flex justify-end gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setEditingPayment(null)}
-                >
-                  Cancel
-                </Button>
+                <Button type="button" variant="outline" onClick={() => setEditingPayment(null)}>Cancel</Button>
                 <Button type="submit" disabled={updateMutation.isPending}>
                   {updateMutation.isPending ? "Updating..." : "Update"}
                 </Button>
