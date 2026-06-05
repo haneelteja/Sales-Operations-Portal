@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from "react";
+const ConfigurationManagement = lazy(() => import("@/components/configurations/ConfigurationManagement"));
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -1196,9 +1197,10 @@ const SalesEntry = () => {
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden min-w-0">
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="sale">Record Sale</TabsTrigger>
           <TabsTrigger value="payment">Record Client Payment</TabsTrigger>
+          <TabsTrigger value="configurations">Configurations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="sale" className="space-y-6">
@@ -1641,9 +1643,16 @@ const SalesEntry = () => {
             </form>
           )}
         </TabsContent>
+
+        <TabsContent value="configurations">
+          <Suspense fallback={<div className="flex justify-center py-12"><span className="text-muted-foreground text-sm">Loading...</span></div>}>
+            <ConfigurationManagement />
+          </Suspense>
+        </TabsContent>
       </Tabs>
 
-      {/* Recent Transactions Section */}
+      {/* Recent Transactions Section — hidden on configurations tab */}
+      {activeTab !== "configurations" && (
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2 md:gap-4">
@@ -2010,6 +2019,7 @@ const SalesEntry = () => {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 };

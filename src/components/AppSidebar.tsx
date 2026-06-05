@@ -7,7 +7,6 @@ import {
   Tag,
   UserPlus,
   FileText,
-  Cog,
   LogOut,
   User,
   ShoppingCart,
@@ -55,7 +54,6 @@ const menuItems: MenuItem[] = [
   { id: "factory", title: "Factory Transactions", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
   { id: "labels", title: "Labels", icon: Tag },
-  { id: "configurations", title: "Configurations", icon: Cog },
   { id: "reports", title: "Reports", icon: FileText },
   { id: "profitability", title: "Profitability", icon: TrendingUp },
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
