@@ -168,7 +168,7 @@ const LabelPurchases = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("id, client_name, branch")
+        .select("id, client_name, branch, sku")
         .eq("is_active", true)
         .eq("is_deprecated", false)
         .order("client_name", { ascending: true });
