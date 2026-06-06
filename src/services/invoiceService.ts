@@ -419,69 +419,50 @@ export function prepareMultiInvoiceData(
  * Example: 16000 -> "Sixteen Thousand Rupees Only"
  */
 function convertNumberToWords(amount: number): string {
+  if (amount === 0) return 'Zero Rupees Only';
+
   const ones = [
     '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
     'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-    'Seventeen', 'Eighteen', 'Nineteen'
+    'Seventeen', 'Eighteen', 'Nineteen',
   ];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
 
-  const tens = [
-    '', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'
-  ];
+  function belowHundred(n: number): string {
+    if (n < 20) return ones[n];
+    return tens[Math.floor(n / 10)] + (n % 10 > 0 ? ' ' + ones[n % 10] : '');
+  }
 
-  const scales = ['', 'Thousand', 'Lakh', 'Crore'];
-
-  if (amount === 0) return 'Zero Rupees Only';
+  function belowThousand(n: number): string {
+    if (n < 100) return belowHundred(n);
+    return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 > 0 ? ' ' + belowHundred(n % 100) : '');
+  }
 
   const rupees = Math.floor(amount);
   const paise = Math.round((amount - rupees) * 100);
 
-  function convertHundreds(num: number): string {
-    if (num === 0) return '';
-    if (num < 20) return ones[num];
-    if (num < 100) {
-      const ten = Math.floor(num / 10);
-      const one = num % 10;
-      return tens[ten] + (one > 0 ? ' ' + ones[one] : '');
-    }
-    const hundred = Math.floor(num / 100);
-    const remainder = num % 100;
-    return ones[hundred] + ' Hundred' + (remainder > 0 ? ' ' + convertHundreds(remainder) : '');
+  let words = '';
+  let n = rupees;
+
+  if (Math.floor(n / 10000000) > 0) {
+    words += belowHundred(Math.floor(n / 10000000)) + ' Crore ';
+    n = n % 10000000;
+  }
+  if (Math.floor(n / 100000) > 0) {
+    words += belowHundred(Math.floor(n / 100000)) + ' Lakh ';
+    n = n % 100000;
+  }
+  if (Math.floor(n / 1000) > 0) {
+    words += belowHundred(Math.floor(n / 1000)) + ' Thousand ';
+    n = n % 1000;
+  }
+  if (n > 0) {
+    words += belowThousand(n);
   }
 
-  function convert(num: number, scaleIndex: number): string {
-    if (num === 0) return '';
-    const scale = scales[scaleIndex];
-    const remainder = num % 100;
-    const quotient = Math.floor(num / 100);
-    
-    let result = '';
-    if (remainder > 0) {
-      result = convertHundreds(remainder);
-    }
-    if (scale && remainder > 0) {
-      result += ' ' + scale;
-    }
-    if (quotient > 0) {
-      const higher = convert(quotient, scaleIndex + 1);
-      if (higher) {
-        result = higher + (result ? ' ' + result : '');
-      }
-    }
-    return result;
-  }
-
-  let words = convert(rupees, 0).trim();
-  if (!words) words = 'Zero';
-  
-  words += ' Rupees';
-  
+  words = (words.trim() || 'Zero') + ' Rupees';
   if (paise > 0) {
-    const paiseWords = convertHundreds(paise);
-    words += ' and ' + paiseWords + ' Paise';
+    words += ' and ' + belowHundred(paise) + ' Paise';
   }
-  
-  words += ' Only';
-  
-  return words;
+  return words + ' Only';
 }
