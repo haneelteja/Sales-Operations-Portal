@@ -25,6 +25,7 @@ export interface SalesTransaction {
   transaction_date: string;
   transaction_type: string;
   branch: string | null;
+  invoice_id?: string | null;
   created_at: string;
   updated_at: string;
   customers?: {

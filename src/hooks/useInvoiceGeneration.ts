@@ -14,6 +14,7 @@ import {
   prepareInvoiceData,
   prepareMultiInvoiceData,
   calculateDueDate,
+  linkTransactionsToInvoice,
 } from '@/services/invoiceService';
 import { StorageService } from '@/services/cloudStorage/storageService';
 import { getStorageProvider } from '@/services/invoiceConfigService';
@@ -143,6 +144,13 @@ export function useInvoiceGeneration() {
           invoiceData.invoiceDate,
           invoiceData.dueDate
         );
+
+        // Link all transactions (including secondary ones) to this invoice
+        if (allTransactions && allTransactions.length > 1) {
+          await linkTransactionsToInvoice(invoice.id, allTransactions.map((t) => t.id));
+        } else {
+          await linkTransactionsToInvoice(invoice.id, [transactionId]);
+        }
 
         // Update invoice with file information
         const updatedInvoice = await updateInvoiceFiles(

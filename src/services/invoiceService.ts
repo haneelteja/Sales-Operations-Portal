@@ -118,12 +118,31 @@ export async function createInvoiceRecord(
 }
 
 /**
+ * Set invoice_id on all sales_transactions that belong to a multi-SKU invoice.
+ */
+export async function linkTransactionsToInvoice(
+  invoiceId: string,
+  transactionIds: string[]
+): Promise<void> {
+  if (transactionIds.length === 0) return;
+  const { error } = await supabase
+    .from('sales_transactions')
+    .update({ invoice_id: invoiceId })
+    .in('id', transactionIds);
+  if (error) {
+    logger.error('Failed to link transactions to invoice:', error);
+    throw new Error(`Failed to link transactions to invoice: ${error.message}`);
+  }
+}
+
+/**
  * Get invoice by transaction ID
  */
 export async function getInvoiceByTransactionId(
   transactionId: string
 ): Promise<Invoice | null> {
   try {
+    // Primary: invoice is keyed by this transaction (first transaction in a multi-SKU sale)
     const { data, error } = await supabase
       .from('invoices')
       .select('*')
@@ -135,7 +154,30 @@ export async function getInvoiceByTransactionId(
       throw new Error(`Failed to get invoice: ${error.message}`);
     }
 
-    return data as Invoice | null;
+    if (data) return data as Invoice;
+
+    // Fallback: this transaction is a secondary line in a multi-SKU invoice;
+    // look up via the invoice_id stored on the transaction row itself.
+    const { data: txRow, error: txError } = await supabase
+      .from('sales_transactions')
+      .select('invoice_id')
+      .eq('id', transactionId)
+      .maybeSingle();
+
+    if (txError || !txRow?.invoice_id) return null;
+
+    const { data: inv, error: invError } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('id', txRow.invoice_id)
+      .maybeSingle();
+
+    if (invError) {
+      logger.error('Failed to get invoice by invoice_id:', invError);
+      return null;
+    }
+
+    return inv as Invoice | null;
   } catch (error) {
     logger.error('Error getting invoice:', error);
     throw error;

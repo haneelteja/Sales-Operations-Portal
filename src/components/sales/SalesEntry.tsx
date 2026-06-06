@@ -602,6 +602,7 @@ const SalesEntry = () => {
             sku,
             description,
             branch,
+            invoice_id,
             created_at,
             customers (client_name, branch)
           `, { count: 'exact' })
