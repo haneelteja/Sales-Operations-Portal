@@ -60,26 +60,40 @@ export async function generateWordDocument(
     });
 
     // Prepare data for template
+    const firstItem = data.items && data.items.length > 0 ? data.items[0] : null;
     const templateData = {
       // Invoice header
       invoiceNumber: data.invoiceNumber,
       invoiceDate: formatDate(data.invoiceDate),
       dueDate: formatDate(data.dueDate),
-      
+
       // Company details
       companyName: data.companyName,
       companyAddress: data.companyAddress,
       companyPhone: data.companyPhone,
       companyEmail: data.companyEmail,
       companyGSTIN: data.companyGSTIN || '',
-      
-      // Client details
-      dealerName: data.dealerName,
-      area: data.area || '',
+
+      // Client details — template uses {clientName} and {branch}
+      dealerName: data.dealerName ?? '',
+      clientName: data.dealerName ?? '',
+      area: data.area ?? '',
+      branch: data.area ?? '',
       clientAddress: data.clientAddress || '',
       clientPhone: data.clientPhone || '',
       clientEmail: data.clientEmail || '',
-      
+
+      // Top-level item fields — template references these outside the {#items} loop
+      sku: firstItem?.sku ?? data.sku ?? '',
+      description: firstItem?.description || firstItem?.sku || data.sku || '',
+      quantity: firstItem?.quantity ?? data.quantity ?? 0,
+      unitPrice: formatCurrency(firstItem?.pricePerCase ?? data.pricePerCase),
+      amount: formatCurrency(firstItem?.amount ?? data.amount),
+
+      // Totals at top level for template placeholders outside the loop
+      totalAmount: formatCurrency(data.grandTotal),
+      amountInWords: data.amountInWords ?? '',
+
       // Invoice items (supports single and multi-SKU)
       items: (data.items && data.items.length > 0 ? data.items : [{
         sku: data.sku,
@@ -99,8 +113,6 @@ export async function generateWordDocument(
       // Totals
       subtotal: formatCurrency(data.totalAmount),
       tax: formatCurrency(data.taxAmount || 0),
-      totalAmount: formatCurrency(data.grandTotal),
-      amountInWords: data.amountInWords,
       
       // Terms
       terms: data.terms,
