@@ -89,9 +89,9 @@ export async function generateWordDocument(
         amount: data.amount,
       }]).map((item, i) => ({
         sno: i + 1,
-        sku: item.sku,
-        description: item.description || item.sku,
-        quantity: item.quantity,
+        sku: item.sku ?? '',
+        description: item.description || item.sku || '',
+        quantity: item.quantity ?? 0,
         unitPrice: formatCurrency(item.pricePerCase),
         amount: formatCurrency(item.amount),
       })),
@@ -174,35 +174,35 @@ function replaceTemplatePlaceholders(template: string, data: InvoiceData): strin
   const itemRows = allItems.map((item, i) => `
                     <tr>
                         <td>${i + 1}.</td>
-                        <td>${item.description || item.sku}</td>
-                        <td>${item.sku}</td>
-                        <td>${item.quantity} cases</td>
+                        <td>${item.description || item.sku || ''}</td>
+                        <td>${item.sku ?? ''}</td>
+                        <td>${item.quantity ?? 0} cases</td>
                         <td>${formatCurrency(item.pricePerCase)}</td>
                         <td class="amount-cell">${formatCurrency(item.amount)}</td>
                     </tr>`).join('\n');
 
   const replacements: Record<string, string> = {
-    companyName: data.companyName,
-    companyAddress: data.companyAddress.replace(/\n/g, '<br>'),
-    dealerName: data.dealerName,
-    clientName: data.dealerName,
-    area: data.area || '',
-    branch: data.area || '',
-    invoiceNumber: data.invoiceNumber,
+    companyName: data.companyName ?? '',
+    companyAddress: (data.companyAddress ?? '').replace(/\n/g, '<br>'),
+    dealerName: data.dealerName ?? '',
+    clientName: data.dealerName ?? '',
+    area: data.area ?? '',
+    branch: data.area ?? '',
+    invoiceNumber: data.invoiceNumber ?? '',
     invoiceDate: formatDate(data.invoiceDate),
     itemRows,
-    sku: data.sku,
-    quantity: data.quantity.toString(),
+    sku: data.sku ?? '',
+    quantity: String(data.quantity ?? 0),
     unitPrice: formatCurrency(data.pricePerCase),
     amount: formatCurrency(data.amount),
     totalAmount: formatCurrency(data.grandTotal),
-    amountInWords: data.amountInWords,
+    amountInWords: data.amountInWords ?? '',
   };
 
   let html = template;
   Object.entries(replacements).forEach(([key, value]) => {
     const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-    html = html.replace(regex, value || '');
+    html = html.replace(regex, value ?? '');
   });
 
   return html;

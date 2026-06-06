@@ -74,6 +74,7 @@ export function useMultiSaleSubmission({
           sku: item.sku,
           description: item.description,
           transaction_date: saleForm.transaction_date,
+          branch: saleForm.area || null,
         };
 
         const { data: inserted, error: saleError } = await supabase
