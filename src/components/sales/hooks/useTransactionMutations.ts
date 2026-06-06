@@ -131,7 +131,7 @@ export function useTransactionMutations({
           branch: data.area || editingTransaction?.branch || null,
         })
         .eq('id', data.id)
-        .select(`id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, branch, created_at, updated_at`);
+        .select(`id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, branch, invoice_id, created_at, updated_at`);
 
       if (salesError) throw salesError;
       const updatedTransaction = (updatedRows?.[0] ?? null) as SalesTransaction | null;
@@ -214,7 +214,29 @@ export function useTransactionMutations({
             if (fresh) customer = fresh as Customer;
           }
           if (customer) {
-            generateInvoice.mutate({ transactionId: updatedTransaction.id, transaction: updatedTransaction, customer });
+            // For multi-SKU invoices, fetch all sibling transactions so the
+            // regenerated invoice still contains every SKU line item.
+            let allTransactions: SalesTransaction[] | undefined;
+            const invoiceId = updatedTransaction.invoice_id;
+            if (invoiceId) {
+              const { data: siblings } = await supabase
+                .from('sales_transactions')
+                .select('id, customer_id, transaction_date, transaction_type, amount, quantity, sku, description, branch, invoice_id, created_at, updated_at')
+                .eq('invoice_id', invoiceId)
+                .eq('transaction_type', 'sale');
+              if (siblings && siblings.length > 1) {
+                // Replace the stale copy of the edited transaction with the fresh one
+                allTransactions = siblings.map((t) =>
+                  t.id === updatedTransaction.id ? updatedTransaction : t
+                ) as SalesTransaction[];
+              }
+            }
+            generateInvoice.mutate({
+              transactionId: updatedTransaction.id,
+              transaction: updatedTransaction,
+              customer,
+              allTransactions,
+            });
           }
         }
       }
