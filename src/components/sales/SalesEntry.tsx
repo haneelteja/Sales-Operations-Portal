@@ -1932,7 +1932,17 @@ const SalesEntry = () => {
                           }}
                           onEditClick={handleEditClick}
                           onEditSubmit={handleEditSubmit}
-                          onFormChange={(updates) => setEditForm({...editForm, ...updates})}
+                          onFormChange={(updates) => {
+                            const next = { ...editForm, ...updates };
+                            if ('quantity' in updates) {
+                              const pricePerCase = parseFloat(getPricePerCaseForEdit() || '0');
+                              const qty = parseFloat(next.quantity || '0');
+                              if (pricePerCase > 0 && !isNaN(qty)) {
+                                next.amount = (qty * pricePerCase).toFixed(2);
+                              }
+                            }
+                            setEditForm(next);
+                          }}
                           onCustomerChange={handleEditCustomerChange}
                         />
                         
