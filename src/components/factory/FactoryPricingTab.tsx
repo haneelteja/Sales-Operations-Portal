@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { Download, ChevronRight, ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import { exportJsonToExcel } from '@/services/export/excelExport';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 interface PricingRecord {
   id: string;
@@ -42,6 +43,7 @@ const FactoryPricingTab: React.FC = () => {
   const isManager = profile?.role === 'manager';
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
 
   const [form, setForm] = useState({
     pricing_date: new Date().toISOString().split('T')[0],
@@ -216,6 +218,7 @@ const FactoryPricingTab: React.FC = () => {
       if (error) throw error;
     },
     onSuccess: () => {
+      log({ action: 'CREATE', entityType: 'factory_pricing', description: `Factory pricing added: ${form.sku} @ ₹${form.price_per_bottle}/bottle (GST ${form.gst || 0}%)`, newValues: { sku: form.sku, price_per_bottle: form.price_per_bottle, gst: form.gst, pricing_date: form.pricing_date } });
       toast({ title: 'Saved', description: 'Pricing record added.' });
       setForm({ pricing_date: new Date().toISOString().split('T')[0], sku: '', price_per_bottle: '', gst: '', description: '' });
       queryClient.invalidateQueries({ queryKey: ['factory-pricing'] });
@@ -241,6 +244,9 @@ const FactoryPricingTab: React.FC = () => {
       if (error) throw error;
     },
     onSuccess: () => {
+      if (editingRecord) {
+        log({ action: 'UPDATE', entityType: 'factory_pricing', entityId: editingRecord.id, description: `Factory pricing updated: ${editingRecord.sku} → ₹${editForm.price_per_bottle}/bottle (GST ${editForm.gst || 0}%)`, oldValues: { price_per_bottle: editingRecord.price_per_bottle, tax: editingRecord.tax, pricing_date: editingRecord.pricing_date }, newValues: { price_per_bottle: editForm.price_per_bottle, gst: editForm.gst, pricing_date: editForm.pricing_date } });
+      }
       toast({ title: 'Updated', description: 'Pricing record updated.' });
       setEditingRecord(null);
       queryClient.invalidateQueries({ queryKey: ['factory-pricing'] });
@@ -253,7 +259,8 @@ const FactoryPricingTab: React.FC = () => {
       const { error } = await supabase.from('factory_pricing').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'DELETE', entityType: 'factory_pricing', entityId: variables, description: `Factory pricing record deleted: ID ${variables}` });
       toast({ title: 'Deleted', description: 'Pricing record deleted.' });
       queryClient.invalidateQueries({ queryKey: ['factory-pricing'] });
     },

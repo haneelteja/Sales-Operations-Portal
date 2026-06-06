@@ -18,6 +18,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 interface EditWhatsAppApiKeyDialogProps {
   open: boolean;
@@ -30,6 +31,7 @@ export const EditWhatsAppApiKeyDialog: React.FC<EditWhatsAppApiKeyDialogProps> =
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
 
@@ -62,6 +64,7 @@ export const EditWhatsAppApiKeyDialog: React.FC<EditWhatsAppApiKeyDialogProps> =
       if (error) throw error;
     },
     onSuccess: () => {
+      log({ action: 'UPDATE', entityType: 'invoice_configuration', description: 'WhatsApp API key updated' });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations'] });
       queryClient.invalidateQueries({ queryKey: ['whatsapp-config'] });
       toast({ title: 'Success', description: 'WhatsApp API key updated.' });

@@ -14,6 +14,7 @@ import { Plus, Mail, User, Building2, MapPin, Trash2, Edit, X, Shield } from "lu
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { useAutoSave } from "@/hooks/useAutoSave";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { userFormSchema, type UserFormInput } from "@/lib/validation/schemas";
 import { safeValidate } from "@/lib/validation/utils";
 import { logger } from "@/lib/logger";
@@ -42,6 +43,7 @@ interface UserForm {
 
 const UserManagement = () => {
   const { user: authUser, profile } = useAuth();
+  const log = useAuditLog();
   const [userForm, setUserForm] = useState<UserForm>({
     username: '',
     email: '',
@@ -327,7 +329,8 @@ const UserManagement = () => {
       
       return userRecord;
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      log({ action: 'CREATE', entityType: 'user', description: `User created: ${variables.username} (${variables.email}) with role ${variables.role}`, newValues: { username: variables.username, email: variables.email, role: variables.role } });
       queryClient.invalidateQueries({ queryKey: ["user-management"] });
       setUserForm({
         username: '',
@@ -335,7 +338,7 @@ const UserManagement = () => {
         associated_dealer_areas: [],
         role: 'manager'
       });
-      clearSavedData(); // Clear auto-saved data after successful submission
+      clearSavedData();
       toast({
         title: "Success",
         description: "User created successfully. Welcome email has been sent automatically.",
@@ -444,8 +447,8 @@ const UserManagement = () => {
         return { success: true, message: 'User deleted from user management (auth deletion requires Edge Function)' };
       }
     },
-    onSuccess: async (data) => {
-      
+    onSuccess: async (data, variables) => {
+      log({ action: 'DELETE', entityType: 'user', entityId: variables, description: `User deleted: user ID ${variables}` });
       // Clear the deleting user ID first
       const deletedUserId = deletingUserId;
       setDeletingUserId(null);
@@ -512,7 +515,8 @@ const UserManagement = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'user', entityId: variables.userId, description: `User status changed to ${variables.status} for user ID ${variables.userId}`, newValues: { status: variables.status } });
       queryClient.invalidateQueries({ queryKey: ["user-management"] });
       toast({
         title: "Success",
@@ -576,9 +580,10 @@ const UserManagement = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'user', entityId: variables.userId, description: `User details updated: ${variables.username} (${variables.email}) role=${variables.role}`, newValues: { username: variables.username, email: variables.email, role: variables.role } });
       queryClient.invalidateQueries({ queryKey: ["user-management"] });
-      clearSavedData(); // Clear auto-saved data after successful update
+      clearSavedData();
       toast({
         title: "Success",
         description: "User details updated successfully.",

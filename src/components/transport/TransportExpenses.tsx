@@ -15,6 +15,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Trash2, Download } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { ColumnFilter } from '@/components/ui/column-filter';
 import { PageSizeSelector } from '@/components/ui/page-size-selector';
 
@@ -65,6 +66,7 @@ const TransportExpenses = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { invalidateRelated } = useCacheInvalidation();
+  const log = useAuditLog();
 
   const { data: customers } = useQuery({
     queryKey: ["customers"],
@@ -223,7 +225,8 @@ const TransportExpenses = () => {
         throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'CREATE', entityType: 'transport_expense', description: `Transport expense recorded: ₹${variables.amount} — ${variables.description} (${variables.transport_vendor || 'no vendor'})`, newValues: { amount: variables.amount, description: variables.description, vendor: variables.transport_vendor, date: variables.expense_date } });
       toast({ title: "Success", description: "Transport expense recorded!" });
       setForm({
         expense_date: new Date().toISOString().split('T')[0],
@@ -237,8 +240,8 @@ const TransportExpenses = () => {
       invalidateRelated('transport_expenses');
     },
     onError: (error: unknown) => {
-      toast({ 
-        title: "Error", 
+      toast({
+        title: "Error",
         description: "Failed to record expense: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });
@@ -262,15 +265,16 @@ const TransportExpenses = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'transport_expense', entityId: variables.id, description: `Transport expense updated: ₹${variables.amount} — ${variables.description}`, newValues: { amount: variables.amount, description: variables.description, vendor: variables.transport_vendor, date: variables.expense_date } });
       toast({ title: "Success", description: "Transport expense updated!" });
       setIsEditDialogOpen(false);
       setEditingExpense(null);
       invalidateRelated('transport_expenses');
     },
     onError: (error: unknown) => {
-      toast({ 
-        title: "Error", 
+      toast({
+        title: "Error",
         description: "Failed to update expense: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });
@@ -286,13 +290,14 @@ const TransportExpenses = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'DELETE', entityType: 'transport_expense', entityId: variables, description: `Transport expense deleted: ID ${variables}` });
       toast({ title: "Success", description: "Transport expense deleted!" });
       invalidateRelated('transport_expenses');
     },
     onError: (error: unknown) => {
-      toast({ 
-        title: "Error", 
+      toast({
+        title: "Error",
         description: "Failed to delete expense: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });

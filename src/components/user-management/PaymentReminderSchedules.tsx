@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Bell, Plus, Edit, Trash2, Send, ChevronLeft, ChevronRight, Download, ArrowUpDown } from 'lucide-react';
 import { exportJsonToExcel } from '@/services/export/excelExport';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 interface PaymentReminderSchedule {
   id: string;
@@ -124,6 +125,7 @@ export const PaymentReminderSchedules: React.FC = () => {
   const [logsSortDir, setLogsSortDir] = useState<'asc' | 'desc'>('desc');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
 
   const { data: schedules, isLoading } = useQuery({
     queryKey: ['payment-reminder-schedules'],
@@ -237,7 +239,9 @@ export const PaymentReminderSchedules: React.FC = () => {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      const action = editingSchedule ? 'UPDATE' : 'CREATE';
+      log({ action, entityType: 'payment_reminder_schedule', entityId: editingSchedule?.id, description: `Payment reminder schedule ${editingSchedule ? 'updated' : 'added'}: "${variables.name}" — every ${variables.days_overdue} days at ${variables.send_time_ist} IST`, newValues: variables });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
       toast({ title: 'Success', description: editingSchedule ? 'Schedule updated' : 'Schedule added' });
       closeDialog();
@@ -255,7 +259,10 @@ export const PaymentReminderSchedules: React.FC = () => {
         .eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] }),
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'payment_reminder_schedule', entityId: variables.id, description: `Payment reminder schedule ${variables.is_enabled ? 'enabled' : 'disabled'}: ID ${variables.id}`, newValues: { is_enabled: variables.is_enabled } });
+      queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
+    },
     onError: (error: Error) => toast({ title: 'Error', description: error.message, variant: 'destructive' }),
   });
 
@@ -267,7 +274,8 @@ export const PaymentReminderSchedules: React.FC = () => {
         .eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'DELETE', entityType: 'payment_reminder_schedule', entityId: variables, description: `Payment reminder schedule deleted: ID ${variables}` });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
       toast({ title: 'Deleted', description: 'Schedule removed' });

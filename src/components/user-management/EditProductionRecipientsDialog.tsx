@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import { Plus, Trash2 } from 'lucide-react';
 import type { ProductionOrderRecipient } from '@/services/invoiceConfigService';
 
@@ -21,6 +22,7 @@ const PHONE_REGEX = /^\+?[1-9]\d{6,14}$/;
 export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenChange }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
   const [rows, setRows] = useState<ProductionOrderRecipient[]>([{ ...EMPTY_RECIPIENT }]);
   const [errors, setErrors] = useState<Record<number, string>>({});
 
@@ -90,7 +92,9 @@ export const EditProductionRecipientsDialog: React.FC<Props> = ({ open, onOpenCh
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      const valid = variables.filter((r) => r.label.trim() && r.identifier.trim());
+      log({ action: 'UPDATE', entityType: 'invoice_configuration', description: `Production order WhatsApp recipients updated: ${valid.length} recipient(s)`, newValues: { recipients: valid.map(r => r.label) } });
       toast({ title: 'Saved', description: 'Production order recipients updated.' });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations'] });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations', 'production_order_recipients'] });

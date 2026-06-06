@@ -18,6 +18,7 @@ import { Loader2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 interface EditTentativeDeliveryDaysDialogProps {
   open: boolean;
@@ -30,6 +31,7 @@ export const EditTentativeDeliveryDaysDialog: React.FC<EditTentativeDeliveryDays
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
   const [days, setDays] = useState<string>('5');
 
   const { data: config, isLoading } = useQuery({
@@ -63,7 +65,8 @@ export const EditTentativeDeliveryDaysDialog: React.FC<EditTentativeDeliveryDays
         .eq('config_key', 'tentative_delivery_days');
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'invoice_configuration', description: `Tentative delivery days updated to ${variables} days`, newValues: { tentative_delivery_days: variables } });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations'] });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations', 'tentative_delivery_days'] });
       queryClient.invalidateQueries({ queryKey: ['tentative-delivery-days'] });

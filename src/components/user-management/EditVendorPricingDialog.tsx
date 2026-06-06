@@ -22,6 +22,7 @@ import { Loader2, Plus, Trash2, ArrowUpDown, Search } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 export interface VendorPricingEntry {
   vendor: string;
@@ -59,6 +60,7 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
   const [rows, setRows] = useState<VendorPricingEntry[]>([]);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
 
@@ -182,7 +184,9 @@ export const EditVendorPricingDialog: React.FC<EditVendorPricingDialogProps> = (
         .eq('id', config.id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      const valid = variables.filter(e => e.vendor.trim() && e.sku.trim());
+      log({ action: 'UPDATE', entityType: 'invoice_configuration', description: `Label vendor pricing updated: ${valid.length} vendor-SKU entries`, newValues: { entries: valid.map(e => ({ vendor: e.vendor, sku: e.sku })) } });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations'] });
       queryClient.invalidateQueries({ queryKey: ['invoice-configurations', 'label_vendors'] });
       queryClient.invalidateQueries({ queryKey: ['label-vendors-config'] });

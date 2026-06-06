@@ -16,6 +16,7 @@ import { getWhatsAppConfig, sendWhatsAppMessage, sendProductionOrderNotification
 import { getTentativeDeliveryDays } from "@/services/invoiceConfigService";
 import { logger } from "@/lib/logger";
 import { exportJsonToExcel } from "@/services/export/excelExport";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Pagination } from "@/components/ui/pagination";
@@ -50,6 +51,7 @@ const OrderManagement: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { invalidateRelated } = useCacheInvalidation();
+  const log = useAuditLog();
 
   // Form state for order registration
   const [orderForm, setOrderForm] = useState({
@@ -208,6 +210,10 @@ const OrderManagement: React.FC = () => {
         title: "Success",
         description: count === 1 ? "Order created successfully!" : `${count} orders created successfully!`,
       });
+      const client = String(variables[0]?.client ?? '');
+      const branch = String(variables[0]?.branch ?? '');
+      const skuSummary = variables.map(o => `${o.sku} ×${o.number_of_cases}`).join(', ');
+      log({ action: 'CREATE', entityType: 'order', description: `Order created: ${client} / ${branch} — ${skuSummary}`, newValues: { client, branch, items: variables.map(o => ({ sku: o.sku, cases: o.number_of_cases })) } });
       invalidateRelated('orders');
 
       // Notify production WhatsApp recipients
@@ -322,7 +328,8 @@ const OrderManagement: React.FC = () => {
         logger.warn("Stock delivered WhatsApp notification skipped or failed", err);
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'order', entityId: variables, description: `Order dispatched (moved to dispatched): order ID ${variables}` });
       toast({
         title: "Success",
         description: "Order dispatched successfully!",
@@ -348,7 +355,8 @@ const OrderManagement: React.FC = () => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'DELETE', entityType: 'order', entityId: variables, description: `Order deleted: order ID ${variables}` });
       toast({
         title: "Success",
         description: "Order deleted successfully!",

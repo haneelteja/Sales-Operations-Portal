@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Loader2, RotateCcw, UserX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuditLog } from "@/hooks/useAuditLog";
 
 interface Customer {
   id: string;
@@ -47,6 +48,7 @@ interface Props {
 export const DeprecatedClientsDialog: React.FC<Props> = ({ open, onOpenChange }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
   const [search, setSearch] = useState("");
 
   const { data: allCustomers = [], isLoading } = useQuery<Customer[]>({
@@ -134,7 +136,10 @@ export const DeprecatedClientsDialog: React.FC<Props> = ({ open, onOpenChange })
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: (_, { value }) => {
+    onSuccess: (_, { id, value }) => {
+      const client = allCustomers.find(c => c.id === id);
+      const label = client ? `${client.client_name}${client.branch ? ' / ' + client.branch : ''}` : id;
+      log({ action: 'UPDATE', entityType: 'customer', entityId: id, description: value ? `Client deprecated: ${label}` : `Client restored from deprecated: ${label}`, newValues: { is_deprecated: value } });
       queryClient.invalidateQueries({ queryKey: ["all-customers-for-deprecation"] });
       queryClient.invalidateQueries({ queryKey: ["deprecated-clients"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });

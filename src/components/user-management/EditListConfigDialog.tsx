@@ -25,6 +25,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 const ASSIGNEE_PALETTE = [
   'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-red-500', 'bg-violet-500',
@@ -75,6 +76,7 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const log = useAuditLog();
   const [rows, setRows] = useState<string[]>([]);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
   const isAssigneeList = configKey === 'assignee_list';
@@ -133,7 +135,8 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
         .eq('id', config.id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'invoice_configuration', description: `Config list updated: ${configKey} — ${variables.length} item(s)`, newValues: { configKey, values: variables } });
       queryClient.invalidateQueries({ queryKey: [queryKey] });
       queryClient.invalidateQueries({ queryKey: [queryKey, configKey] });
       if (configKey === 'transport_vendors') {
