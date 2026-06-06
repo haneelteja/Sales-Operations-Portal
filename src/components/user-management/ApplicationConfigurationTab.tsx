@@ -33,6 +33,7 @@ import { EditListConfigDialog } from './EditListConfigDialog';
 import { DeprecatedClientsDialog } from './DeprecatedClientsDialog';
 import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
+import { EditPaymentFollowupDaysDialog } from './EditPaymentFollowupDaysDialog';
 import { triggerManualBackup, getBackupConfig, getBackupLogs, formatDateInIST, formatFileSize, formatDuration, type BackupConfig, type BackupLog } from '@/services/backupService';
 import { PaymentReminderSchedules } from './PaymentReminderSchedules';
 import { Database, Play } from 'lucide-react';
@@ -52,6 +53,7 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isTransportVendorsDialogOpen, setIsTransportVendorsDialogOpen] = useState(false);
   const [isExpenseGroupsDialogOpen, setIsExpenseGroupsDialogOpen] = useState(false);
   const [isTentativeDeliveryDaysDialogOpen, setIsTentativeDeliveryDaysDialogOpen] = useState(false);
+  const [isPaymentFollowupDaysDialogOpen, setIsPaymentFollowupDaysDialogOpen] = useState(false);
   const [isLabelVendorsDialogOpen, setIsLabelVendorsDialogOpen] = useState(false);
   const [isAssigneeListDialogOpen, setIsAssigneeListDialogOpen] = useState(false);
   const [isDeprecatedClientsDialogOpen, setIsDeprecatedClientsDialogOpen] = useState(false);
@@ -158,6 +160,7 @@ const ApplicationConfigurationTab: React.FC = () => {
       'transport_vendors',
       'expense_groups',
       'tentative_delivery_days',
+      'payment_followup_days',
     ];
 
     const invoiceOrder: string[] = [
@@ -607,6 +610,16 @@ const ApplicationConfigurationTab: React.FC = () => {
                             <Edit className="h-4 w-4" />
                             Edit
                           </Button>
+                        ) : config.config_key === 'payment_followup_days' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsPaymentFollowupDaysDialogOpen(true)}
+                            className="flex items-center gap-2"
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit
+                          </Button>
                         ) : config.config_key === 'invoice_number_format' ? (
                           <Button
                             variant="outline"
@@ -885,6 +898,12 @@ const ApplicationConfigurationTab: React.FC = () => {
       <EditTentativeDeliveryDaysDialog
         open={isTentativeDeliveryDaysDialogOpen}
         onOpenChange={setIsTentativeDeliveryDaysDialogOpen}
+      />
+
+      {/* Payment Follow-up Days Dialog */}
+      <EditPaymentFollowupDaysDialog
+        open={isPaymentFollowupDaysDialogOpen}
+        onOpenChange={setIsPaymentFollowupDaysDialogOpen}
       />
 
       {/* Label Vendors Dialog */}

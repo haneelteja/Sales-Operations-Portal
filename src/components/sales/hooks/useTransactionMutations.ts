@@ -90,7 +90,7 @@ export function useTransactionMutations({
 
       return paymentData;
     },
-    onSuccess: (result, variables) => {
+    onSuccess: async (result, variables) => {
       log({ action: 'CREATE', entityType: 'client_payment', entityId: result?.id, description: `Payment recorded: ₹${variables.amount} on ${variables.transaction_date}`, newValues: { amount: variables.amount, date: variables.transaction_date, description: variables.description } });
       toast({ title: 'Success', description: 'Payment recorded successfully!' });
       onPaymentSuccess();
@@ -103,6 +103,57 @@ export function useTransactionMutations({
       queryClient.invalidateQueries({ queryKey: ['sku-configurations-for-availability'] });
       queryClient.invalidateQueries({ queryKey: ['receivables-management'] });
       queryClient.invalidateQueries({ queryKey: ['customer-receivables'] });
+
+      // Auto-log follow-up in Receivables Management
+      try {
+        const { data: configRow } = await supabase
+          .from('invoice_configurations')
+          .select('config_value')
+          .eq('config_key', 'payment_followup_days')
+          .maybeSingle();
+        const followupDays = parseInt(configRow?.config_value ?? '10', 10) || 10;
+
+        const nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + followupDays);
+        const nextFollowupDate = nextDate.toISOString().split('T')[0];
+
+        const customer = customers?.find(c => c.id === variables.customer_id);
+        const dealerName = customer?.client_name ?? '';
+        const branch = variables.area ?? customer?.branch ?? '';
+        const noteText = `Payment received: ₹${parseFloat(variables.amount).toLocaleString('en-IN')}`;
+
+        if (variables.customer_id) {
+          await supabase
+            .from('client_followup_notes')
+            .insert({
+              customer_id: variables.customer_id,
+              note: noteText,
+              followup_date: nextFollowupDate,
+              created_by: 'system',
+            });
+
+          if (dealerName) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any)
+              .from('client_followups')
+              .upsert(
+                {
+                  dealer_name: dealerName,
+                  branch,
+                  comments: noteText,
+                  next_followup_date: nextFollowupDate,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'dealer_name,branch' }
+              );
+          }
+
+          queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });
+          queryClient.invalidateQueries({ queryKey: ['followup-notes', variables.customer_id] });
+        }
+      } catch {
+        // Follow-up logging is non-critical; swallow error silently
+      }
     },
     onError: (error) => {
       toast({
