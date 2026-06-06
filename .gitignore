@@ -35,6 +35,7 @@ desktop.ini
 
 # Logs
 logs
+!src/components/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
