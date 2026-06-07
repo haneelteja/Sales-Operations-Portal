@@ -75,28 +75,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Extract profile fetching logic to avoid duplication and fix memory leaks
   const fetchUserProfile = useCallback(async (userId: string, email: string | undefined): Promise<UserProfile | null> => {
     try {
-      // Try user_management first by user_id
-      const { data: userData, error: userError } = await supabase
+      // Single query: match by user_id OR email, prefer user_id match
+      const orFilter = email
+        ? `user_id.eq.${userId},email.eq.${email}`
+        : `user_id.eq.${userId}`;
+
+      const { data: rows, error: userError } = await supabase
         .from('user_management')
         .select('*')
-        .eq('user_id', userId)
-        .single();
-      
-      if (!userError && userData) {
-        return userData as UserProfile;
-      }
+        .or(orFilter)
+        .limit(2);
 
-      // If not found by user_id, try by email
-      if (email) {
-        const { data: userDataByEmail, error: emailError } = await supabase
-          .from('user_management')
-          .select('*')
-          .eq('email', email)
-          .single();
-        
-        if (!emailError && userDataByEmail) {
-          return userDataByEmail as UserProfile;
-        }
+      if (!userError && rows && rows.length > 0) {
+        // Prefer the row where user_id matches exactly (over email-only match)
+        const best = rows.find(r => r.user_id === userId) ?? rows[0];
+        return best as UserProfile;
       }
 
       // Fall back to profiles table
@@ -104,13 +97,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
-      
+        .maybeSingle();
+
       if (!profileError && profileData) {
         return profileData as UserProfile;
       }
 
-      logger.error('Error fetching profile:', userError || emailError || profileError);
+      logger.error('Error fetching profile:', userError || profileError);
       return null;
     } catch (error) {
       logger.error('Error fetching user profile:', error);

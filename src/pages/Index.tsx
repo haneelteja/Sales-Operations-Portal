@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Shield, Loader2 } from "lucide-react";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 // Lazy load route components for code splitting
 const Dashboard = lazy(() => import("@/components/dashboard/Dashboard"));
@@ -39,63 +40,83 @@ const Index = () => {
     switch (activeView) {
       case "dashboard":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <Dashboard />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <Dashboard />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "order-management":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <OrderManagement />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <OrderManagement />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "receivables-tracking":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <ReceivablesTrackingView />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <ReceivablesTrackingView />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "receivables-management":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <ReceivablesManagement />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <ReceivablesManagement />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "client-transactions":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <SalesEntry />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <SalesEntry />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "factory":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <FactoryPayables />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <FactoryPayables />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "transport":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <TransportExpenses />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <TransportExpenses />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "labels":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <Labels />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <Labels />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "reports":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <Reports />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <Reports />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "profitability":
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <Profitability />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <Profitability />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "audit-logs":
         if (profile?.role !== 'manager') {
@@ -110,9 +131,11 @@ const Index = () => {
           );
         }
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <AuditLogs />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <AuditLogs />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "user-management":
         // Only allow managers to access user management
@@ -128,9 +151,11 @@ const Index = () => {
           );
         }
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <UserManagement />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <UserManagement />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "application-configuration":
         // Only allow managers to access application configuration
@@ -146,9 +171,11 @@ const Index = () => {
           );
         }
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <ApplicationConfigurationTab />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <ApplicationConfigurationTab />
+            </Suspense>
+          </ErrorBoundary>
         );
       case "whatsapp-configuration":
         // Only allow managers to access WhatsApp configuration
@@ -164,15 +191,19 @@ const Index = () => {
           );
         }
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <WhatsAppConfigurationTab />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <WhatsAppConfigurationTab />
+            </Suspense>
+          </ErrorBoundary>
         );
       default:
         return (
-          <Suspense fallback={<RouteLoader />}>
-            <Dashboard />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <Dashboard />
+            </Suspense>
+          </ErrorBoundary>
         );
     }
   };

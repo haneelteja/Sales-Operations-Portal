@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
+import { getQueryConfig } from "@/lib/query-configs";
 import type { Customer } from "@/types";
 import {
   Dialog,
@@ -171,18 +172,21 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const initialPricesBySkuRef = useRef<Record<string, number>>({});
 
   const { data: skuOptions = [], isLoading: skusLoading } = useQuery({
+    ...getQueryConfig('sku-configurations-options'),
     queryKey: ["sku-configurations-options"],
     queryFn: fetchSkuConfigurations,
     enabled: open,
   });
 
   const { data: distinctClients = [], isLoading: clientsLoading } = useQuery({
+    ...getQueryConfig('add-client-distinct-names'),
     queryKey: ["add-client-distinct-names"],
     queryFn: fetchDistinctClientNames,
     enabled: open,
   });
 
   const { data: branchesForClient = [], isLoading: branchesLoading } = useQuery({
+    ...getQueryConfig('add-client-branches'),
     queryKey: ["add-client-branches", selectedExistingClient],
     queryFn: () => fetchBranchesForClient(selectedExistingClient),
     enabled: open && isExistingClient && !!selectedExistingClient.trim(),
@@ -194,12 +198,14 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       : null;
 
   const { data: rowsForPair = [], isFetching: pairRowsLoading } = useQuery({
+    ...getQueryConfig('add-client-pair-rows'),
     queryKey: ["add-client-pair-rows", pairKey],
     queryFn: () => fetchRowsForPair(selectedExistingClient, selectedExistingBranch),
     enabled: open && !!pairKey,
   });
 
   const { data: sampleContact } = useQuery({
+    ...getQueryConfig('add-client-contact'),
     queryKey: ["add-client-contact", selectedExistingClient],
     queryFn: () => fetchSampleContactForClient(selectedExistingClient),
     enabled: open && isExistingClient && !!selectedExistingClient.trim(),
@@ -408,8 +414,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         price_per_bottle: parseFloat(row.price_per_bottle),
         bottles_per_case: row.bottles_per_case,
       }));
-      // Insert pricing rows; on unique conflict (same date+SKU), update price fields
-      for (const row of inserts) {
+      // Insert pricing rows in parallel; on unique conflict (same date+SKU), update price fields
+      await Promise.all(inserts.map(async (row) => {
         const { error: insertErr } = await supabase.from("customers").insert(row);
         if (insertErr) {
           if (insertErr.code === "23505") {
@@ -444,7 +450,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
             throw new Error(handleSupabaseError(insertErr));
           }
         }
-      }
+      }));
 
       // Sync updated GST / WhatsApp across all existing rows for this client+branch
       const { error: syncErr } = await supabase
