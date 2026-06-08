@@ -17,9 +17,9 @@ const MESSAGE_TYPE_LABELS: Record<string, string> = {
 
 const PLACEHOLDER_HINTS: Record<string, string[]> = {
   stock_delivered: ['{customerName}', '{orderNumber}', '{deliveryDate}', '{items}'],
-  invoice: ['{customerName}', '{invoiceNumber}', '{amount}', '{dueDate}'],
-  payment_reminder: ['{customerName}', '{amount}', '{dueDate}', '{invoiceNumber}'],
-  festival: ['{customerName}'],
+  invoice: ['{customerName}', '{invoiceNumber}', '{invoiceDate}', '{amount}', '{dueDate}', '{invoiceLink}'],
+  payment_reminder: ['{customerName}', '{branch}', '{amount}', '{outstandingAmount}', '{invoiceCount}', '{daysOverdue}', '{oldestInvoiceDate}'],
+  festival: ['{customerName}', '{contactName}'],
 };
 
 export const WhatsAppTemplatesSection: React.FC = () => {

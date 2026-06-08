@@ -110,7 +110,8 @@ export const ManualPaymentReminder: React.FC = () => {
       const placeholders: Record<string, string> = {
         customerName: selectedCustomer.customer.client_name,
         branch: selectedCustomer.customer.branch ?? '',
-        outstandingAmount: outstandingAmount,
+        amount: outstandingAmount,        // matches templates using {amount}
+        outstandingAmount: outstandingAmount, // matches templates using {outstandingAmount}
         invoiceCount: selectedCustomer.invoiceCount.toString(),
         daysOverdue: daysOverdue > 0 ? daysOverdue.toString() : '0',
         oldestInvoiceDate: selectedCustomer.oldestInvoiceDate

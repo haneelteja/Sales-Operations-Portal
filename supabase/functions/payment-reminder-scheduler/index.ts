@@ -341,7 +341,8 @@ serve(async (req) => {
 
         const placeholders = {
           customerName: customer.dealer_name,
-          outstandingAmount: outstandingFormatted,
+          amount: outstandingFormatted,            // matches templates using {amount}
+          outstandingAmount: outstandingFormatted, // matches templates using {outstandingAmount}
           invoiceCount: data.invoiceCount.toString(),
           daysOverdue: daysOverdueActual.toString(),
           oldestInvoiceDate: new Date(data.oldestSaleDate!).toLocaleDateString('en-IN'),
