@@ -1,4 +1,4 @@
-import { onCLS, onFCP, onFID, onINP, onLCP, onTTFB } from 'web-vitals';
+import { onCLS, onFCP, onINP, onLCP, onTTFB } from 'web-vitals';
 
 type Metric = {
   name: string;
@@ -18,7 +18,6 @@ function logMetric(metric: Metric) {
 export function reportWebVitals() {
   onCLS(logMetric);
   onFCP(logMetric);
-  onFID(logMetric);
   onINP(logMetric);
   onLCP(logMetric);
   onTTFB(logMetric);
