@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { FileText, Pencil, Save, X, Loader2 } from 'lucide-react';
+import { FileText, Pencil, Save, X, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { getWhatsAppTemplates, saveWhatsAppTemplate, type WhatsAppTemplate } from '@/services/whatsappService';
 
 const MESSAGE_TYPE_LABELS: Record<string, string> = {
@@ -22,9 +22,40 @@ const PLACEHOLDER_HINTS: Record<string, string[]> = {
   festival: ['{customerName}', '{contactName}'],
 };
 
+const PLACEHOLDER_DESCRIPTIONS: Record<string, { placeholder: string; description: string }[]> = {
+  stock_delivered: [
+    { placeholder: '{customerName}', description: 'Customer / business name' },
+    { placeholder: '{orderNumber}', description: 'Order reference number' },
+    { placeholder: '{deliveryDate}', description: 'Date of delivery' },
+    { placeholder: '{items}', description: 'List of delivered items' },
+  ],
+  invoice: [
+    { placeholder: '{customerName}', description: 'Customer / business name' },
+    { placeholder: '{invoiceNumber}', description: 'Invoice reference number' },
+    { placeholder: '{invoiceDate}', description: 'Date on the invoice' },
+    { placeholder: '{amount}', description: 'Invoice amount (₹)' },
+    { placeholder: '{dueDate}', description: 'Payment due date' },
+    { placeholder: '{invoiceLink}', description: 'URL link to the invoice PDF' },
+  ],
+  payment_reminder: [
+    { placeholder: '{customerName}', description: 'Customer / business name' },
+    { placeholder: '{branch}', description: 'Customer branch / location' },
+    { placeholder: '{amount}', description: 'Total outstanding amount (₹) — same as {outstandingAmount}' },
+    { placeholder: '{outstandingAmount}', description: 'Total outstanding amount (₹) — same as {amount}' },
+    { placeholder: '{invoiceCount}', description: 'Number of pending invoices' },
+    { placeholder: '{daysOverdue}', description: 'Days since the oldest unpaid invoice' },
+    { placeholder: '{oldestInvoiceDate}', description: 'Date of the oldest unpaid invoice' },
+  ],
+  festival: [
+    { placeholder: '{customerName}', description: 'Customer / business name' },
+    { placeholder: '{contactName}', description: 'Name of the individual contact' },
+  ],
+};
+
 export const WhatsAppTemplatesSection: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [placeholderRefOpen, setPlaceholderRefOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -100,6 +131,48 @@ export const WhatsAppTemplatesSection: React.FC = () => {
             Edit the text sent via WhatsApp for each notification type. Use placeholders in curly braces to insert dynamic values.
           </CardDescription>
         </CardHeader>
+      </Card>
+
+      {/* Placeholder Reference */}
+      <Card>
+        <CardHeader className="pb-2 cursor-pointer select-none" onClick={() => setPlaceholderRefOpen((o) => !o)}>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-medium">Available Placeholders Reference</CardTitle>
+              <CardDescription className="text-xs mt-0.5">
+                Use these in any template — they are replaced automatically when a message is sent.
+              </CardDescription>
+            </div>
+            {placeholderRefOpen ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+            )}
+          </div>
+        </CardHeader>
+        {placeholderRefOpen && (
+          <CardContent className="pt-0">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {Object.entries(PLACEHOLDER_DESCRIPTIONS).map(([type, items]) => (
+                <div key={type} className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {MESSAGE_TYPE_LABELS[type] ?? type}
+                  </p>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {items.map(({ placeholder, description }) => (
+                        <tr key={placeholder} className="border-b last:border-0">
+                          <td className="py-1 pr-3 font-mono text-blue-700 whitespace-nowrap">{placeholder}</td>
+                          <td className="py-1 text-muted-foreground">{description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {templates.map((template) => {
