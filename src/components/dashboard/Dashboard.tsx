@@ -56,79 +56,46 @@ const Dashboard = memo(() => {
   const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
 
-  // Fetch profit data for Profitability Summary
-  const { data: profitData } = useQuery({
-    queryKey: ["dashboard-profit"],
+  // Single RPC replacing 8 separate Supabase calls (profit, monthly-sales, metrics counts)
+  const { data: aggregates } = useQuery({
+    queryKey: ["dashboard-aggregates"],
     ...getQueryConfig("dashboard-profit"),
     queryFn: async () => {
-      // Get client transactions
-      const { data: clientTransactions } = await supabase
-        .from("sales_transactions")
-        .select("amount, transaction_type");
-      
-      const totalSales = clientTransactions?.filter(t => t.transaction_type === 'sale')
-        .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
-      
-      // Get factory payables
-      const { data: factoryTransactions } = await supabase
-        .from("factory_payables")
-        .select("amount, transaction_type");
-      
-      const factoryPayables = factoryTransactions?.filter(t => t.transaction_type === 'production')
-        .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
-      
-      // Get transport expenses
-      const { data: transportExpenses } = await supabase
-        .from("transport_expenses")
-        .select("amount");
-      
-      const transportTotal = transportExpenses?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
-      
-      // Get label expenses
-      const { data: labelPurchases } = await supabase
-        .from("label_purchases")
-        .select("total_amount");
-      
-      const labelExpenses = labelPurchases?.reduce((sum, p) => sum + (p.total_amount || 0), 0) || 0;
-      
-      const profit = totalSales - (factoryPayables + transportTotal);
-      
-      return {
-        totalSales,
-        factoryPayables,
-        transportExpenses: transportTotal,
-        profit
+      const { data, error } = await supabase.rpc('get_dashboard_aggregates');
+      if (error) throw error;
+      return data as {
+        total_sales: number;
+        factory_payables: number;
+        factory_payments: number;
+        transport_expenses: number;
+        label_expenses: number;
+        total_clients: number;
+        recent_transactions: number;
+        sale_this_month: number;
+        sale_prev_month: number;
       };
     },
   });
 
-  // Fetch monthly sales KPIs
-  const { data: monthlySales } = useQuery({
-    queryKey: ["dashboard-monthly-sales"],
-    ...getQueryConfig("dashboard-monthly-sales"),
-    queryFn: async () => {
-      const now = new Date();
-      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
-      const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
+  // Derive profit card values from aggregates (no extra DB call)
+  const profitData = useMemo(() => {
+    if (!aggregates) return null;
+    return {
+      totalSales: aggregates.total_sales,
+      factoryPayables: aggregates.factory_payables,
+      transportExpenses: aggregates.transport_expenses,
+      profit: aggregates.total_sales - aggregates.factory_payables - aggregates.transport_expenses,
+    };
+  }, [aggregates]);
 
-      const { data } = await supabase
-        .from("sales_transactions")
-        .select("amount, transaction_type, transaction_date")
-        .eq("transaction_type", "sale")
-        .gte("transaction_date", prevMonthStart);
-
-      const rows = data || [];
-      const saleThisMonth = rows
-        .filter(r => r.transaction_date >= thisMonthStart)
-        .reduce((s, r) => s + (r.amount || 0), 0);
-      const salePrevMonth = rows
-        .filter(r => r.transaction_date >= prevMonthStart && r.transaction_date <= prevMonthEnd)
-        .reduce((s, r) => s + (r.amount || 0), 0);
-
-      return { saleThisMonth, salePrevMonth };
-    },
-  });
+  // Derive monthly KPI values from aggregates (no extra DB call)
+  const monthlySales = useMemo(() => {
+    if (!aggregates) return null;
+    return {
+      saleThisMonth: aggregates.sale_this_month,
+      salePrevMonth: aggregates.sale_prev_month,
+    };
+  }, [aggregates]);
 
   // Fetch inventory: factory production qty minus sales qty per client (only where stock > 0)
   const { data: inventoryRows } = useQuery({
@@ -281,56 +248,19 @@ const Dashboard = memo(() => {
     },
   });
 
-  // Fetch key metrics - depends on receivables being loaded
-  const { data: metrics } = useQuery({
-    queryKey: ["dashboard-metrics", receivables],
-    ...getQueryConfig("dashboard-metrics"),
-    queryFn: async () => {
-      // Total clients
-      const { count: totalClients } = await supabase
-        .from("customers")
-        .select("*", { count: "exact", head: true });
-
-      // Total outstanding from receivables (wait for receivables to be available)
-      const totalOutstanding = receivables?.reduce((sum, r) => sum + (r.outstanding || 0), 0) || 0;
-
-      // Factory outstanding
-      const { data: factory } = await supabase
-        .from("factory_payables")
-        .select("amount, transaction_type");
-      
-      const totalProduction = factory
-        ?.filter(f => f.transaction_type === "production")
-        .reduce((sum, f) => sum + (f.amount || 0), 0) || 0;
-      
-      const totalFactoryPayments = factory
-        ?.filter(f => f.transaction_type === "payment")
-        .reduce((sum, f) => sum + (f.amount || 0), 0) || 0;
-
-      const factoryOutstanding = totalProduction - totalFactoryPayments;
-
-      // High value customers (outstanding > 50000)
-      const highValueCustomers = receivables?.filter(r => (r.outstanding || 0) > 50000).length || 0;
-
-      // Recent transactions count (last 7 days)
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      
-      const { count: recentTransactions } = await supabase
-        .from("sales_transactions")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", sevenDaysAgo.toISOString());
-
-      return {
-        totalClients: totalClients || 0,
-        totalOutstanding,
-        factoryOutstanding,
-        highValueCustomers,
-        recentTransactions: recentTransactions || 0
-      };
-    },
-    enabled: receivables !== undefined, // Only run when receivables is loaded
-  });
+  // Derive metrics from aggregates + receivables (no extra DB call)
+  const metrics = useMemo(() => {
+    if (!aggregates) return null;
+    const totalOutstanding = receivables?.reduce((sum, r) => sum + (r.outstanding || 0), 0) || 0;
+    const highValueCustomers = receivables?.filter(r => (r.outstanding || 0) > 50000).length || 0;
+    return {
+      totalClients: aggregates.total_clients,
+      totalOutstanding,
+      factoryOutstanding: aggregates.factory_payables - aggregates.factory_payments,
+      highValueCustomers,
+      recentTransactions: aggregates.recent_transactions,
+    };
+  }, [aggregates, receivables]);
 
   // Filter and sort handlers for Client Receivables Outstanding
   const handleReceivablesColumnFilterChange = useCallback((columnKey: string, value: string) => {

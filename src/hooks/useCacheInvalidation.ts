@@ -17,29 +17,28 @@ const invalidationMap: Record<string, string[]> = {
     'receivables-management',
     'receivables-tracking',
     'customer-receivables',
-    'dashboard-metrics',
-    'dashboard-profit',
+    'dashboard-aggregates',
     'client-report',
   ],
   'customers': [
     'customers',
     'customers-for-availability',
+    'customers-management',
     'receivables',
     'sku-configurations-for-availability',
+    'dashboard-aggregates',
   ],
   'factory_payables': [
     'factory-transactions',
     'factory-summary',
     'factory-report',
-    'dashboard-profit',
-    'dashboard-metrics',
+    'dashboard-aggregates',
     'production-records',
   ],
   'transport_expenses': [
     'transport-expenses',
     'transport-report',
-    'dashboard-profit',
-    'dashboard-metrics',
+    'dashboard-aggregates',
   ],
   'orders': [
     'orders',
@@ -56,7 +55,7 @@ const invalidationMap: Record<string, string[]> = {
   'label_purchases': [
     'label-purchases',
     'labels-report',
-    'dashboard-profit',
+    'dashboard-aggregates',
   ],
   'label_payments': [
     'label-payments',

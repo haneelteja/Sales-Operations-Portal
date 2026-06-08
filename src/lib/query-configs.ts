@@ -137,6 +137,7 @@ export function getQueryConfig(key: string) {
     'receivables-management': 'receivables',
     'receivables-tracking': 'receivables',
     'customer-receivables': 'receivables',
+    'dashboard-aggregates': 'dashboardProfit',
     'dashboard-metrics': 'dashboardMetrics',
     'dashboard-profit': 'dashboardProfit',
     'dashboard-monthly-sales': 'dashboardProfit',
