@@ -109,6 +109,7 @@ export const ManualPaymentReminder: React.FC = () => {
       // Prepare placeholders for payment reminder template
       const placeholders: Record<string, string> = {
         customerName: selectedCustomer.customer.client_name,
+        branch: selectedCustomer.customer.branch ?? '',
         outstandingAmount: outstandingAmount,
         invoiceCount: selectedCustomer.invoiceCount.toString(),
         daysOverdue: daysOverdue > 0 ? daysOverdue.toString() : '0',

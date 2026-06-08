@@ -150,11 +150,12 @@ serve(async (req) => {
     const { data: outstandingRows, error: rpcError } = await supabase.rpc('get_customer_outstanding');
     if (rpcError) throw new Error(`Failed to fetch outstanding: ${rpcError.message}`);
 
-    const customerData = new Map<string, { outstanding: number; oldestSaleDate: string | null }>();
+    const customerData = new Map<string, { outstanding: number; oldestSaleDate: string | null; invoiceCount: number }>();
     for (const row of outstandingRows || []) {
       customerData.set(row.customer_id, {
         outstanding: Number(row.outstanding) || 0,
         oldestSaleDate: row.oldest_sale_date ?? null,
+        invoiceCount: Number(row.invoice_count) || 0,
       });
     }
 
@@ -183,7 +184,7 @@ serve(async (req) => {
     }
 
     // Aggregate outstanding + oldest sale date PER DEALER (across all pricing-period IDs)
-    const dealerData = new Map<string, { outstanding: number; oldestSaleDate: string | null }>();
+    const dealerData = new Map<string, { outstanding: number; oldestSaleDate: string | null; invoiceCount: number }>();
     const noWhatsappDealers: string[] = [];
 
     // Build a set of dealer names that have at least one outstanding customer_id
@@ -198,10 +199,11 @@ serve(async (req) => {
       if (!dealerName) continue;
       if (!dealerInfo.has(dealerName)) continue; // no WhatsApp number → skip
       if (!dealerData.has(dealerName)) {
-        dealerData.set(dealerName, { outstanding: 0, oldestSaleDate: null });
+        dealerData.set(dealerName, { outstanding: 0, oldestSaleDate: null, invoiceCount: 0 });
       }
       const entry = dealerData.get(dealerName)!;
       entry.outstanding += data.outstanding;
+      entry.invoiceCount += data.invoiceCount;
       if (data.oldestSaleDate && (!entry.oldestSaleDate || data.oldestSaleDate < entry.oldestSaleDate)) {
         entry.oldestSaleDate = data.oldestSaleDate;
       }
@@ -340,6 +342,7 @@ serve(async (req) => {
         const placeholders = {
           customerName: customer.dealer_name,
           outstandingAmount: outstandingFormatted,
+          invoiceCount: data.invoiceCount.toString(),
           daysOverdue: daysOverdueActual.toString(),
           oldestInvoiceDate: new Date(data.oldestSaleDate!).toLocaleDateString('en-IN'),
         };

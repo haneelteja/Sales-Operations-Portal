@@ -162,15 +162,18 @@ serve(async (req) => {
       templateIdToUse = template.id;
       messageContent = template.template_content;
 
-      // Replace placeholders
-      const defaultPlaceholders: Record<string, string> = {
+      // Replace placeholders — case-insensitive so {Branch} matches "branch"
+      const rawPlaceholders: Record<string, string> = {
         customerName: customer.client_name,
         ...placeholders,
       };
+      const lowerPlaceholders: Record<string, string> = {};
+      for (const [k, v] of Object.entries(rawPlaceholders)) {
+        lowerPlaceholders[k.toLowerCase()] = v;
+      }
 
-      // Replace placeholders in template
       messageContent = (messageContent ?? '').replace(/\{(\w+)\}/g, (match, key) => {
-        return defaultPlaceholders[key] || match;
+        return lowerPlaceholders[key.toLowerCase()] || match;
       });
     }
     if (!messageContent) {
