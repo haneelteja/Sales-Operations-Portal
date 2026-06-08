@@ -302,6 +302,17 @@ export function useTransactionMutations({
   });
 
   const deleteMutation = useMutation({
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ['recent-transactions'] });
+      const snapshot = queryClient.getQueryData<{ data: SalesTransaction[]; total: number }>(['recent-transactions']);
+      if (snapshot) {
+        queryClient.setQueryData(['recent-transactions'], {
+          data: snapshot.data.filter(t => t.id !== id),
+          total: snapshot.total - 1,
+        });
+      }
+      return { snapshot };
+    },
     mutationFn: async (id: string) => {
       const { data: transaction } = await supabase
         .from('sales_transactions')
@@ -350,7 +361,10 @@ export function useTransactionMutations({
       invalidateRelated('factory_payables');
       invalidateRelated('transport_expenses');
     },
-    onError: (error) => {
+    onError: (error, _id, context) => {
+      if (context?.snapshot) {
+        queryClient.setQueryData(['recent-transactions'], context.snapshot);
+      }
       toast({
         title: 'Error',
         description: 'Failed to delete transaction: ' + error.message,

@@ -3,7 +3,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -32,9 +34,30 @@ const queryClient = new QueryClient({
   },
 });
 
+// Persist only lightweight static config queries to localStorage.
+// Dynamic data (transactions, receivables) is excluded via shouldDehydrateQuery.
+const PERSIST_KEYS = new Set(['customers', 'sku-configurations', 'factory-pricing']);
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: 'aamodha-ops-qcache-v1',
+  throttleTime: 2000,
+});
+
+const persistOptions = {
+  persister,
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query: { queryKey: unknown[] }) => {
+      const key = query.queryKey[0];
+      return typeof key === 'string' && PERSIST_KEYS.has(key);
+    },
+  },
+};
+
 const App = () => (
   <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
       <AuthProvider>
         <TooltipProvider>
           <SidebarProvider>
@@ -56,7 +79,7 @@ const App = () => (
           </SidebarProvider>
         </TooltipProvider>
       </AuthProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
     {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
   </ErrorBoundary>
 );

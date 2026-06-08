@@ -5,6 +5,8 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { queryConfigs } from '@/lib/query-configs';
 
 /**
  * Map of table names to related query keys that should be invalidated
@@ -122,21 +124,55 @@ export const useCacheInvalidation = () => {
   }, [queryClient]);
   
   /**
-   * Prefetch related queries (for better UX)
+   * Prefetch related queries — loads static config data into cache before it's needed
    */
   const prefetchRelated = useCallback(async (table: string) => {
     const queriesToPrefetch = invalidationMap[table] || [];
-    
-    // Only prefetch commonly accessed queries
-    const commonQueries = ['customers', 'factory-pricing', 'sku-configurations'];
-    const queriesToPrefetchFiltered = queriesToPrefetch.filter(key => 
-      commonQueries.includes(key)
-    );
-    
-    // Prefetch logic would go here if needed
-    // For now, just return
-    return Promise.resolve();
-  }, []);
+    const commonQueries = new Set(['customers', 'factory-pricing', 'sku-configurations']);
+    const targets = queriesToPrefetch.filter(key => commonQueries.has(key));
+
+    await Promise.all(targets.map(key => {
+      if (key === 'customers') {
+        return queryClient.prefetchQuery({
+          queryKey: ['customers'],
+          ...queryConfigs.customers,
+          queryFn: () =>
+            supabase
+              .from('customers')
+              .select('id, client_name, branch, sku, price_per_case, pricing_date, created_at, whatsapp_number')
+              .eq('is_active', true)
+              .eq('is_deprecated', false)
+              .order('client_name', { ascending: true })
+              .then(({ data, error }) => { if (error) throw error; return data ?? []; }),
+        });
+      }
+      if (key === 'sku-configurations') {
+        return queryClient.prefetchQuery({
+          queryKey: ['sku-configurations'],
+          ...queryConfigs.skuConfig,
+          queryFn: () =>
+            supabase
+              .from('sku_configurations')
+              .select('sku, bottles_per_case')
+              .order('sku', { ascending: true })
+              .then(({ data, error }) => { if (error) throw error; return data ?? []; }),
+        });
+      }
+      if (key === 'factory-pricing') {
+        return queryClient.prefetchQuery({
+          queryKey: ['factory-pricing'],
+          ...queryConfigs.factoryPricing,
+          queryFn: () =>
+            supabase
+              .from('factory_pricing')
+              .select('*')
+              .order('pricing_date', { ascending: false })
+              .then(({ data, error }) => { if (error) throw error; return data ?? []; }),
+        });
+      }
+      return Promise.resolve();
+    }));
+  }, [queryClient]);
   
   return {
     invalidateRelated,
