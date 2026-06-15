@@ -17,6 +17,7 @@ const Reports = lazy(() => import("@/components/reports/Reports"));
 const UserManagement = lazy(() => import("@/components/user-management/UserManagement"));
 const ApplicationConfigurationTab = lazy(() => import("@/components/user-management/ApplicationConfigurationTab"));
 const WhatsAppConfigurationTab = lazy(() => import("@/components/user-management/WhatsAppConfigurationTab"));
+const EmailReportScheduleTab = lazy(() => import("@/components/user-management/EmailReportScheduleTab"));
 const ReceivablesManagement = lazy(() => import("@/components/receivables/ReceivablesManagement"));
 const ReceivablesTrackingView = lazy(() => import("@/components/receivables-tracking/ReceivablesTrackingView"));
 const Profitability = lazy(() => import("@/components/profitability/Profitability"));
@@ -194,6 +195,33 @@ const Index = () => {
           <ErrorBoundary>
             <Suspense fallback={<RouteLoader />}>
               <WhatsAppConfigurationTab />
+            </Suspense>
+          </ErrorBoundary>
+        );
+      case "email-reports":
+        if (profile?.role !== 'manager') {
+          return (
+            <Alert className="m-6">
+              <Shield className="h-4 w-4" />
+              <AlertDescription>
+                Access denied. Email Reports are only available to managers.
+                Your current role: {profile?.role || 'Unknown'}
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return (
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <div className="p-6 space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Email Reports</h2>
+                  <p className="text-gray-600 text-sm mt-1">
+                    Configure daily email reports for orders status, payment follow-up, and client credit &amp; risk analysis.
+                  </p>
+                </div>
+                <EmailReportScheduleTab />
+              </div>
             </Suspense>
           </ErrorBoundary>
         );

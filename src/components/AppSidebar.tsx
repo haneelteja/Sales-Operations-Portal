@@ -17,6 +17,7 @@ import {
   ClipboardList,
   TrendingUp,
   ScrollText,
+  Mail,
 } from "lucide-react";
 
 import {
@@ -61,6 +62,7 @@ const menuItems: MenuItem[] = [
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
   { id: "application-configuration", title: "Application Configuration", icon: Settings, roles: ['manager'] }, // Only visible to managers
   { id: "whatsapp-configuration", title: "WhatsApp Configurations", icon: MessageSquare, roles: ['manager'] }, // Only visible to managers
+  { id: "email-reports", title: "Email Reports", icon: Mail, roles: ['manager'] }, // Only visible to managers
 ];
 
 export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
