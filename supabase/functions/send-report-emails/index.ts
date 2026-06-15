@@ -379,9 +379,28 @@ serve(async (req) => {
           .update({ last_sent_at: now.toISOString() })
           .eq('report_type', schedule.report_type);
 
+        await supabase.from('email_report_logs').insert({
+          report_type: schedule.report_type,
+          label: schedule.label,
+          recipient_email: schedule.recipient_email,
+          subject,
+          status: 'success',
+          triggered_by: force ? 'manual' : 'scheduler',
+          sent_at: now.toISOString(),
+        });
+
         results[schedule.report_type] = `sent to ${schedule.recipient_email}`;
         console.log(`[send-report-emails] ${schedule.report_type}: sent to ${schedule.recipient_email}`);
       } catch (err) {
+        await supabase.from('email_report_logs').insert({
+          report_type: schedule.report_type,
+          label: schedule.label,
+          recipient_email: schedule.recipient_email,
+          status: 'error',
+          error_message: err.message,
+          triggered_by: force ? 'manual' : 'scheduler',
+          sent_at: now.toISOString(),
+        });
         results[schedule.report_type] = `error: ${err.message}`;
         console.error(`[send-report-emails] ${schedule.report_type} failed:`, err);
       }
