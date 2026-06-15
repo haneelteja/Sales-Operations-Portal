@@ -426,60 +426,6 @@ const Dashboard = memo(() => {
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
       {/* All Metrics Cards - 8 tiles in a grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Sales */}
-        <Card className="bg-green-50 border border-green-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-green-900 mb-1">Total Sales</h3>
-                <p className="text-2xl font-bold text-green-600">₹{profitData?.totalSales.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Factory Costs */}
-        <Card className="bg-red-50 border border-red-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-red-900 mb-1">Factory Costs</h3>
-                <p className="text-2xl font-bold text-red-600">₹{profitData?.factoryPayables.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Transport */}
-        <Card className="bg-orange-50 border border-orange-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-orange-900 mb-1">Transport</h3>
-                <p className="text-2xl font-bold text-orange-600">₹{profitData?.transportExpenses.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Net Profit */}
-        <Card className={`border shadow-lg hover:shadow-xl transition-all duration-300 ${
-          (profitData?.profit || 0) >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
-        }`}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className={`text-sm font-semibold mb-1 ${(profitData?.profit || 0) >= 0 ? 'text-blue-900' : 'text-red-900'}`}>
-                  Net Profit
-                </h3>
-                <p className={`text-2xl font-bold ${(profitData?.profit || 0) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                  ₹{profitData?.profit.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Client Outstanding */}
         <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
           <CardContent className="p-6">
@@ -535,18 +481,6 @@ const Dashboard = memo(() => {
               <div>
                 <h3 className="text-sm font-semibold text-cyan-900 mb-1">Sale Previous Month</h3>
                 <p className="text-2xl font-bold text-cyan-600">₹{monthlySales?.salePrevMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Total Outstanding All Clients */}
-        <Card className="bg-rose-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-rose-900 mb-1">Total Outstanding (All Clients)</h3>
-                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
               </div>
             </div>
           </CardContent>
