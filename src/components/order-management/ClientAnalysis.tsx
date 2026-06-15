@@ -67,6 +67,7 @@ const ClientAnalysis: React.FC = () => {
     client: null,
     branch: null,
     clientRisk: null,
+    outstanding: null,
     creditLimit: null,
     utilization: null,
     status: null,
@@ -213,8 +214,9 @@ const ClientAnalysis: React.FC = () => {
         switch (sortKey) {
           case "client":      av = a.client.toLowerCase();       bv = b.client.toLowerCase();       break;
           case "branch":      av = a.branch.toLowerCase();       bv = b.branch.toLowerCase();       break;
-          case "clientRisk":  av = a.clientRisk;                 bv = b.clientRisk;                 break;
-          case "creditLimit": av = a.creditLimit;                bv = b.creditLimit;                break;
+          case "clientRisk":   av = a.clientRisk;                 bv = b.clientRisk;                 break;
+          case "outstanding":  av = a.outstanding;                bv = b.outstanding;                break;
+          case "creditLimit":  av = a.creditLimit;                bv = b.creditLimit;                break;
           case "utilization": av = a.utilization;                bv = b.utilization;                break;
           case "status":      av = STATUS_ORDER[a.status] ?? 5;  bv = STATUS_ORDER[b.status] ?? 5;  break;
         }
@@ -335,6 +337,21 @@ const ClientAnalysis: React.FC = () => {
                 </TableHead>
                 <TableHead className="py-2 px-4 text-right">
                   <div className="flex items-center justify-end gap-1">
+                    Outstanding
+                    <ColumnFilter
+                      columnKey="outstanding"
+                      columnName="Outstanding"
+                      filterValue=""
+                      onFilterChange={() => {}}
+                      onClearFilter={() => {}}
+                      sortDirection={colSorts.outstanding ?? null}
+                      onSortChange={(d) => handleSortChange("outstanding", d)}
+                      dataType="number"
+                    />
+                  </div>
+                </TableHead>
+                <TableHead className="py-2 px-4 text-right">
+                  <div className="flex items-center justify-end gap-1">
                     Credit Limit
                     <ColumnFilter
                       columnKey="creditLimit"
@@ -384,7 +401,7 @@ const ClientAnalysis: React.FC = () => {
             <TableBody>
               {pagedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                     No client data available
                   </TableCell>
                 </TableRow>
@@ -406,6 +423,9 @@ const ClientAnalysis: React.FC = () => {
                     <TableCell className="text-muted-foreground py-2 px-4">{row.branch || "—"}</TableCell>
                     <TableCell className="text-right py-2 px-4 font-mono text-sm">
                       {row.clientRisk.toLocaleString("en-IN")}
+                    </TableCell>
+                    <TableCell className="text-right py-2 px-4 text-sm font-medium">
+                      {row.outstanding > 0 ? fmtINR(row.outstanding) : "—"}
                     </TableCell>
                     <TableCell className="text-right py-2 px-4 text-sm font-medium">
                       {row.creditLimit > 0 ? fmtINR(row.creditLimit) : "—"}
