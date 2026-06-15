@@ -216,9 +216,6 @@ const Index = () => {
               <div className="p-6 space-y-4">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">Email Reports</h2>
-                  <p className="text-gray-600 text-sm mt-1">
-                    Configure daily email reports for orders status, payment follow-up, and client credit &amp; risk analysis.
-                  </p>
                 </div>
                 <EmailReportScheduleTab />
               </div>

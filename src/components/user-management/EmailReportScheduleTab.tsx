@@ -8,8 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, Clock, Send, Loader2, CheckCircle2, Info } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Mail, Clock, Send, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface EmailReportSchedule {
   id: string;
@@ -99,15 +98,6 @@ const EmailReportScheduleTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          Each report is sent daily at the configured IST time. The edge function runs every hour and sends the email when the current IST hour matches.
-          To activate the hourly trigger, schedule <code className="bg-muted px-1 rounded text-xs">send-report-emails</code> in the Supabase Dashboard
-          under <strong>Edge Functions → Schedules</strong> with cron <code className="bg-muted px-1 rounded text-xs">0 * * * *</code>.
-        </AlertDescription>
-      </Alert>
-
       {schedules.map((schedule) => (
         <ScheduleCard
           key={schedule.id}
