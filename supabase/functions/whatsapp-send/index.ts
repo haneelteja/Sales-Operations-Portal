@@ -173,7 +173,8 @@ serve(async (req) => {
       }
 
       messageContent = (messageContent ?? '').replace(/\{(\w+)\}/g, (match, key) => {
-        return lowerPlaceholders[key.toLowerCase()] || match;
+        const val = lowerPlaceholders[key.toLowerCase()];
+        return val !== undefined ? val : match;
       });
     }
     if (!messageContent) {
