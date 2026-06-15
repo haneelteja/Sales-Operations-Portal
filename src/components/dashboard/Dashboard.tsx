@@ -468,19 +468,9 @@ const Dashboard = memo(() => {
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
-      {/* All Metrics Cards - 8 tiles in a grid */}
+      {/* All Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Client Outstanding */}
-        <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-rose-800 mb-1">Client Outstanding - Pending receivables</h3>
-                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Row 1: Elma Factory Outstanding, Client Outstanding, Critical Alerts, Collection Rate */}
 
         {/* Factory Outstanding */}
         <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300">
@@ -494,6 +484,18 @@ const Dashboard = memo(() => {
           </CardContent>
         </Card>
 
+        {/* Client Outstanding */}
+        <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-rose-800 mb-1">Client Outstanding - Pending receivables</h3>
+                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Critical Alerts */}
         <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 shadow-lg hover:shadow-xl transition-all duration-300">
           <CardContent className="p-6">
@@ -501,30 +503,6 @@ const Dashboard = memo(() => {
               <div>
                 <h3 className="text-sm font-semibold text-amber-800 mb-1">Critical Alerts - Outstanding &gt; ₹1L</h3>
                 <p className="text-2xl font-bold text-amber-600">{receivables?.filter(r => r.outstanding > 100000).length || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Sale This Month */}
-        <Card className="bg-teal-50 border border-teal-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-teal-900 mb-1">Sale This Month</h3>
-                <p className="text-2xl font-bold text-teal-600">₹{monthlySales?.saleThisMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Sale Previous Month */}
-        <Card className="bg-cyan-50 border border-cyan-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-cyan-900 mb-1">Sale Previous Month</h3>
-                <p className="text-2xl font-bold text-cyan-600">₹{monthlySales?.salePrevMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -576,6 +554,33 @@ const Dashboard = memo(() => {
         </Card>
       </div>
 
+      {/* Row 2: Sale This Month, Sale Previous Month */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Sale This Month */}
+        <Card className="bg-teal-50 border border-teal-200 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-teal-900 mb-1">Sale This Month</h3>
+                <p className="text-2xl font-bold text-teal-600">₹{monthlySales?.saleThisMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sale Previous Month */}
+        <Card className="bg-cyan-50 border border-cyan-200 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-cyan-900 mb-1">Sale Previous Month</h3>
+                <p className="text-2xl font-bold text-cyan-600">₹{monthlySales?.salePrevMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Payment Follow Up */}
       <div>
         <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Payment Follow Up</h2>
@@ -614,22 +619,6 @@ const Dashboard = memo(() => {
       <div>
         <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Client Analysis — Credit &amp; Risk</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Avg Credit Limit */}
-          <Card className="bg-blue-50 border border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-blue-900 mb-1">Avg Credit Limit</h3>
-                  <p className="text-2xl font-bold text-blue-600">
-                    ₹{creditRiskMetrics?.avgCreditLimit.toLocaleString('en-IN', { maximumFractionDigits: 0 }) ?? 0}
-                  </p>
-                  <p className="text-xs text-blue-500 mt-1">Avg monthly sales per client</p>
-                </div>
-                <CreditCard className="h-8 w-8 text-blue-300" />
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Over Limit */}
           <Card className="bg-rose-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
             <CardContent className="p-6">
