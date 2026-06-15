@@ -117,7 +117,8 @@ export const PaymentReminderSchedules: React.FC = () => {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [isSendingManual, setIsSendingManual] = useState(false);
   const [logsPage, setLogsPage] = useState(1);
-  const LOGS_PAGE_SIZE = 20;
+  const [logsExpanded, setLogsExpanded] = useState(false);
+  const LOGS_PAGE_SIZE = logsExpanded ? 20 : 5;
   const [logsSearch, setLogsSearch] = useState('');
   const [logsStatus, setLogsStatus] = useState<'all' | 'sent' | 'failed' | 'skipped'>('all');
   const [logsMonth, setLogsMonth] = useState('');
@@ -662,26 +663,40 @@ export const PaymentReminderSchedules: React.FC = () => {
                 <span className="text-xs text-gray-500">
                   {((logsPage - 1) * LOGS_PAGE_SIZE) + 1}–{Math.min(logsPage * LOGS_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}
                 </span>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
-                    disabled={logsPage === 1}
-                    className="h-7 w-7 p-0"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-xs px-2">{logsPage} / {totalLogsPages}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setLogsPage((p) => Math.min(totalLogsPages, p + 1))}
-                    disabled={logsPage === totalLogsPages}
-                    className="h-7 w-7 p-0"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
+                <div className="flex items-center gap-2">
+                  {logsExpanded && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
+                        disabled={logsPage === 1}
+                        className="h-7 w-7 p-0"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-xs px-2">{logsPage} / {totalLogsPages}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLogsPage((p) => Math.min(totalLogsPages, p + 1))}
+                        disabled={logsPage === totalLogsPages}
+                        className="h-7 w-7 p-0"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                  {filteredLogs.length > 5 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-blue-600 hover:text-blue-700"
+                      onClick={() => { setLogsExpanded((e) => !e); setLogsPage(1); }}
+                    >
+                      {logsExpanded ? 'Show less' : `Show all ${filteredLogs.length}`}
+                    </Button>
+                  )}
                 </div>
               </div>
             </>
