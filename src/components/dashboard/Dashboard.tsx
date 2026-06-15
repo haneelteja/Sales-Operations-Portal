@@ -248,6 +248,50 @@ const Dashboard = memo(() => {
     },
   });
 
+  // Payment follow-up counts — uses get_customer_outstanding RPC for oldest_sale_date
+  const { data: customerOutstanding } = useQuery({
+    queryKey: ['dashboard-customer-outstanding'],
+    ...getQueryConfig('receivables'),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_customer_outstanding');
+      if (error) throw error;
+      return (data ?? []) as { customer_id: string; outstanding: number; invoice_count: number; oldest_sale_date: string | null }[];
+    },
+  });
+
+  const paymentFollowupMetrics = useMemo(() => {
+    if (!customerOutstanding) return null;
+    const today = Date.now();
+    const DAY = 1000 * 60 * 60 * 24;
+    let overdue = 0;
+    let dueSoon = 0;
+    for (const row of customerOutstanding) {
+      if (!row.oldest_sale_date || row.outstanding <= 0) continue;
+      const ageDays = Math.floor((today - new Date(row.oldest_sale_date).getTime()) / DAY);
+      if (ageDays > 30) overdue++;
+      else if (ageDays >= 15) dueSoon++;
+    }
+    return { overdue, dueSoon };
+  }, [customerOutstanding]);
+
+  // Credit & Risk metrics — credit limit per client = avg monthly sales (totalSales / 3 months)
+  const creditRiskMetrics = useMemo(() => {
+    if (!receivables) return null;
+    let overLimit = 0;
+    let warning = 0;
+    let totalCreditLimit = 0;
+    let clientCount = 0;
+    for (const r of receivables) {
+      const creditLimit = (r.totalSales || 0) / 3;
+      totalCreditLimit += creditLimit;
+      clientCount++;
+      if (r.outstanding > creditLimit) overLimit++;
+      else if (r.outstanding > creditLimit * 0.75) warning++;
+    }
+    const avgCreditLimit = clientCount > 0 ? totalCreditLimit / clientCount : 0;
+    return { overLimit, warning, avgCreditLimit };
+  }, [receivables]);
+
   // Derive metrics from aggregates + receivables (no extra DB call)
   const metrics = useMemo(() => {
     if (!aggregates) return null;
@@ -531,6 +575,91 @@ const Dashboard = memo(() => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Payment Follow Up */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Payment Follow Up</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Overdue */}
+          <Card className="bg-red-50 border border-red-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-red-900 mb-1">No. of Overdue</h3>
+                  <p className="text-2xl font-bold text-red-600">{paymentFollowupMetrics?.overdue ?? 0}</p>
+                  <p className="text-xs text-red-500 mt-1">Oldest invoice &gt; 30 days unpaid</p>
+                </div>
+                <AlertTriangle className="h-8 w-8 text-red-300" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Due Soon */}
+          <Card className="bg-amber-50 border border-amber-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-amber-900 mb-1">No. of Due Soon</h3>
+                  <p className="text-2xl font-bold text-amber-600">{paymentFollowupMetrics?.dueSoon ?? 0}</p>
+                  <p className="text-xs text-amber-500 mt-1">Oldest invoice 15–30 days unpaid</p>
+                </div>
+                <TrendingUp className="h-8 w-8 text-amber-300" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Client Credit & Risk */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Client Analysis — Credit &amp; Risk</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Avg Credit Limit */}
+          <Card className="bg-blue-50 border border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-blue-900 mb-1">Avg Credit Limit</h3>
+                  <p className="text-2xl font-bold text-blue-600">
+                    ₹{creditRiskMetrics?.avgCreditLimit.toLocaleString('en-IN', { maximumFractionDigits: 0 }) ?? 0}
+                  </p>
+                  <p className="text-xs text-blue-500 mt-1">Avg monthly sales per client</p>
+                </div>
+                <CreditCard className="h-8 w-8 text-blue-300" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Over Limit */}
+          <Card className="bg-rose-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-rose-900 mb-1">No. of Over Limit</h3>
+                  <p className="text-2xl font-bold text-rose-600">{creditRiskMetrics?.overLimit ?? 0}</p>
+                  <p className="text-xs text-rose-500 mt-1">Outstanding exceeds monthly avg</p>
+                </div>
+                <AlertTriangle className="h-8 w-8 text-rose-300" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Warning / Caution */}
+          <Card className="bg-orange-50 border border-orange-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-orange-900 mb-1">No. of Warning / Caution</h3>
+                  <p className="text-2xl font-bold text-orange-600">{creditRiskMetrics?.warning ?? 0}</p>
+                  <p className="text-xs text-orange-500 mt-1">Outstanding at 75–100% of limit</p>
+                </div>
+                <Eye className="h-8 w-8 text-orange-300" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
       {/* Inventory Table */}
       {inventoryRows && inventoryRows.length > 0 && (() => {
         const q = debouncedInventorySearch.toLowerCase();
