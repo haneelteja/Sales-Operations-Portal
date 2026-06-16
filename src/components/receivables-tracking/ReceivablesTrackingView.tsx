@@ -88,16 +88,38 @@ async function insertFollowupNote(
   if (error) throw error;
 }
 
-async function fetchLedgerRows(customerId: string): Promise<LedgerRow[]> {
+function currentFY(): { from: string; to: string } {
+  const now = new Date();
+  const month = now.getMonth(); // 0-indexed; April = 3
+  const fyYear = month >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return { from: `${fyYear}-04-01`, to: `${fyYear + 1}-03-31` };
+}
+
+async function fetchLedgerRows(
+  customerId: string,
+  from: string,
+  to: string,
+): Promise<{ openingBalance: number; rows: LedgerRow[] }> {
   const { data, error } = await supabase
     .from('sales_transactions')
     .select('transaction_date, transaction_type, sku, quantity, amount, description')
     .eq('customer_id', customerId)
+    .lte('transaction_date', to)
     .order('transaction_date', { ascending: true });
   if (error) throw error;
 
-  let balance = 0;
-  return (data ?? []).map(tx => {
+  const all = data ?? [];
+  const before = all.filter(tx => tx.transaction_date < from);
+  const inRange = all.filter(tx => tx.transaction_date >= from);
+
+  let openingBalance = 0;
+  for (const tx of before) {
+    const amt = tx.amount ?? 0;
+    openingBalance += tx.transaction_type === 'sale' ? amt : -amt;
+  }
+
+  let balance = openingBalance;
+  const rows: LedgerRow[] = inRange.map(tx => {
     const isSale = tx.transaction_type === 'sale';
     const debit = isSale ? (tx.amount ?? 0) : null;
     const credit = isSale ? null : (tx.amount ?? 0);
@@ -114,6 +136,8 @@ async function fetchLedgerRows(customerId: string): Promise<LedgerRow[]> {
       balance,
     };
   });
+
+  return { openingBalance, rows };
 }
 
 // ── Data Fetching ─────────────────────────────────────────────────────────────
@@ -292,23 +316,28 @@ interface LedgerDrawerProps {
 
 function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstanding }: LedgerDrawerProps) {
   const [exporting, setExporting] = useState(false);
+  const defaultFY = useMemo(() => currentFY(), []);
+  const [dateFrom, setDateFrom] = useState(defaultFY.from);
+  const [dateTo, setDateTo] = useState(defaultFY.to);
 
-  const { data: ledger, isLoading } = useQuery({
-    queryKey: ['customer-ledger', customerId],
-    queryFn: () => fetchLedgerRows(customerId),
+  const { data: ledgerData, isLoading } = useQuery({
+    queryKey: ['customer-ledger', customerId, dateFrom, dateTo],
+    queryFn: () => fetchLedgerRows(customerId, dateFrom, dateTo),
     enabled: open && !!customerId,
     staleTime: 30000,
   });
+
+  const { openingBalance = 0, rows: ledger = [] } = ledgerData ?? {};
 
   const fmtFull = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
   const fmtDateLedger = (d: string) =>
     new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  const lastRow = ledger?.[ledger.length - 1];
-  const closingBalance = lastRow?.balance ?? 0;
+  const lastRow = ledger[ledger.length - 1];
+  const closingBalance = lastRow?.balance ?? openingBalance;
 
   const handleExport = async () => {
-    if (!ledger?.length) return;
+    if (!ledger.length && openingBalance === 0) return;
     setExporting(true);
     try {
       const rows = ledger.map(r => ({
@@ -322,11 +351,10 @@ function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstandi
         description: r.particulars,
       }));
       const safeName = dealerName.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const dateStr = new Date().toISOString().split('T')[0];
       await exportLedger(
         rows,
-        `Ledger_${safeName}_${dateStr}.xlsx`,
-        `Client Ledger — ${dealerName}${branch ? ` (${branch})` : ''}`
+        `Ledger_${safeName}_${dateFrom}_to_${dateTo}.xlsx`,
+        `Client Ledger — ${dealerName}${branch ? ` (${branch})` : ''} | ${dateFrom} to ${dateTo}`,
       );
     } finally {
       setExporting(false);
@@ -347,7 +375,7 @@ function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstandi
               size="sm"
               variant="outline"
               onClick={handleExport}
-              disabled={exporting || !ledger?.length}
+              disabled={exporting || (ledger.length === 0 && openingBalance === 0)}
               className="gap-1.5 text-xs flex-shrink-0"
             >
               <FileText className="h-3.5 w-3.5" />
@@ -355,16 +383,49 @@ function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstandi
             </Button>
           </div>
 
-          {/* Summary pill */}
+          {/* Date range picker */}
+          <div className="flex items-center gap-2 mt-3">
+            <div className="flex items-center gap-1.5 flex-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium whitespace-nowrap">From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                title="From date"
+                className="flex-1 text-xs border border-input rounded-md px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div className="flex items-center gap-1.5 flex-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium whitespace-nowrap">To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                title="To date"
+                className="flex-1 text-xs border border-input rounded-md px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => { setDateFrom(defaultFY.from); setDateTo(defaultFY.to); }}
+              className="text-[10px] text-blue-600 hover:text-blue-800 whitespace-nowrap font-medium"
+            >
+              Current FY
+            </button>
+          </div>
+
+          {/* Summary pills */}
           <div className="flex flex-wrap gap-2 mt-3">
             <div className="flex items-center gap-1.5 bg-muted/60 rounded-lg px-3 py-1.5">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Outstanding</span>
-              <span className={`text-sm font-bold ${
-                closingBalance > 0 ? 'text-red-600' :
-                closingBalance < 0 ? 'text-emerald-600' :
-                'text-foreground'
-              }`}>
-                {fmtFull(Math.abs(closingBalance))}{closingBalance < 0 ? ' (overpaid)' : ''}
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Opening Balance</span>
+              <span className={`text-sm font-bold ${openingBalance > 0 ? 'text-red-600' : openingBalance < 0 ? 'text-emerald-600' : 'text-foreground'}`}>
+                {fmtFull(Math.abs(openingBalance))}{openingBalance < 0 ? ' CR' : openingBalance > 0 ? ' DR' : ''}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-muted/60 rounded-lg px-3 py-1.5">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Closing Balance</span>
+              <span className={`text-sm font-bold ${closingBalance > 0 ? 'text-red-600' : closingBalance < 0 ? 'text-emerald-600' : 'text-foreground'}`}>
+                {fmtFull(Math.abs(closingBalance))}{closingBalance < 0 ? ' CR' : closingBalance > 0 ? ' DR' : ''}
               </span>
             </div>
           </div>
@@ -376,10 +437,6 @@ function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstandi
             <div className="flex items-center justify-center h-40 gap-2">
               <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
               <span className="text-sm text-muted-foreground">Loading ledger…</span>
-            </div>
-          ) : !ledger?.length ? (
-            <div className="flex flex-col items-center justify-center h-40 text-center gap-2">
-              <p className="text-sm text-muted-foreground">No transactions found</p>
             </div>
           ) : (
             <table className="w-full text-xs">
@@ -393,39 +450,59 @@ function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstandi
                 </tr>
               </thead>
               <tbody>
-                {ledger.map((row, i) => (
-                  <tr
-                    key={i}
-                    className={`border-t border-border/40 ${
-                      row.debit != null
-                        ? 'bg-red-50/40 dark:bg-red-900/10'
-                        : 'bg-emerald-50/40 dark:bg-emerald-900/10'
-                    }`}
-                  >
-                    <td className="py-2 px-4 text-muted-foreground whitespace-nowrap">{fmtDateLedger(row.date)}</td>
-                    <td className="py-2 px-4 text-foreground leading-snug max-w-[180px]">
-                      <span className="line-clamp-2">{row.particulars}</span>
-                      {row.sku && (
-                        <span className="block text-[10px] text-muted-foreground mt-0.5">
-                          {row.sku}{row.cases ? ` · ${row.cases} cases` : ''}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 px-3 text-right font-medium text-red-600 dark:text-red-400 whitespace-nowrap">
-                      {row.debit != null ? fmtFull(row.debit) : ''}
-                    </td>
-                    <td className="py-2 px-3 text-right font-medium text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                      {row.credit != null ? fmtFull(row.credit) : ''}
-                    </td>
-                    <td className={`py-2 px-4 text-right font-semibold whitespace-nowrap ${
-                      row.balance > 0 ? 'text-red-600 dark:text-red-400' :
-                      row.balance < 0 ? 'text-emerald-600 dark:text-emerald-400' :
-                      'text-foreground'
-                    }`}>
-                      {fmtFull(Math.abs(row.balance))}{row.balance < 0 ? ' CR' : row.balance > 0 ? ' DR' : ''}
+                {/* Opening Balance row */}
+                <tr className="border-t border-border/40 bg-muted/30">
+                  <td className="py-2 px-4 text-muted-foreground whitespace-nowrap font-medium">{fmtDateLedger(dateFrom)}</td>
+                  <td className="py-2 px-4 text-foreground font-medium" colSpan={3}>Opening Balance</td>
+                  <td className={`py-2 px-4 text-right font-semibold whitespace-nowrap ${
+                    openingBalance > 0 ? 'text-red-600 dark:text-red-400' :
+                    openingBalance < 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                    'text-muted-foreground'
+                  }`}>
+                    {fmtFull(Math.abs(openingBalance))}{openingBalance < 0 ? ' CR' : openingBalance > 0 ? ' DR' : ''}
+                  </td>
+                </tr>
+                {ledger.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-10 text-center text-muted-foreground">
+                      No transactions in selected period
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  ledger.map((row, i) => (
+                    <tr
+                      key={i}
+                      className={`border-t border-border/40 ${
+                        row.debit != null
+                          ? 'bg-red-50/40 dark:bg-red-900/10'
+                          : 'bg-emerald-50/40 dark:bg-emerald-900/10'
+                      }`}
+                    >
+                      <td className="py-2 px-4 text-muted-foreground whitespace-nowrap">{fmtDateLedger(row.date)}</td>
+                      <td className="py-2 px-4 text-foreground leading-snug max-w-[180px]">
+                        <span className="line-clamp-2">{row.particulars}</span>
+                        {row.sku && (
+                          <span className="block text-[10px] text-muted-foreground mt-0.5">
+                            {row.sku}{row.cases ? ` · ${row.cases} cases` : ''}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-right font-medium text-red-600 dark:text-red-400 whitespace-nowrap">
+                        {row.debit != null ? fmtFull(row.debit) : ''}
+                      </td>
+                      <td className="py-2 px-3 text-right font-medium text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                        {row.credit != null ? fmtFull(row.credit) : ''}
+                      </td>
+                      <td className={`py-2 px-4 text-right font-semibold whitespace-nowrap ${
+                        row.balance > 0 ? 'text-red-600 dark:text-red-400' :
+                        row.balance < 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                        'text-foreground'
+                      }`}>
+                        {fmtFull(Math.abs(row.balance))}{row.balance < 0 ? ' CR' : row.balance > 0 ? ' DR' : ''}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
               <tfoot className="sticky bottom-0 bg-card border-t-2 border-border">
                 <tr>
