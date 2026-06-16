@@ -320,6 +320,23 @@ function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstandi
   const [dateFrom, setDateFrom] = useState(defaultFY.from);
   const [dateTo, setDateTo] = useState(defaultFY.to);
 
+  const { data: firstTxDate } = useQuery({
+    queryKey: ['customer-ledger-first-date', customerId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('sales_transactions')
+        .select('transaction_date')
+        .eq('customer_id', customerId)
+        .order('transaction_date', { ascending: true })
+        .limit(1);
+      return (data?.[0]?.transaction_date as string | undefined) ?? null;
+    },
+    enabled: open && !!customerId,
+    staleTime: 60000,
+  });
+
+  const today = new Date().toISOString().split('T')[0];
+
   const { data: ledgerData, isLoading } = useQuery({
     queryKey: ['customer-ledger', customerId, dateFrom, dateTo],
     queryFn: () => fetchLedgerRows(customerId, dateFrom, dateTo),
@@ -411,6 +428,14 @@ function LedgerDrawer({ open, onClose, customerId, dealerName, branch, outstandi
               className="text-[10px] text-blue-600 hover:text-blue-800 whitespace-nowrap font-medium"
             >
               Current FY
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDateFrom(firstTxDate ?? defaultFY.from); setDateTo(today); }}
+              disabled={!firstTxDate}
+              className="text-[10px] text-purple-600 hover:text-purple-800 whitespace-nowrap font-medium disabled:opacity-40"
+            >
+              Full Ledger
             </button>
           </div>
 
