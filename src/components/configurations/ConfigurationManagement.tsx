@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Edit, UserX, UserCheck, Download, ArrowUpDown, MoreHorizontal, BookOpen, Users } from "lucide-react";
+import { Trash2, Edit, UserX, UserCheck, Download, ArrowUpDown, MoreHorizontal, BookOpen, Users, ArchiveX, ArchiveRestore } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -93,7 +93,7 @@ const ConfigurationManagement = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, client_name, branch, sku, price_per_case, price_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, created_at, updated_at")
+          .select("id, client_name, branch, sku, price_per_case, price_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, is_deprecated, created_at, updated_at")
           .order("client_name", { ascending: true });
 
         if (error) {
@@ -281,6 +281,25 @@ const ConfigurationManagement = () => {
         description: "Failed to deactivate customer: " + error.message,
         variant: "destructive"
       });
+    },
+  });
+
+  const setDeprecatedMutation = useMutation({
+    mutationFn: async ({ id, deprecated }: { id: string; deprecated: boolean }) => {
+      const { error } = await supabase
+        .from("customers")
+        .update({ is_deprecated: deprecated })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables.id, description: `Client ${variables.deprecated ? 'marked as deprecated' : 'restored from deprecated'} (ID: ${variables.id})` });
+      toast({ title: "Success", description: variables.deprecated ? "Client marked as deprecated and hidden from order forms." : "Client restored — now visible in order forms." });
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["customers-management"] });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: "Failed to update deprecated status: " + error.message, variant: "destructive" });
     },
   });
 
@@ -692,9 +711,14 @@ const ConfigurationManagement = () => {
                           {customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={customer.is_active ? "default" : "secondary"}>
-                            {customer.is_active ? "Active" : "Inactive"}
-                          </Badge>
+                          <div className="flex flex-wrap gap-1">
+                            <Badge variant={customer.is_active ? "default" : "secondary"}>
+                              {customer.is_active ? "Active" : "Inactive"}
+                            </Badge>
+                            {customer.is_deprecated && (
+                              <Badge variant="destructive" className="text-xs">Deprecated</Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                         <DropdownMenu>
@@ -727,7 +751,7 @@ const ConfigurationManagement = () => {
                               {exportingLedgerFor === customer.id ? 'Exporting…' : 'Export Ledger'}
                             </DropdownMenuItem>
                             {customer.is_active ? (
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => handleDeactivate(customer.id)}
                                 className="text-orange-600"
                               >
@@ -735,12 +759,29 @@ const ConfigurationManagement = () => {
                                 Deactivate
                               </DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => handleReactivate(customer.id)}
                                 className="text-green-600"
                               >
                                 <UserCheck className="mr-2 h-4 w-4" />
                                 Reactivate
+                              </DropdownMenuItem>
+                            )}
+                            {customer.is_deprecated ? (
+                              <DropdownMenuItem
+                                onClick={() => setDeprecatedMutation.mutate({ id: customer.id, deprecated: false })}
+                                className="text-blue-600"
+                              >
+                                <ArchiveRestore className="mr-2 h-4 w-4" />
+                                Restore (remove deprecated)
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                onClick={() => setDeprecatedMutation.mutate({ id: customer.id, deprecated: true })}
+                                className="text-red-600"
+                              >
+                                <ArchiveX className="mr-2 h-4 w-4" />
+                                Mark as Deprecated
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>

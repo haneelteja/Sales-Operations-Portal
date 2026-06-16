@@ -10,6 +10,7 @@ export interface Customer {
   gst_number?: string | null;
   pricing_date?: string | null;
   is_active: boolean;
+  is_deprecated?: boolean;
   created_at: string;
   updated_at: string;
 }
