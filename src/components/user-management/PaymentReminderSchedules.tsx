@@ -15,12 +15,17 @@ import { Bell, Plus, Edit, Trash2, Send, ChevronLeft, ChevronRight, Download, Ar
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { useAuditLog } from '@/hooks/useAuditLog';
 
+// 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 interface PaymentReminderSchedule {
   id: string;
   name: string;
-  days_overdue: number;
+  days_of_week: number[];
   send_time_ist: string;
   min_outstanding_amount: number;
+  is_recurring: boolean;
   start_date: string | null;
   is_enabled: boolean;
   created_at: string;
@@ -38,7 +43,7 @@ interface PaymentReminderLog {
   triggered_at: string;
 }
 
-// 15-minute interval time slots for the dropdown (00:00 → 23:45)
+// 15-minute interval time slots (00:00 → 23:45)
 const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
   const h = Math.floor(i / 4);
   const m = (i % 4) * 15;
@@ -52,63 +57,62 @@ const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
 
 const DEFAULT_FORM = {
   name: '',
-  days_overdue: 7,
+  days_of_week: [1, 3, 5] as number[], // Mon, Wed, Fri default
   send_time_ist: '10:00',
   min_outstanding_amount: 0,
+  is_recurring: true,
   start_date: '',
 };
 
 /**
- * Returns the next Date (UTC) at which this schedule will meaningfully fire.
- * Factors in: send_time_ist, start_date, and lastRun + daysOverdue interval
- * (since a customer reminded N days ago won't be re-reminded until N days have passed).
+ * Returns the next UTC Date at which this day-of-week schedule will fire.
+ * Looks ahead up to 7 days from now (IST).
  */
 function getNextRunDate(
   sendTimeIST: string,
-  startDate: string | null,
-  lastRun: string | null,
-  daysOverdue: number,
-): Date {
+  daysOfWeek: number[],
+  isEnabled: boolean,
+): Date | null {
+  if (!isEnabled || daysOfWeek.length === 0) return null;
+
   const [h, m] = sendTimeIST.split(':').map(Number);
   const istOffsetMs = (5 * 60 + 30) * 60 * 1000;
   const now = new Date();
   const nowIST = new Date(now.getTime() + istOffsetMs);
+  const currentMins = nowIST.getUTCHours() * 60 + nowIST.getUTCMinutes();
+  const targetMins = h * 60 + m;
 
-  // Helper: given a UTC Date, return the send_time_ist fire time on that IST calendar day
-  function fireUTCOnISTDay(d: Date): Date {
-    const dIST = new Date(d.getTime() + istOffsetMs);
-    return new Date(Date.UTC(dIST.getUTCFullYear(), dIST.getUTCMonth(), dIST.getUTCDate(), h - 5, m - 30, 0));
+  for (let daysAhead = 0; daysAhead <= 7; daysAhead++) {
+    const checkIST = new Date(nowIST.getTime() + daysAhead * 86400000);
+    const dayOfWeek = checkIST.getUTCDay();
+    if (!daysOfWeek.includes(dayOfWeek)) continue;
+    // If today, target time must still be at least 15 min in the future
+    if (daysAhead === 0 && currentMins >= targetMins + 15) continue;
+
+    // Build UTC equivalent of IST day at send_time_ist
+    const fireUTC = new Date(Date.UTC(
+      checkIST.getUTCFullYear(),
+      checkIST.getUTCMonth(),
+      checkIST.getUTCDate(),
+      h - 5, m - 30, 0,
+    ));
+    return fireUTC;
   }
-
-  // Next fire based purely on send_time_ist (today or tomorrow)
-  const todayFireUTC = fireUTCOnISTDay(nowIST);
-  let nextOccurrence = todayFireUTC > now
-    ? todayFireUTC
-    : new Date(todayFireUTC.getTime() + 24 * 60 * 60 * 1000);
-
-  // Respect start_date
-  if (startDate) {
-    const [sy, smo, sd] = startDate.split('-').map(Number);
-    const startFireUTC = new Date(Date.UTC(sy, smo - 1, sd, h - 5, m - 30, 0));
-    if (startFireUTC > nextOccurrence) nextOccurrence = startFireUTC;
-  }
-
-  // Factor in lastRun: don't show a next run before lastRun + daysOverdue days
-  if (lastRun) {
-    const dueAfterLastRun = new Date(new Date(lastRun).getTime() + daysOverdue * 24 * 60 * 60 * 1000);
-    // Snap to send_time_ist on or after the due date
-    const dueFire = fireUTCOnISTDay(dueAfterLastRun);
-    const snapFire = dueFire >= dueAfterLastRun ? dueFire : new Date(dueFire.getTime() + 24 * 60 * 60 * 1000);
-    if (snapFire > nextOccurrence) nextOccurrence = snapFire;
-  }
-
-  return nextOccurrence;
+  return null;
 }
 
 function formatDateTime(date: Date): string {
   return date.toLocaleString('en-IN', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
   });
+}
+
+function formatDays(days: number[]): string {
+  if (!days || days.length === 0) return '—';
+  if (days.length === 7) return 'Every day';
+  if (days.length === 5 && [1,2,3,4,5].every(d => days.includes(d))) return 'Mon–Fri';
+  if (days.length === 2 && days.includes(0) && days.includes(6)) return 'Weekends';
+  return [...days].sort((a, b) => a - b).map(d => DAY_LABELS[d]).join(', ');
 }
 
 export const PaymentReminderSchedules: React.FC = () => {
@@ -134,27 +138,9 @@ export const PaymentReminderSchedules: React.FC = () => {
       const { data, error } = await supabase
         .from('payment_reminder_schedules')
         .select('*')
-        .order('days_overdue', { ascending: true });
+        .order('created_at', { ascending: true });
       if (error) throw error;
       return data as PaymentReminderSchedule[];
-    },
-  });
-
-  const { data: lastRunMap } = useQuery({
-    queryKey: ['payment-reminder-last-runs'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('payment_reminder_logs')
-        .select('schedule_id, triggered_at')
-        .order('triggered_at', { ascending: false });
-      if (error) throw error;
-      const map = new Map<string, string>();
-      for (const row of data ?? []) {
-        if (row.schedule_id && !map.has(row.schedule_id)) {
-          map.set(row.schedule_id, row.triggered_at);
-        }
-      }
-      return map;
     },
   });
 
@@ -168,6 +154,18 @@ export const PaymentReminderSchedules: React.FC = () => {
       if (error) throw error;
       return data as PaymentReminderLog[];
     },
+  });
+
+  const { data: lastRunMap } = useQuery({
+    queryKey: ['payment-reminder-last-runs'],
+    queryFn: async () => {
+      const map = new Map<string, string>();
+      for (const row of allLogs) {
+        if (row.schedule_id && !map.has(row.schedule_id)) map.set(row.schedule_id, row.triggered_at);
+      }
+      return map;
+    },
+    enabled: allLogs.length > 0,
   });
 
   const availableLogMonths = useMemo(() => {
@@ -186,13 +184,9 @@ export const PaymentReminderSchedules: React.FC = () => {
     if (logsMonth) logs = logs.filter((l) => l.triggered_at?.startsWith(logsMonth));
     return [...logs].sort((a, b) => {
       let cmp = 0;
-      if (logsSortField === 'triggered_at') {
-        cmp = new Date(a.triggered_at).getTime() - new Date(b.triggered_at).getTime();
-      } else if (logsSortField === 'customer_name') {
-        cmp = a.customer_name.localeCompare(b.customer_name);
-      } else {
-        cmp = a.outstanding_amount - b.outstanding_amount;
-      }
+      if (logsSortField === 'triggered_at') cmp = new Date(a.triggered_at).getTime() - new Date(b.triggered_at).getTime();
+      else if (logsSortField === 'customer_name') cmp = a.customer_name.localeCompare(b.customer_name);
+      else cmp = a.outstanding_amount - b.outstanding_amount;
       return logsSortDir === 'asc' ? cmp : -cmp;
     });
   }, [allLogs, logsSearch, logsStatus, logsMonth, logsSortField, logsSortDir]);
@@ -201,12 +195,8 @@ export const PaymentReminderSchedules: React.FC = () => {
   const pagedLogs = filteredLogs.slice((logsPage - 1) * LOGS_PAGE_SIZE, logsPage * LOGS_PAGE_SIZE);
 
   const toggleLogsSort = (field: typeof logsSortField) => {
-    if (logsSortField === field) {
-      setLogsSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setLogsSortField(field);
-      setLogsSortDir('desc');
-    }
+    if (logsSortField === field) setLogsSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setLogsSortField(field); setLogsSortDir('desc'); }
     setLogsPage(1);
   };
 
@@ -224,44 +214,44 @@ export const PaymentReminderSchedules: React.FC = () => {
   const saveMutation = useMutation({
     mutationFn: async (values: typeof DEFAULT_FORM) => {
       const payload = {
-        ...values,
+        name: values.name,
+        days_of_week: values.days_of_week,
+        send_time_ist: values.send_time_ist,
+        min_outstanding_amount: values.min_outstanding_amount,
+        is_recurring: values.is_recurring,
         start_date: values.start_date || null,
       };
       if (editingSchedule) {
-        const { error } = await supabase
-          .from('payment_reminder_schedules')
-          .update(payload)
-          .eq('id', editingSchedule.id);
+        const { error } = await supabase.from('payment_reminder_schedules').update(payload).eq('id', editingSchedule.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from('payment_reminder_schedules')
-          .insert(payload);
+        const { error } = await supabase.from('payment_reminder_schedules').insert(payload);
         if (error) throw error;
       }
     },
     onSuccess: (_, variables) => {
-      const action = editingSchedule ? 'UPDATE' : 'CREATE';
-      log({ action, entityType: 'payment_reminder_schedule', entityId: editingSchedule?.id, description: `Payment reminder schedule ${editingSchedule ? 'updated' : 'added'}: "${variables.name}" — every ${variables.days_overdue} days at ${variables.send_time_ist} IST`, newValues: variables });
+      const daysLabel = formatDays(variables.days_of_week);
+      log({
+        action: editingSchedule ? 'UPDATE' : 'CREATE',
+        entityType: 'payment_reminder_schedule',
+        entityId: editingSchedule?.id,
+        description: `Payment reminder schedule ${editingSchedule ? 'updated' : 'added'}: "${variables.name}" — ${daysLabel} at ${variables.send_time_ist} IST, min ₹${variables.min_outstanding_amount}`,
+        newValues: variables,
+      });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
       toast({ title: 'Success', description: editingSchedule ? 'Schedule updated' : 'Schedule added' });
       closeDialog();
     },
-    onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    },
+    onError: (error: Error) => toast({ title: 'Error', description: error.message, variant: 'destructive' }),
   });
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, is_enabled }: { id: string; is_enabled: boolean }) => {
-      const { error } = await supabase
-        .from('payment_reminder_schedules')
-        .update({ is_enabled })
-        .eq('id', id);
+      const { error } = await supabase.from('payment_reminder_schedules').update({ is_enabled }).eq('id', id);
       if (error) throw error;
     },
     onSuccess: (_, variables) => {
-      log({ action: 'UPDATE', entityType: 'payment_reminder_schedule', entityId: variables.id, description: `Payment reminder schedule ${variables.is_enabled ? 'enabled' : 'disabled'}: ID ${variables.id}`, newValues: { is_enabled: variables.is_enabled } });
+      log({ action: 'UPDATE', entityType: 'payment_reminder_schedule', entityId: variables.id, description: `Payment reminder schedule ${variables.is_enabled ? 'enabled' : 'disabled'}`, newValues: { is_enabled: variables.is_enabled } });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
     },
     onError: (error: Error) => toast({ title: 'Error', description: error.message, variant: 'destructive' }),
@@ -269,14 +259,11 @@ export const PaymentReminderSchedules: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('payment_reminder_schedules')
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.from('payment_reminder_schedules').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: (_, variables) => {
-      log({ action: 'DELETE', entityType: 'payment_reminder_schedule', entityId: variables, description: `Payment reminder schedule deleted: ID ${variables}` });
+    onSuccess: (_, id) => {
+      log({ action: 'DELETE', entityType: 'payment_reminder_schedule', entityId: id, description: `Payment reminder schedule deleted: ID ${id}` });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
       queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
       toast({ title: 'Deleted', description: 'Schedule removed' });
@@ -284,28 +271,28 @@ export const PaymentReminderSchedules: React.FC = () => {
     onError: (error: Error) => toast({ title: 'Error', description: error.message, variant: 'destructive' }),
   });
 
-  const openAdd = () => {
-    setEditingSchedule(null);
-    setForm(DEFAULT_FORM);
-    setIsDialogOpen(true);
-  };
-
-  const openEdit = (schedule: PaymentReminderSchedule) => {
-    setEditingSchedule(schedule);
+  const openAdd = () => { setEditingSchedule(null); setForm(DEFAULT_FORM); setIsDialogOpen(true); };
+  const openEdit = (s: PaymentReminderSchedule) => {
+    setEditingSchedule(s);
     setForm({
-      name: schedule.name,
-      days_overdue: schedule.days_overdue,
-      send_time_ist: schedule.send_time_ist,
-      min_outstanding_amount: schedule.min_outstanding_amount ?? 0,
-      start_date: schedule.start_date ?? '',
+      name: s.name,
+      days_of_week: s.days_of_week ?? [1, 2, 3, 4, 5],
+      send_time_ist: s.send_time_ist,
+      min_outstanding_amount: s.min_outstanding_amount ?? 0,
+      is_recurring: s.is_recurring !== false,
+      start_date: s.start_date ?? '',
     });
     setIsDialogOpen(true);
   };
+  const closeDialog = () => { setIsDialogOpen(false); setEditingSchedule(null); setForm(DEFAULT_FORM); };
 
-  const closeDialog = () => {
-    setIsDialogOpen(false);
-    setEditingSchedule(null);
-    setForm(DEFAULT_FORM);
+  const toggleDay = (day: number) => {
+    setForm((f) => ({
+      ...f,
+      days_of_week: f.days_of_week.includes(day)
+        ? f.days_of_week.filter((d) => d !== day)
+        : [...f.days_of_week, day],
+    }));
   };
 
   const handleSave = () => {
@@ -313,8 +300,8 @@ export const PaymentReminderSchedules: React.FC = () => {
       toast({ title: 'Validation', description: 'Name is required', variant: 'destructive' });
       return;
     }
-    if (!form.days_overdue || form.days_overdue < 1) {
-      toast({ title: 'Validation', description: 'Days overdue must be at least 1', variant: 'destructive' });
+    if (form.days_of_week.length === 0) {
+      toast({ title: 'Validation', description: 'Select at least one day of the week', variant: 'destructive' });
       return;
     }
     saveMutation.mutate(form);
@@ -323,8 +310,6 @@ export const PaymentReminderSchedules: React.FC = () => {
   const handleSendReminders = () => {
     setIsSendingManual(true);
 
-    // Fire-and-forget: the scheduler runs for 2–3 minutes (8s delay per customer).
-    // We return immediately so the 30s Supabase client timeout never fires.
     supabase.functions.invoke('payment-reminder-scheduler', { body: { force: true } })
       .then(({ data, error }) => {
         if (error) return;
@@ -333,43 +318,19 @@ export const PaymentReminderSchedules: React.FC = () => {
         );
         const totalSchedules = data?.scheduleCount ?? 0;
         const noWhatsapp: string[] = data?.noWhatsappDealers ?? [];
-
-        // Collect customers not yet overdue for any schedule
-        const notYetOverdueSet = new Set<string>();
-        for (const r of (data?.results ?? []) as { notYetOverdue?: string[] }[]) {
-          (r.notYetOverdue ?? []).forEach((n: string) => notYetOverdueSet.add(n));
-        }
-
         const lines: string[] = [];
-        if (totalSchedules === 0) {
-          lines.push('No enabled schedules found.');
-        } else {
-          lines.push(`${totalSent} reminder(s) sent across ${totalSchedules} schedule(s).`);
-        }
-        if (noWhatsapp.length > 0) {
-          lines.push(`⚠️ ${noWhatsapp.length} customer(s) skipped — no WhatsApp number: ${noWhatsapp.join(', ')}.`);
-        }
-        if (notYetOverdueSet.size > 0) {
-          lines.push(`ℹ️ ${notYetOverdueSet.size} customer(s) not yet overdue for any active schedule.`);
-        }
-
-        toast({
-          title: 'Payment Reminders Sent',
-          description: lines.join(' '),
-        });
+        if (totalSchedules === 0) lines.push('No enabled schedules found.');
+        else lines.push(`${totalSent} reminder(s) sent across ${totalSchedules} schedule(s).`);
+        if (noWhatsapp.length > 0) lines.push(`⚠️ ${noWhatsapp.length} customer(s) skipped — no WhatsApp number.`);
+        toast({ title: 'Payment Reminders Sent', description: lines.join(' ') });
         setLogsPage(1);
         queryClient.invalidateQueries({ queryKey: ['payment-reminder-logs'] });
         queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
+        queryClient.invalidateQueries({ queryKey: ['payment-reminder-schedules'] });
       })
       .catch(() => {});
 
-    // Give immediate feedback and unlock the button after 10s so it isn't stuck
-    toast({
-      title: 'Sending Payment Reminders',
-      description: 'Reminders are being sent in the background. Logs will refresh automatically.',
-    });
-
-    // Refresh logs periodically while the run is in progress
+    toast({ title: 'Sending Payment Reminders', description: 'Reminders are being sent in the background.' });
     const refreshAt = [30000, 60000, 120000, 180000];
     refreshAt.forEach((delay) => {
       setTimeout(() => {
@@ -377,7 +338,6 @@ export const PaymentReminderSchedules: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ['payment-reminder-last-runs'] });
       }, delay);
     });
-
     setTimeout(() => setIsSendingManual(false), 10000);
   };
 
@@ -391,31 +351,19 @@ export const PaymentReminderSchedules: React.FC = () => {
               Payment Reminder Schedules
             </CardTitle>
             <CardDescription>
-              Automated WhatsApp reminders sent to customers with outstanding balances
+              Automated WhatsApp reminders — configure which days, what time, and minimum outstanding threshold
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSendReminders}
-              disabled={isSendingManual}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" onClick={handleSendReminders} disabled={isSendingManual} className="flex items-center gap-2">
               {isSendingManual ? (
-                <>
-                  <div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                  Sending...
-                </>
+                <><div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />Sending...</>
               ) : (
-                <>
-                  <Send className="h-4 w-4" />
-                  Send Payment Reminders
-                </>
+                <><Send className="h-4 w-4" />Send Now</>
               )}
             </Button>
             <Button onClick={openAdd} className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              Add Schedule
+              <Plus className="h-4 w-4" />Add Schedule
             </Button>
           </div>
         </div>
@@ -429,10 +377,10 @@ export const PaymentReminderSchedules: React.FC = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead className="text-center">Days Overdue</TableHead>
+                <TableHead>Days</TableHead>
+                <TableHead className="text-center">Time (IST)</TableHead>
                 <TableHead className="text-center">Min. Outstanding</TableHead>
-                <TableHead className="text-center">Start Date</TableHead>
-                <TableHead className="text-center">Send Time (IST)</TableHead>
+                <TableHead className="text-center">Type</TableHead>
                 <TableHead className="text-center">Last Run</TableHead>
                 <TableHead className="text-center">Next Run</TableHead>
                 <TableHead className="text-center">Status</TableHead>
@@ -450,24 +398,33 @@ export const PaymentReminderSchedules: React.FC = () => {
                 (schedules ?? []).map((schedule) => {
                   const lastRun = lastRunMap?.get(schedule.id);
                   const nextRun = schedule.is_enabled
-                    ? getNextRunDate(schedule.send_time_ist, schedule.start_date, lastRun ?? null, schedule.days_overdue)
+                    ? getNextRunDate(schedule.send_time_ist, schedule.days_of_week ?? [1,2,3,4,5], schedule.is_enabled)
                     : null;
+                  const isRecurring = schedule.is_recurring !== false;
                   return (
                     <TableRow key={schedule.id}>
                       <TableCell className="font-medium">{schedule.name}</TableCell>
-                      <TableCell className="text-center">{schedule.days_overdue} days</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {(schedule.days_of_week ?? []).sort((a, b) => a - b).map((d) => (
+                            <span key={d} className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                              {DAY_LABELS[d]}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center whitespace-nowrap">
+                        {TIME_SLOTS.find((s) => s.value === schedule.send_time_ist)?.label ?? schedule.send_time_ist}
+                      </TableCell>
                       <TableCell className="text-center">
                         {schedule.min_outstanding_amount > 0
                           ? `₹${schedule.min_outstanding_amount.toLocaleString('en-IN')}`
                           : <span className="text-gray-400">Any</span>}
                       </TableCell>
-                      <TableCell className="text-center text-sm">
-                        {schedule.start_date
-                          ? new Date(schedule.start_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                          : <span className="text-gray-400">Immediately</span>}
-                      </TableCell>
                       <TableCell className="text-center">
-                        {TIME_SLOTS.find((s) => s.value === schedule.send_time_ist)?.label ?? schedule.send_time_ist}
+                        <Badge variant={isRecurring ? 'secondary' : 'outline'} className="text-xs">
+                          {isRecurring ? 'Recurring' : 'One-time'}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-center text-sm text-gray-500">
                         {lastRun ? formatDateTime(new Date(lastRun)) : '—'}
@@ -483,9 +440,7 @@ export const PaymentReminderSchedules: React.FC = () => {
                         <div className="flex items-center justify-center gap-2">
                           <Switch
                             checked={schedule.is_enabled}
-                            onCheckedChange={(checked) =>
-                              toggleMutation.mutate({ id: schedule.id, is_enabled: checked })
-                            }
+                            onCheckedChange={(checked) => toggleMutation.mutate({ id: schedule.id, is_enabled: checked })}
                           />
                           <Badge variant={schedule.is_enabled ? 'default' : 'secondary'}>
                             {schedule.is_enabled ? 'Active' : 'Disabled'}
@@ -497,12 +452,7 @@ export const PaymentReminderSchedules: React.FC = () => {
                           <Button variant="outline" size="sm" onClick={() => openEdit(schedule)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => deleteMutation.mutate(schedule.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
+                          <Button variant="outline" size="sm" onClick={() => deleteMutation.mutate(schedule.id)} className="text-red-600 hover:text-red-700">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -521,20 +471,16 @@ export const PaymentReminderSchedules: React.FC = () => {
             <h4 className="text-sm font-semibold text-gray-700">
               Recent Reminder Logs
               {allLogs.length > 0 && (
-                <span className="ml-2 text-xs font-normal text-gray-500">
-                  {filteredLogs.length} of {allLogs.length}
-                </span>
+                <span className="ml-2 text-xs font-normal text-gray-500">{filteredLogs.length} of {allLogs.length}</span>
               )}
             </h4>
             {filteredLogs.length > 0 && (
               <Button variant="outline" size="sm" onClick={exportLogs} className="flex items-center gap-1.5">
-                <Download className="h-3.5 w-3.5" />
-                Export
+                <Download className="h-3.5 w-3.5" />Export
               </Button>
             )}
           </div>
 
-          {/* Filters */}
           <div className="flex flex-wrap gap-2 mb-3">
             <Input
               placeholder="Search customer…"
@@ -569,25 +515,17 @@ export const PaymentReminderSchedules: React.FC = () => {
               </select>
             )}
             {(logsSearch || logsStatus !== 'all' || logsMonth) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs text-muted-foreground"
-                onClick={() => { setLogsSearch(''); setLogsStatus('all'); setLogsMonth(''); setLogsPage(1); }}
-              >
+              <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground"
+                onClick={() => { setLogsSearch(''); setLogsStatus('all'); setLogsMonth(''); setLogsPage(1); }}>
                 Clear
               </Button>
             )}
           </div>
 
           {allLogs.length === 0 ? (
-            <div className="text-sm text-gray-500 text-center py-4 border rounded-md">
-              No logs yet — reminders will appear here once sent
-            </div>
+            <div className="text-sm text-gray-500 text-center py-4 border rounded-md">No logs yet — reminders will appear here once sent</div>
           ) : filteredLogs.length === 0 ? (
-            <div className="text-sm text-gray-500 text-center py-4 border rounded-md">
-              No logs match the current filters
-            </div>
+            <div className="text-sm text-gray-500 text-center py-4 border rounded-md">No logs match the current filters</div>
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -595,65 +533,36 @@ export const PaymentReminderSchedules: React.FC = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>
-                        <button
-                          type="button"
-                          className="flex items-center gap-1 hover:text-foreground transition-colors"
-                          onClick={() => toggleLogsSort('customer_name')}
-                        >
-                          Customer
-                          <ArrowUpDown className="h-3 w-3" />
+                        <button type="button" className="flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => toggleLogsSort('customer_name')}>
+                          Customer <ArrowUpDown className="h-3 w-3" />
                         </button>
                       </TableHead>
                       <TableHead className="text-right">
-                        <button
-                          type="button"
-                          className="flex items-center gap-1 ml-auto hover:text-foreground transition-colors"
-                          onClick={() => toggleLogsSort('outstanding_amount')}
-                        >
-                          Outstanding
-                          <ArrowUpDown className="h-3 w-3" />
+                        <button type="button" className="flex items-center gap-1 ml-auto hover:text-foreground transition-colors" onClick={() => toggleLogsSort('outstanding_amount')}>
+                          Outstanding <ArrowUpDown className="h-3 w-3" />
                         </button>
                       </TableHead>
                       <TableHead className="text-center">Status</TableHead>
                       <TableHead>
-                        <button
-                          type="button"
-                          className="flex items-center gap-1 hover:text-foreground transition-colors"
-                          onClick={() => toggleLogsSort('triggered_at')}
-                        >
-                          Triggered At
-                          <ArrowUpDown className="h-3 w-3" />
+                        <button type="button" className="flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => toggleLogsSort('triggered_at')}>
+                          Triggered At <ArrowUpDown className="h-3 w-3" />
                         </button>
                       </TableHead>
                       <TableHead>Failure Reason</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pagedLogs.map((log) => (
-                      <TableRow key={log.id}>
-                        <TableCell className="font-medium">{log.customer_name}</TableCell>
-                        <TableCell className="text-right">
-                          ₹{log.outstanding_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                        </TableCell>
+                    {pagedLogs.map((l) => (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-medium">{l.customer_name}</TableCell>
+                        <TableCell className="text-right">₹{l.outstanding_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="text-center">
-                          <Badge
-                            variant={
-                              log.status === 'sent'
-                                ? 'default'
-                                : log.status === 'failed'
-                                ? 'destructive'
-                                : 'secondary'
-                            }
-                          >
-                            {log.status}
+                          <Badge variant={l.status === 'sent' ? 'default' : l.status === 'failed' ? 'destructive' : 'secondary'}>
+                            {l.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-gray-500">
-                          {new Date(log.triggered_at).toLocaleString('en-IN')}
-                        </TableCell>
-                        <TableCell className="text-sm text-red-600 max-w-[200px] truncate">
-                          {log.failure_reason ?? '—'}
-                        </TableCell>
+                        <TableCell className="text-sm text-gray-500">{new Date(l.triggered_at).toLocaleString('en-IN')}</TableCell>
+                        <TableCell className="text-sm text-red-600 max-w-[200px] truncate">{l.failure_reason ?? '—'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -666,34 +575,18 @@ export const PaymentReminderSchedules: React.FC = () => {
                 <div className="flex items-center gap-2">
                   {logsExpanded && (
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
-                        disabled={logsPage === 1}
-                        className="h-7 w-7 p-0"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => setLogsPage((p) => Math.max(1, p - 1))} disabled={logsPage === 1} className="h-7 w-7 p-0">
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
                       <span className="text-xs px-2">{logsPage} / {totalLogsPages}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setLogsPage((p) => Math.min(totalLogsPages, p + 1))}
-                        disabled={logsPage === totalLogsPages}
-                        className="h-7 w-7 p-0"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => setLogsPage((p) => Math.min(totalLogsPages, p + 1))} disabled={logsPage === totalLogsPages} className="h-7 w-7 p-0">
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
                   )}
                   {filteredLogs.length > 5 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs text-blue-600 hover:text-blue-700"
-                      onClick={() => { setLogsExpanded((e) => !e); setLogsPage(1); }}
-                    >
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 hover:text-blue-700"
+                      onClick={() => { setLogsExpanded((e) => !e); setLogsPage(1); }}>
                       {logsExpanded ? 'Show less' : `Show all ${filteredLogs.length}`}
                     </Button>
                   )}
@@ -706,82 +599,108 @@ export const PaymentReminderSchedules: React.FC = () => {
 
       {/* Add / Edit dialog */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingSchedule ? 'Edit Schedule' : 'Add Schedule'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Name</Label>
+          <div className="space-y-5 py-2">
+
+            {/* Name */}
+            <div className="space-y-1.5">
+              <Label>Schedule Name</Label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g. 7-Day Reminder"
+                placeholder="e.g. Weekly Wednesday Reminder"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Days Overdue</Label>
-              <Input
-                type="number"
-                min={1}
-                value={form.days_overdue}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, days_overdue: parseInt(e.target.value, 10) || 1 }))
-                }
-              />
-              <p className="text-xs text-gray-500">
-                Customers whose oldest outstanding sale is at least this many days old will receive a reminder
-              </p>
+
+            {/* Days of week */}
+            <div className="space-y-1.5">
+              <Label>Send on these days</Label>
+              <div className="flex gap-1.5 flex-wrap">
+                {DAY_LABELS.map((label, day) => (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleDay(day)}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                      form.days_of_week.includes(day)
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-background text-foreground border-border hover:bg-muted'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {form.days_of_week.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Every {form.days_of_week.sort((a, b) => a - b).map(d => DAY_FULL[d]).join(', ')}
+                </p>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label>Minimum Outstanding Amount (₹)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={form.min_outstanding_amount}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, min_outstanding_amount: parseFloat(e.target.value) || 0 }))
-                }
-              />
-              <p className="text-xs text-gray-500">
-                Only remind customers whose outstanding balance is at least this amount. Set to 0 to remind all.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>Start Date</Label>
-              <Input
-                type="date"
-                value={form.start_date}
-                onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
-              />
-              <p className="text-xs text-gray-500">
-                Schedule will only fire on or after this date. Leave blank to start immediately.
-              </p>
-            </div>
-            <div className="space-y-2">
+
+            {/* Send time */}
+            <div className="space-y-1.5">
               <Label>Send Time (IST)</Label>
-              <Select
-                value={form.send_time_ist}
-                onValueChange={(val) => setForm((f) => ({ ...f, send_time_ist: val }))}
-              >
+              <Select value={form.send_time_ist} onValueChange={(val) => setForm((f) => ({ ...f, send_time_ist: val }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select time" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
                   {TIME_SLOTS.map((slot) => (
-                    <SelectItem key={slot.value} value={slot.value}>
-                      {slot.label}
-                    </SelectItem>
+                    <SelectItem key={slot.value} value={slot.value}>{slot.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">Reminders fire within the 15-minute window containing this time</p>
+              <p className="text-xs text-muted-foreground">Fires within the 15-minute window containing this time</p>
+            </div>
+
+            {/* Threshold */}
+            <div className="space-y-1.5">
+              <Label>Minimum Outstanding Amount (₹)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.min_outstanding_amount}
+                onChange={(e) => setForm((f) => ({ ...f, min_outstanding_amount: parseFloat(e.target.value) || 0 }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Only send to clients whose outstanding balance ≥ this amount. Set to 0 for all clients.
+              </p>
+            </div>
+
+            {/* Recurring / One-time */}
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Recurring</p>
+                <p className="text-xs text-muted-foreground">
+                  {form.is_recurring
+                    ? 'Fires every week on the selected days'
+                    : 'Fires once on the next matching day, then auto-disables'}
+                </p>
+              </div>
+              <Switch
+                checked={form.is_recurring}
+                onCheckedChange={(checked) => setForm((f) => ({ ...f, is_recurring: checked }))}
+              />
+            </div>
+
+            {/* Start date */}
+            <div className="space-y-1.5">
+              <Label>Start Date <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                type="date"
+                value={form.start_date}
+                onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Leave blank to activate immediately.</p>
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
             <Button onClick={handleSave} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? 'Saving...' : 'Save'}
             </Button>
