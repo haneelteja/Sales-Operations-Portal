@@ -92,6 +92,7 @@ const EMPTY_SORTS: Record<SortCol, "asc" | "desc" | null> = {
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_MONTH = new Date().getMonth() + 1; // 1-indexed
 const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - 3 + i);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -168,7 +169,7 @@ function SummaryCard({
 const Profitability: React.FC = () => {
   // Date period state
   const [year, setYear] = useState(CURRENT_YEAR);
-  const [months, setMonths] = useState<number[]>([]);
+  const [months, setMonths] = useState<number[]>([CURRENT_MONTH]);
 
   // Table interaction state
   const [searchTerm, setSearchTerm] = useState("");
