@@ -244,6 +244,89 @@ async function fetchOutstandingRows(supabase: ReturnType<typeof createClient>): 
     .filter(Boolean) as OutstandingRow[];
 }
 
+// Payment Follow Up uses payment-pattern logic (same as the portal's Receivables Tracking view).
+// For customers with ≥2 payments: classify by whether predicted next payment is overdue.
+// For customers with 0–1 payments: fall back to invoice age (no pattern to calculate).
+async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient>): Promise<OutstandingRow[]> {
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+  const todayMs = todayDate.getTime();
+  const DAY = 86400000;
+
+  const [{ data: outstanding }, { data: payments }, { data: customers }] = await Promise.all([
+    supabase.rpc('get_customer_outstanding'),
+    supabase
+      .from('sales_transactions')
+      .select('customer_id, transaction_date')
+      .eq('transaction_type', 'payment')
+      .order('transaction_date', { ascending: true }),
+    supabase.from('customers').select('id, client_name, branch, whatsapp_number').eq('is_active', true),
+  ]);
+
+  const customerMap = new Map(
+    (customers ?? []).map((c: { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }) => [c.id, c])
+  );
+
+  // Group payment dates per customer (already ascending)
+  const paymentDates = new Map<string, string[]>();
+  for (const tx of (payments ?? [])) {
+    if (!tx.transaction_date) continue;
+    const arr = paymentDates.get(tx.customer_id) ?? [];
+    arr.push(tx.transaction_date);
+    paymentDates.set(tx.customer_id, arr);
+  }
+
+  const rows: OutstandingRow[] = [];
+
+  for (const r of (outstanding ?? [])) {
+    const out = (r as { customer_id: string; outstanding: number; invoice_count: number; oldest_sale_date: string | null });
+    if (out.outstanding < 0.01 || !out.oldest_sale_date) continue;
+
+    const ageDays = Math.floor((Date.now() - new Date(out.oldest_sale_date).getTime()) / DAY);
+    const pmts = paymentDates.get(out.customer_id) ?? [];
+    const totalPayments = pmts.length;
+
+    let status: 'Overdue' | 'Due Soon' | null = null;
+
+    if (totalPayments <= 1) {
+      // No payment pattern available — use invoice age
+      if (ageDays > 30) status = 'Overdue';
+      else if (ageDays >= 15) status = 'Due Soon';
+    } else {
+      const firstMs = new Date(pmts[0]).setHours(0, 0, 0, 0);
+      const lastMs = new Date(pmts[totalPayments - 1]).setHours(0, 0, 0, 0);
+      const avgDays = Math.round((lastMs - firstMs) / ((totalPayments - 1) * DAY));
+
+      const expDate = new Date(pmts[totalPayments - 1]);
+      expDate.setDate(expDate.getDate() + avgDays);
+      const expMs = expDate.setHours(0, 0, 0, 0);
+      const daysOverdue = Math.max(0, Math.round((todayMs - expMs) / DAY));
+
+      if (daysOverdue > 14) status = 'Overdue';
+      else if (daysOverdue > 0) status = 'Due Soon';
+      else if (todayMs >= expMs - 5 * DAY) status = 'Due Soon';
+      // ON TRACK — omit from follow-up email
+    }
+
+    if (!status) continue;
+
+    const cust = customerMap.get(out.customer_id) as { client_name: string; branch: string | null; whatsapp_number: string | null } | undefined;
+    rows.push({
+      customer_id: out.customer_id,
+      client_name: cust?.client_name ?? 'Unknown',
+      branch: cust?.branch ?? null,
+      whatsapp_number: cust?.whatsapp_number ?? null,
+      outstanding: out.outstanding,
+      invoice_count: out.invoice_count,
+      oldest_sale_date: out.oldest_sale_date,
+      age_days: ageDays,
+      status,
+    });
+  }
+
+  return rows.sort((a, b) => b.outstanding - a.outstanding);
+}
+
 async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promise<CreditRow[]> {
   const since90 = new Date(Date.now() - 90 * 86400000).toISOString();
 
@@ -362,7 +445,7 @@ serve(async (req) => {
           subject = `Orders & Payment Status — ${dateLabel} (${rows.length} clients)`;
           html = buildOrdersPaymentEmail(rows, dateLabel);
         } else if (schedule.report_type === 'payment_followup') {
-          const rows = await fetchOutstandingRows(supabase);
+          const rows = await fetchPaymentFollowupRows(supabase);
           subject = `Payment Follow Up — ${dateLabel} (${rows.filter(r => r.status === 'Overdue').length} overdue)`;
           html = buildPaymentFollowupEmail(rows, dateLabel);
         } else if (schedule.report_type === 'credit_risk') {
