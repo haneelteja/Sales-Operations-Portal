@@ -51,13 +51,13 @@ const menuItems: MenuItem[] = [
   { id: "dashboard", title: "Dashboard", icon: BarChart3 },
   { id: "order-management", title: "Orders Management", icon: ShoppingCart },
   { id: "receivables-tracking", title: "Receivables Tracker", icon: ClipboardList },
-  { id: "receivables-management", title: "Receivables Dashboard", icon: Wallet },
   { id: "client-transactions", title: "Client Transactions", icon: DollarSign },
   { id: "factory", title: "Factory Transactions", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
   { id: "labels", title: "Labels", icon: Tag },
   { id: "reports", title: "Reports", icon: FileText },
   { id: "profitability", title: "Profitability", icon: TrendingUp },
+  { id: "receivables-management", title: "Client Analysis", icon: Wallet },
   { id: "audit-logs", title: "Audit Logs", icon: ScrollText, roles: ['manager'] },
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
   { id: "application-configuration", title: "Application Configuration", icon: Settings, roles: ['manager'] }, // Only visible to managers
