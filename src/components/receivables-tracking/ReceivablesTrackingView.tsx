@@ -752,8 +752,8 @@ function FollowupNotesDrawer({
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ReceivablesTrackingView() {
-  const [sortCol, setSortCol] = useState<SortCol>('outstanding');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortCol, setSortCol] = useState<SortCol>('followup');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [filterClient, setFilterClient] = useState('');
   const [filterMinOutstanding, setFilterMinOutstanding] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
