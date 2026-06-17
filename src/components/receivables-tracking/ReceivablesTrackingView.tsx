@@ -905,7 +905,9 @@ export default function ReceivablesTrackingView() {
     if (filterClient.trim()) {
       const q = filterClient.toLowerCase();
       rows = rows.filter(r =>
-        r.dealerName.toLowerCase().includes(q) || r.branch.toLowerCase().includes(q)
+        r.dealerName.toLowerCase().includes(q) ||
+        r.branch.toLowerCase().includes(q) ||
+        r.comments.toLowerCase().includes(q)
       );
     }
 
@@ -1175,30 +1177,94 @@ export default function ReceivablesTrackingView() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center gap-3 justify-between">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {(filterClient || filterMinOutstanding || filterStatus || filterNotes || filterFollowupStatus || filterAssignee) && (
-            <>
-              <span>{displayRows.length} result{displayRows.length !== 1 ? 's' : ''}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setFilterClient('');
-                  setFilterMinOutstanding('');
-                  setFilterStatus('');
-                  setFilterNotes('');
-                  setFilterFollowupStatus('');
-                  setFilterAssignee('');
-                }}
-              >
-                <X className="h-3 w-3 mr-1" />
-                Clear filters
-              </Button>
-            </>
-          )}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search client, branch, notes..."
+            value={filterClient}
+            onChange={e => setFilterClient(e.target.value)}
+            className="pl-8"
+          />
         </div>
+
+        <Select value={filterStatus || '__all__'} onValueChange={v => setFilterStatus(v === '__all__' ? '' : v)}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Pmt Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Statuses</SelectItem>
+            <SelectItem value="OVERDUE">Overdue</SelectItem>
+            <SelectItem value="DUE SOON">Due Soon</SelectItem>
+            <SelectItem value="ON TRACK">On Track</SelectItem>
+            <SelectItem value="No Payments">No Payments</SelectItem>
+            <SelectItem value="Only 1 Payment">Only 1 Payment</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={filterFollowupStatus || '__all__'} onValueChange={v => setFilterFollowupStatus(v === '__all__' ? '' : v)}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue placeholder="Follow-up" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Follow-ups</SelectItem>
+            <SelectItem value="overdue">Follow-up Overdue</SelectItem>
+            <SelectItem value="upcoming">Due in 7 Days</SelectItem>
+            <SelectItem value="set">Has Follow-up Date</SelectItem>
+            <SelectItem value="not_set">No Follow-up Set</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div className="relative min-w-[140px]">
+          <span className="absolute left-2.5 top-2.5 text-xs text-muted-foreground font-medium pointer-events-none">Min ₹</span>
+          <Input
+            placeholder="0"
+            value={filterMinOutstanding}
+            onChange={e => setFilterMinOutstanding(e.target.value.replace(/[^0-9.]/g, ''))}
+            className="pl-12 w-[140px]"
+            title="Minimum outstanding amount"
+          />
+        </div>
+
+        {assigneeList.length > 0 && (
+          <Select value={filterAssignee || '__all__'} onValueChange={v => setFilterAssignee(v === '__all__' ? '' : v)}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Assignee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All Assignees</SelectItem>
+              <SelectItem value="__unassigned__">Unassigned</SelectItem>
+              {assigneeList.map(a => (
+                <SelectItem key={a.name} value={a.name}>
+                  <span className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 inline-block ${a.bgClass}`} />
+                    {a.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {(filterClient || filterStatus || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setFilterClient('');
+              setFilterStatus('');
+              setFilterAssignee('');
+              setFilterMinOutstanding('');
+              setFilterFollowupStatus('');
+              setFilterNotes('');
+            }}
+          >
+            <X className="h-3.5 w-3.5 mr-1" />
+            Clear filters
+          </Button>
+        )}
+
         <Button variant="outline" onClick={handleExport}>
           <Download className="h-4 w-4 mr-2" />
           Export Excel
@@ -1216,128 +1282,33 @@ export default function ReceivablesTrackingView() {
         <div className="rounded-md border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              {/* Sort row */}
               <tr className="bg-muted/60 border-b text-left">
                 {(['name', 'outstanding', 'expectedNext', 'daysOverdue', 'pmtStatus', null, 'followup', 'assignee', null, null] as const).map((col, i) => {
                   const labels = ['Client Branch', 'Outstanding', 'Expected Next Pmt', 'Days Overdue', 'Pmt Status', 'Latest Note', 'Next Follow-up', 'Assignee', 'Log', 'Ledger'];
                   const rightAlign = i === 1 || i === 3;
                   const minW = i === 5 ? 'min-w-[240px]' : '';
                   if (!col) {
-                    return <th key={i} className={`px-4 py-2.5 font-semibold whitespace-nowrap text-xs ${rightAlign ? 'text-right' : ''} ${minW}`}>{labels[i]}</th>;
+                    return <th key={i} className={`px-4 py-3 font-semibold whitespace-nowrap ${rightAlign ? 'text-right' : ''} ${minW}`}>{labels[i]}</th>;
                   }
                   const isActive = sortCol === col;
                   return (
                     <th
                       key={i}
-                      className={`px-4 py-2.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:bg-muted/80 transition-colors text-xs ${rightAlign ? 'text-right' : ''} ${minW}`}
+                      className={`px-4 py-3 font-semibold whitespace-nowrap cursor-pointer select-none hover:bg-muted/80 transition-colors ${rightAlign ? 'text-right' : ''} ${minW}`}
                       onClick={() => handleSort(col as SortCol)}
                     >
                       <span className={`inline-flex items-center gap-1 ${rightAlign ? 'flex-row-reverse' : ''}`}>
                         {labels[i]}
                         {isActive
                           ? sortDir === 'asc'
-                            ? <ChevronUp className="h-3 w-3 text-blue-600" />
-                            : <ChevronDown className="h-3 w-3 text-blue-600" />
-                          : <ChevronsUpDown className="h-3 w-3 text-muted-foreground/40" />
+                            ? <ChevronUp className="h-3.5 w-3.5 text-blue-600" />
+                            : <ChevronDown className="h-3.5 w-3.5 text-blue-600" />
+                          : <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground/40" />
                         }
                       </span>
                     </th>
                   );
                 })}
-              </tr>
-              {/* Filter row */}
-              <tr className="bg-background border-b">
-                {/* Client Branch filter */}
-                <th className="px-2 py-1.5">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-                    <input
-                      type="text"
-                      value={filterClient}
-                      onChange={e => setFilterClient(e.target.value)}
-                      placeholder="Search client…"
-                      className="w-full pl-6 pr-2 py-1 text-xs border border-border rounded bg-background outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/40 placeholder:text-muted-foreground/50"
-                    />
-                  </div>
-                </th>
-                {/* Outstanding min filter */}
-                <th className="px-2 py-1.5">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={filterMinOutstanding}
-                    onChange={e => setFilterMinOutstanding(e.target.value.replace(/[^0-9.]/g, ''))}
-                    placeholder="Min ₹"
-                    className="w-full px-2 py-1 text-xs border border-border rounded bg-background outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/40 placeholder:text-muted-foreground/50 text-right"
-                  />
-                </th>
-                {/* Expected Next Pmt — no filter */}
-                <th className="px-2 py-1.5" aria-label="Expected Next Payment filter" />
-                {/* Days Overdue — no filter */}
-                <th className="px-2 py-1.5" aria-label="Days Overdue filter" />
-                {/* Pmt Status filter */}
-                <th className="px-2 py-1.5">
-                  <select
-                    title="Filter by payment status"
-                    value={filterStatus}
-                    onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full px-1.5 py-1 text-xs border border-border rounded bg-background outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/40 text-foreground"
-                  >
-                    <option value="">All</option>
-                    <option value="OVERDUE">Overdue</option>
-                    <option value="DUE SOON">Due Soon</option>
-                    <option value="ON TRACK">On Track</option>
-                    <option value="No Payments">No Payments</option>
-                    <option value="Only 1 Payment">Only 1 Payment</option>
-                  </select>
-                </th>
-                {/* Notes filter */}
-                <th className="px-2 py-1.5 min-w-[240px]">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-                    <input
-                      type="text"
-                      value={filterNotes}
-                      onChange={e => setFilterNotes(e.target.value)}
-                      placeholder="Search notes…"
-                      className="w-full pl-6 pr-2 py-1 text-xs border border-border rounded bg-background outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/40 placeholder:text-muted-foreground/50"
-                    />
-                  </div>
-                </th>
-                {/* Follow-up date filter */}
-                <th className="px-2 py-1.5">
-                  <select
-                    title="Filter by follow-up date"
-                    value={filterFollowupStatus}
-                    onChange={e => setFilterFollowupStatus(e.target.value)}
-                    className="w-full px-1.5 py-1 text-xs border border-border rounded bg-background outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/40 text-foreground"
-                  >
-                    <option value="">All</option>
-                    <option value="overdue">Past due</option>
-                    <option value="upcoming">Next 7 days</option>
-                    <option value="set">Has date</option>
-                    <option value="not_set">Not set</option>
-                  </select>
-                </th>
-                {/* Assignee filter */}
-                <th className="px-2 py-1.5">
-                  <select
-                    title="Filter by assignee"
-                    value={filterAssignee}
-                    onChange={e => setFilterAssignee(e.target.value)}
-                    className="w-full px-1.5 py-1 text-xs border border-border rounded bg-background outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/40 text-foreground"
-                  >
-                    <option value="">All</option>
-                    <option value="__unassigned__">Unassigned</option>
-                    {assigneeList.map(a => (
-                      <option key={a.name} value={a.name}>{a.name}</option>
-                    ))}
-                  </select>
-                </th>
-                {/* Log — no filter */}
-                <th className="px-2 py-1.5" aria-label="Log filter" />
-                {/* Ledger — no filter */}
-                <th className="px-2 py-1.5" aria-label="Ledger filter" />
               </tr>
             </thead>
             <tbody>
