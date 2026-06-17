@@ -612,7 +612,7 @@ function FollowupNotesDrawer({
             dealer_name: dealerName,
             branch,
             comments: trimmed,
-            ...(followupDate ? { next_followup_date: followupDate } : {}),
+            next_followup_date: followupDate || null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'dealer_name,branch' }
@@ -860,6 +860,27 @@ export default function ReceivablesTrackingView() {
     assigneeMutation.mutate({ customer_id: customerId, assignee_name: name });
   }, [assigneeMutation]);
 
+  const { toast } = useToast();
+
+  const clearFollowupDateMutation = useMutation({
+    mutationFn: async ({ dealerName, branch }: { dealerName: string; branch: string }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('client_followups')
+        .update({ next_followup_date: null, updated_at: new Date().toISOString() })
+        .eq('dealer_name', dealerName)
+        .eq('branch', branch);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });
+      toast({ title: 'Follow-up date cleared' });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    },
+  });
+
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const handleSort = useCallback((col: SortCol) => {
@@ -958,7 +979,7 @@ export default function ReceivablesTrackingView() {
 
     ws.mergeCells('A1:I1');
     const titleCell = ws.getCell('A1');
-    titleCell.value = 'Receivables Management Report';
+    titleCell.value = 'Receivables Tracker Report';
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 24;
@@ -1056,7 +1077,7 @@ export default function ReceivablesTrackingView() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Receivables Management</h1>
+        <h1 className="text-2xl font-bold">Receivables Tracker</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Track outstanding balances and follow-up schedules for all clients
         </p>
@@ -1278,14 +1299,25 @@ export default function ReceivablesTrackingView() {
                     )}
                   </td>
 
-                  {/* Next Follow-up Date (read-only) */}
+                  {/* Next Follow-up Date */}
                   <td className="px-4 py-3 whitespace-nowrap align-top">
                     {(() => {
                       const style = getFollowupStyle(row.nextFollowupDate || null);
                       return row.nextFollowupDate ? (
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${style.badge}`}>
-                          {fmtDate(row.nextFollowupDate)}
-                        </span>
+                        <div className="flex items-center gap-1 group">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${style.badge}`}>
+                            {fmtDate(row.nextFollowupDate)}
+                          </span>
+                          <button
+                            type="button"
+                            title="Remove follow-up date"
+                            onClick={() => clearFollowupDateMutation.mutate({ dealerName: row.dealerName, branch: row.branch })}
+                            disabled={clearFollowupDateMutation.isPending}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-500 p-0.5 rounded"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
                       ) : (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-400 border-gray-200 italic">
                           Not set
