@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchReceivablesTracking, type FetchResult as ReceivablesFetchResult } from "@/components/receivables-tracking/ReceivablesTrackingView";
 import { getQueryConfig } from "@/lib/query-configs";
 import {
   DollarSign,
@@ -248,31 +249,25 @@ const Dashboard = memo(() => {
     },
   });
 
-  // Payment follow-up counts — uses get_customer_outstanding RPC for oldest_sale_date
-  const { data: customerOutstanding } = useQuery({
-    queryKey: ['dashboard-customer-outstanding'],
-    ...getQueryConfig('receivables'),
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_customer_outstanding');
-      if (error) throw error;
-      return (data ?? []) as { customer_id: string; outstanding: number; invoice_count: number; oldest_sale_date: string | null }[];
-    },
+  // Payment follow-up counts — uses same data + payment-pattern logic as Receivables Tracker
+  const { data: receivablesTracking } = useQuery<ReceivablesFetchResult>({
+    queryKey: ['receivables-tracking'],
+    queryFn: fetchReceivablesTracking,
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const paymentFollowupMetrics = useMemo(() => {
-    if (!customerOutstanding) return null;
-    const today = Date.now();
-    const DAY = 1000 * 60 * 60 * 24;
+    if (!receivablesTracking) return null;
     let overdue = 0;
     let dueSoon = 0;
-    for (const row of customerOutstanding) {
-      if (!row.oldest_sale_date || row.outstanding <= 0) continue;
-      const ageDays = Math.floor((today - new Date(row.oldest_sale_date).getTime()) / DAY);
-      if (ageDays > 30) overdue++;
-      else if (ageDays >= 15) dueSoon++;
+    for (const row of receivablesTracking.rows) {
+      if (row.outstanding <= 0) continue;
+      if (row.paymentStatus === 'OVERDUE') overdue++;
+      else if (row.paymentStatus === 'DUE SOON') dueSoon++;
     }
     return { overdue, dueSoon };
-  }, [customerOutstanding]);
+  }, [receivablesTracking]);
 
   // Credit & Risk metrics — credit limit per client = avg monthly sales (totalSales / 3 months)
   const creditRiskMetrics = useMemo(() => {
@@ -592,7 +587,7 @@ const Dashboard = memo(() => {
                 <div>
                   <h3 className="text-sm font-semibold text-red-900 mb-1">No. of Overdue</h3>
                   <p className="text-2xl font-bold text-red-600">{paymentFollowupMetrics?.overdue ?? 0}</p>
-                  <p className="text-xs text-red-500 mt-1">Oldest invoice &gt; 30 days unpaid</p>
+                  <p className="text-xs text-red-500 mt-1">Payment past predicted due date</p>
                 </div>
                 <AlertTriangle className="h-8 w-8 text-red-300" />
               </div>
@@ -606,7 +601,7 @@ const Dashboard = memo(() => {
                 <div>
                   <h3 className="text-sm font-semibold text-amber-900 mb-1">No. of Due Soon</h3>
                   <p className="text-2xl font-bold text-amber-600">{paymentFollowupMetrics?.dueSoon ?? 0}</p>
-                  <p className="text-xs text-amber-500 mt-1">Oldest invoice 15–30 days unpaid</p>
+                  <p className="text-xs text-amber-500 mt-1">Payment due within expected window</p>
                 </div>
                 <TrendingUp className="h-8 w-8 text-amber-300" />
               </div>

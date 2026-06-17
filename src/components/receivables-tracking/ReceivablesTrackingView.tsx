@@ -17,7 +17,7 @@ import { exportLedger } from '@/lib/ledgerExport';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface RawRow {
+export interface RawRow {
   key: string;
   customerId: string;
   dealerName: string;
@@ -34,7 +34,7 @@ interface RawRow {
   paymentStatus: string;
 }
 
-interface FetchResult {
+export interface FetchResult {
   rows: RawRow[];
   collectionsThisMonth: number;
 }
@@ -141,7 +141,7 @@ async function fetchLedgerRows(
 
 // ── Data Fetching ─────────────────────────────────────────────────────────────
 
-async function fetchReceivablesTracking(): Promise<FetchResult> {
+export async function fetchReceivablesTracking(): Promise<FetchResult> {
   const [txResult, custResult, followupResult] = await Promise.all([
     supabase
       .from('sales_transactions')
