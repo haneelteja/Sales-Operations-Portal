@@ -13,7 +13,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, Clock, Plus, X, Wallet, FileText, Receipt, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ExcelJS from 'exceljs';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { exportLedger } from '@/lib/ledgerExport';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -758,6 +757,8 @@ export default function ReceivablesTrackingView() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
+  const [filterMinOutstanding, setFilterMinOutstanding] = useState('');
+  const [filterFollowupStatus, setFilterFollowupStatus] = useState('');
   const [activeNotes, setActiveNotes] = useState<{
     customerId: string;
     dealerName: string;
@@ -903,7 +904,10 @@ export default function ReceivablesTrackingView() {
     if (search.trim()) {
       const q = search.toLowerCase();
       rows = rows.filter(r =>
-        r.dealerName.toLowerCase().includes(q) || r.branch.toLowerCase().includes(q)
+        r.dealerName.toLowerCase().includes(q) ||
+        r.branch.toLowerCase().includes(q) ||
+        r.comments.toLowerCase().includes(q) ||
+        r.paymentStatus.toLowerCase().includes(q)
       );
     }
 
@@ -916,6 +920,34 @@ export default function ReceivablesTrackingView() {
         rows = rows.filter(r => !assigneeMap[r.customerId]);
       } else {
         rows = rows.filter(r => assigneeMap[r.customerId] === filterAssignee);
+      }
+    }
+
+    if (filterMinOutstanding.trim()) {
+      const min = parseFloat(filterMinOutstanding.replace(/,/g, ''));
+      if (!isNaN(min)) {
+        rows = rows.filter(r => r.outstanding >= min);
+      }
+    }
+
+    if (filterFollowupStatus) {
+      const todayStr = today;
+      const sevenDaysLater = new Date();
+      sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
+      const sevenDaysStr = sevenDaysLater.toISOString().split('T')[0];
+      switch (filterFollowupStatus) {
+        case 'not_set':
+          rows = rows.filter(r => !r.nextFollowupDate);
+          break;
+        case 'overdue':
+          rows = rows.filter(r => !!r.nextFollowupDate && r.nextFollowupDate < todayStr);
+          break;
+        case 'upcoming':
+          rows = rows.filter(r => !!r.nextFollowupDate && r.nextFollowupDate >= todayStr && r.nextFollowupDate <= sevenDaysStr);
+          break;
+        case 'set':
+          rows = rows.filter(r => !!r.nextFollowupDate);
+          break;
       }
     }
 
@@ -940,7 +972,7 @@ export default function ReceivablesTrackingView() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, search, sortCol, sortDir, filterStatus, filterAssignee, assigneeMap, today]);
+  }, [data?.rows, search, sortCol, sortDir, filterStatus, filterAssignee, filterMinOutstanding, filterFollowupStatus, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -1146,7 +1178,7 @@ export default function ReceivablesTrackingView() {
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search client or branch..."
+            placeholder="Search client, branch, notes..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-8"
@@ -1154,8 +1186,8 @@ export default function ReceivablesTrackingView() {
         </div>
 
         <Select value={filterStatus || '__all__'} onValueChange={v => setFilterStatus(v === '__all__' ? '' : v)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Filter by status" />
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Pmt Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">All Statuses</SelectItem>
@@ -1167,10 +1199,34 @@ export default function ReceivablesTrackingView() {
           </SelectContent>
         </Select>
 
+        <Select value={filterFollowupStatus || '__all__'} onValueChange={v => setFilterFollowupStatus(v === '__all__' ? '' : v)}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue placeholder="Follow-up" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Follow-ups</SelectItem>
+            <SelectItem value="overdue">Follow-up Overdue</SelectItem>
+            <SelectItem value="upcoming">Due in 7 Days</SelectItem>
+            <SelectItem value="set">Has Follow-up Date</SelectItem>
+            <SelectItem value="not_set">No Follow-up Set</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div className="relative min-w-[140px]">
+          <span className="absolute left-2.5 top-2.5 text-xs text-muted-foreground font-medium pointer-events-none">Min ₹</span>
+          <Input
+            placeholder="0"
+            value={filterMinOutstanding}
+            onChange={e => setFilterMinOutstanding(e.target.value.replace(/[^0-9.]/g, ''))}
+            className="pl-12 w-[140px]"
+            title="Minimum outstanding amount"
+          />
+        </div>
+
         {assigneeList.length > 0 && (
           <Select value={filterAssignee || '__all__'} onValueChange={v => setFilterAssignee(v === '__all__' ? '' : v)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Filter by assignee" />
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Assignee" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All Assignees</SelectItem>
@@ -1187,17 +1243,47 @@ export default function ReceivablesTrackingView() {
           </Select>
         )}
 
+        {(search || filterStatus || filterAssignee || filterMinOutstanding || filterFollowupStatus) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setSearch('');
+              setFilterStatus('');
+              setFilterAssignee('');
+              setFilterMinOutstanding('');
+              setFilterFollowupStatus('');
+            }}
+          >
+            <X className="h-3.5 w-3.5 mr-1" />
+            Clear filters
+          </Button>
+        )}
+
         <Button variant="outline" onClick={handleExport}>
           <Download className="h-4 w-4 mr-2" />
           Export Excel
         </Button>
       </div>
 
+      {/* Active filter summary */}
+      {(search || filterStatus || filterAssignee || filterMinOutstanding || filterFollowupStatus) && (
+        <div className="flex flex-wrap gap-2 items-center text-xs text-muted-foreground">
+          <span className="font-medium">Showing {displayRows.length} result{displayRows.length !== 1 ? 's' : ''}:</span>
+          {search && <span className="bg-muted px-2 py-0.5 rounded-full">Search: "{search}"</span>}
+          {filterStatus && <span className="bg-muted px-2 py-0.5 rounded-full">Status: {filterStatus}</span>}
+          {filterFollowupStatus && <span className="bg-muted px-2 py-0.5 rounded-full">Follow-up: {filterFollowupStatus.replace('_', ' ')}</span>}
+          {filterMinOutstanding && <span className="bg-muted px-2 py-0.5 rounded-full">Min Outstanding: ₹{filterMinOutstanding}</span>}
+          {filterAssignee && <span className="bg-muted px-2 py-0.5 rounded-full">Assignee: {filterAssignee === '__unassigned__' ? 'Unassigned' : filterAssignee}</span>}
+        </div>
+      )}
+
       {/* Table */}
       {displayRows.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground border rounded-md">
-          {search.trim()
-            ? 'No clients match your search.'
+          {(search || filterStatus || filterAssignee || filterMinOutstanding || filterFollowupStatus)
+            ? 'No clients match the current filters.'
             : 'No clients with outstanding balances found.'}
         </div>
       ) : (
