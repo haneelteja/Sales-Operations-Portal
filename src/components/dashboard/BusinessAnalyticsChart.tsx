@@ -61,12 +61,19 @@ const BAR_COLORS = {
 const LEGEND_COLORS = BAR_COLORS;
 
 const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
-  ({ x, y, value }: any) =>
-    value == null ? null : (
-      <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={600} fill={color}>
-        {fmt(value)}
-      </text>
+  ({ x, y, value }: any) => {
+    if (value == null) return null;
+    const text = fmt(value);
+    return (
+      <g>
+        {/* white halo so label is readable over crossing lines */}
+        <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
+          stroke="white" strokeWidth={4} strokeLinejoin="round" fill="white">{text}</text>
+        <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
+          fill={color}>{text}</text>
+      </g>
     );
+  };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
