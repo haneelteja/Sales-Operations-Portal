@@ -464,181 +464,147 @@ const Dashboard = memo(() => {
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
-      {/* All Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Row 1: Elma Factory Outstanding, Client Outstanding, Critical Alerts, Collection Rate */}
-
-        {/* Factory Outstanding */}
-        <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-purple-800 mb-1">Elma Factory Outstanding</h3>
-                <p className="text-2xl font-bold text-purple-600">₹{metrics?.factoryOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Client Outstanding */}
-        <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-rose-800 mb-1">Client Outstanding - Pending receivables</h3>
-                <p className="text-2xl font-bold text-rose-600">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 4 }) || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Critical Alerts */}
-        <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-amber-800 mb-1">Critical Alerts - Outstanding &gt; ₹1L</h3>
-                <p className="text-2xl font-bold text-amber-600">{receivables?.filter(r => r.outstanding > 100000).length || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Collection Rate */}
-        <Card className={`border shadow-lg hover:shadow-xl transition-all duration-300 ${
-          (() => {
-            if (!receivables || receivables.length === 0 || !metrics) return 'bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200';
-            const totalSales = receivables.reduce((sum, r) => sum + (r.totalSales || 0), 0);
-            const totalOutstanding = metrics.totalOutstanding || 0;
-            const collectionRate = totalSales > 0 ? ((totalSales - totalOutstanding) / totalSales) * 100 : 0;
-            return collectionRate >= 70 ? 'bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200' : 'bg-gradient-to-br from-rose-50 to-pink-50 border-rose-200';
-          })()
-        }`}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className={`text-sm font-semibold mb-1 ${
-                  (() => {
-                    if (!receivables || receivables.length === 0 || !metrics) return 'text-sky-800';
-                    const totalSales = receivables.reduce((sum, r) => sum + (r.totalSales || 0), 0);
-                    const totalOutstanding = metrics.totalOutstanding || 0;
-                    const collectionRate = totalSales > 0 ? ((totalSales - totalOutstanding) / totalSales) * 100 : 0;
-                    return collectionRate >= 70 ? 'text-sky-800' : 'text-rose-800';
-                  })()
-                }`}>
-                  Collection Rate - Payment efficiency
-                </h3>
-                <p className={`text-2xl font-bold ${
-                  (() => {
-                    if (!receivables || receivables.length === 0 || !metrics) return 'text-sky-600';
-                    const totalSales = receivables.reduce((sum, r) => sum + (r.totalSales || 0), 0);
-                    const totalOutstanding = metrics.totalOutstanding || 0;
-                    const collectionRate = totalSales > 0 ? ((totalSales - totalOutstanding) / totalSales) * 100 : 0;
-                    return collectionRate >= 70 ? 'text-sky-600' : 'text-rose-600';
-                  })()
-                }`}>
-                  {receivables && receivables.length > 0 && metrics ? 
-                    (() => {
-                      const totalSales = receivables.reduce((sum, r) => sum + (r.totalSales || 0), 0);
-                      const totalOutstanding = metrics.totalOutstanding || 0;
-                      return totalSales > 0 ? Math.round(((totalSales - totalOutstanding) / totalSales) * 100) : 0;
-                    })() : 0}%
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Row 2: Sale This Month, Sale Previous Month */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Sale This Month */}
-        <Card className="bg-teal-50 border border-teal-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-teal-900 mb-1">Sale This Month</h3>
-                <p className="text-2xl font-bold text-teal-600">₹{monthlySales?.saleThisMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Sale Previous Month */}
-        <Card className="bg-cyan-50 border border-cyan-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-cyan-900 mb-1">Sale Previous Month</h3>
-                <p className="text-2xl font-bold text-cyan-600">₹{monthlySales?.salePrevMonth.toLocaleString('en-IN', { maximumFractionDigits: 4 }) ?? 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Payment Follow Up */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Payment Follow Up</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Overdue */}
-          <Card className="bg-red-50 border border-red-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-red-900 mb-1">No. of Overdue</h3>
-                  <p className="text-2xl font-bold text-red-600">{paymentFollowupMetrics?.overdue ?? 0}</p>
-                  <p className="text-xs text-red-500 mt-1">Payment past predicted due date</p>
+      {/* KPI Tiles — 2 compact rows */}
+      <div className="space-y-3">
+        {/* Row 1: Financials & Receivables */}
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Financials &amp; Receivables</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-purple-600 leading-tight mb-1">Factory Outstanding</p>
+                  <p className="text-lg font-bold text-purple-700 leading-none">₹{metrics?.factoryOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 2 }) || 0}</p>
+                  <p className="text-[10px] text-purple-400 mt-1">Elma payable</p>
                 </div>
-                <AlertTriangle className="h-8 w-8 text-red-300" />
+                <Building2 className="h-5 w-5 text-purple-300 shrink-0 mt-0.5" />
               </div>
             </CardContent>
           </Card>
 
-          {/* Due Soon */}
-          <Card className="bg-amber-50 border border-amber-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-amber-900 mb-1">No. of Due Soon</h3>
-                  <p className="text-2xl font-bold text-amber-600">{paymentFollowupMetrics?.dueSoon ?? 0}</p>
-                  <p className="text-xs text-amber-500 mt-1">Payment due within expected window</p>
+          <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-rose-600 leading-tight mb-1">Client Outstanding</p>
+                  <p className="text-lg font-bold text-rose-700 leading-none">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 2 }) || 0}</p>
+                  <p className="text-[10px] text-rose-400 mt-1">Pending receivables</p>
                 </div>
-                <TrendingUp className="h-8 w-8 text-amber-300" />
+                <DollarSign className="h-5 w-5 text-rose-300 shrink-0 mt-0.5" />
               </div>
             </CardContent>
           </Card>
+
+          <Card className="bg-teal-50 border border-teal-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-teal-600 leading-tight mb-1">Sale This Month</p>
+                  <p className="text-lg font-bold text-teal-700 leading-none">₹{monthlySales?.saleThisMonth.toLocaleString('en-IN', { maximumFractionDigits: 2 }) ?? 0}</p>
+                </div>
+                <TrendingUp className="h-5 w-5 text-teal-300 shrink-0 mt-0.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-cyan-50 border border-cyan-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-cyan-600 leading-tight mb-1">Sale Previous Month</p>
+                  <p className="text-lg font-bold text-cyan-700 leading-none">₹{monthlySales?.salePrevMonth.toLocaleString('en-IN', { maximumFractionDigits: 2 }) ?? 0}</p>
+                </div>
+                <TrendingUp className="h-5 w-5 text-cyan-300 shrink-0 mt-0.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {(() => {
+            const totalSales = receivables?.reduce((sum, r) => sum + (r.totalSales || 0), 0) ?? 0;
+            const totalOutstanding = metrics?.totalOutstanding ?? 0;
+            const rate = totalSales > 0 ? Math.round(((totalSales - totalOutstanding) / totalSales) * 100) : 0;
+            const good = rate >= 70;
+            return (
+              <Card className={`border hover:shadow-md transition-all ${good ? 'bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200' : 'bg-gradient-to-br from-rose-50 to-pink-50 border-rose-200'}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className={`text-[11px] font-medium leading-tight mb-1 ${good ? 'text-sky-600' : 'text-rose-600'}`}>Collection Rate</p>
+                      <p className={`text-lg font-bold leading-none ${good ? 'text-sky-700' : 'text-rose-700'}`}>{rate}%</p>
+                      <p className={`text-[10px] mt-1 ${good ? 'text-sky-400' : 'text-rose-400'}`}>Payment efficiency</p>
+                    </div>
+                    <CreditCard className={`h-5 w-5 shrink-0 mt-0.5 ${good ? 'text-sky-300' : 'text-rose-300'}`} />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
-      </div>
 
-      {/* Client Credit & Risk */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Client Analysis — Credit &amp; Risk</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Over Limit */}
-          <Card className="bg-rose-50 border border-rose-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+        {/* Row 2: Alerts & Risk */}
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest pt-1">Alerts &amp; Risk</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h3 className="text-sm font-semibold text-rose-900 mb-1">No. of Over Limit</h3>
-                  <p className="text-2xl font-bold text-rose-600">{creditRiskMetrics?.overLimit ?? 0}</p>
-                  <p className="text-xs text-rose-500 mt-1">Outstanding exceeds monthly avg</p>
+                  <p className="text-[11px] font-medium text-amber-600 leading-tight mb-1">Critical Alerts</p>
+                  <p className="text-lg font-bold text-amber-700 leading-none">{receivables?.filter(r => r.outstanding > 100000).length || 0}</p>
+                  <p className="text-[10px] text-amber-400 mt-1">Outstanding &gt; ₹1L</p>
                 </div>
-                <AlertTriangle className="h-8 w-8 text-rose-300" />
+                <AlertTriangle className="h-5 w-5 text-amber-300 shrink-0 mt-0.5" />
               </div>
             </CardContent>
           </Card>
 
-          {/* Warning / Caution */}
-          <Card className="bg-orange-50 border border-orange-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+          <Card className="bg-red-50 border border-red-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h3 className="text-sm font-semibold text-orange-900 mb-1">No. of Warning / Caution</h3>
-                  <p className="text-2xl font-bold text-orange-600">{creditRiskMetrics?.warning ?? 0}</p>
-                  <p className="text-xs text-orange-500 mt-1">Outstanding at 75–100% of limit</p>
+                  <p className="text-[11px] font-medium text-red-600 leading-tight mb-1">Payment Overdue</p>
+                  <p className="text-lg font-bold text-red-700 leading-none">{paymentFollowupMetrics?.overdue ?? 0}</p>
+                  <p className="text-[10px] text-red-400 mt-1">Past predicted due date</p>
                 </div>
-                <Eye className="h-8 w-8 text-orange-300" />
+                <AlertTriangle className="h-5 w-5 text-red-300 shrink-0 mt-0.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-amber-50 border border-amber-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-medium text-amber-600 leading-tight mb-1">Due Soon</p>
+                  <p className="text-lg font-bold text-amber-700 leading-none">{paymentFollowupMetrics?.dueSoon ?? 0}</p>
+                  <p className="text-[10px] text-amber-400 mt-1">Within expected window</p>
+                </div>
+                <TrendingUp className="h-5 w-5 text-amber-300 shrink-0 mt-0.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-rose-50 border border-rose-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-medium text-rose-600 leading-tight mb-1">Over Credit Limit</p>
+                  <p className="text-lg font-bold text-rose-700 leading-none">{creditRiskMetrics?.overLimit ?? 0}</p>
+                  <p className="text-[10px] text-rose-400 mt-1">Exceeds monthly avg</p>
+                </div>
+                <AlertTriangle className="h-5 w-5 text-rose-300 shrink-0 mt-0.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-orange-50 border border-orange-200 hover:shadow-md transition-all">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-medium text-orange-600 leading-tight mb-1">Caution / Warning</p>
+                  <p className="text-lg font-bold text-orange-700 leading-none">{creditRiskMetrics?.warning ?? 0}</p>
+                  <p className="text-[10px] text-orange-400 mt-1">At 75–100% of limit</p>
+                </div>
+                <Eye className="h-5 w-5 text-orange-300 shrink-0 mt-0.5" />
               </div>
             </CardContent>
           </Card>
