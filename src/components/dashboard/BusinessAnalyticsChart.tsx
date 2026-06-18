@@ -152,6 +152,7 @@ const ClientDropdown = ({
 const BusinessAnalyticsChart: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overall' | 'clients'>('overall');
   const [selectedYear, setSelectedYear] = useState<string>(CURRENT_YEAR);
+  const [selectedOverallMonth, setSelectedOverallMonth] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(CURRENT_MONTH);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [activeMetrics, setActiveMetrics] = useState<Set<string>>(new Set(['cases', 'revenue', 'profit', 'collections']));
@@ -331,12 +332,14 @@ const BusinessAnalyticsChart: React.FC = () => {
       return { label: monthShort(mk), cases, revenue, profit, collections };
     };
 
-    const months = selectedYear === 'all'
+    let months = selectedYear === 'all'
       ? [...availableMonths].reverse()
       : [...availableMonths].filter(m => m.startsWith(selectedYear)).reverse();
 
+    if (selectedOverallMonth !== 'all') months = months.filter(m => m === selectedOverallMonth);
+
     return months.map(getAggForMonth).filter(p => p.cases > 0 || p.revenue > 0);
-  }, [computedData, availableMonths, selectedYear]);
+  }, [computedData, availableMonths, selectedYear, selectedOverallMonth]);
 
   // Tab 2: Clients — per-client for selected month
   const clientChartData = useMemo((): ChartPoint[] => {
@@ -364,6 +367,11 @@ const BusinessAnalyticsChart: React.FC = () => {
     collections: chartData.reduce((s, p) => s + p.collections, 0),
   }), [chartData]);
 
+  const overallMonthOptions = useMemo(() => {
+    if (selectedYear === 'all') return availableMonths;
+    return availableMonths.filter(m => m.startsWith(selectedYear));
+  }, [availableMonths, selectedYear]);
+
   const toggleClient = (name: string) => setSelectedClients(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
   const filteredClientNames = allClientNames.filter(n => n.toLowerCase().includes(clientSearch.toLowerCase()));
   const chartWidth = Math.max(560, chartData.length * (activeTab === 'overall' ? 80 : 68));
@@ -378,7 +386,9 @@ const BusinessAnalyticsChart: React.FC = () => {
             <CardTitle className="text-base font-semibold text-gray-800">Business Analytics</CardTitle>
             <p className="text-xs text-gray-400 mt-0.5">
               {activeTab === 'overall'
-                ? selectedYear === 'all' ? 'All time monthly trend' : `${selectedYear} monthly trend`
+                ? selectedOverallMonth !== 'all'
+                  ? `${monthLabel(selectedOverallMonth)} — overall`
+                  : selectedYear === 'all' ? 'All time monthly trend' : `${selectedYear} monthly trend`
                 : selectedMonth === 'all' ? 'All time — per client' : `${monthLabel(selectedMonth)} — per client`}
             </p>
           </div>
@@ -411,17 +421,31 @@ const BusinessAnalyticsChart: React.FC = () => {
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2 mt-1">
           {activeTab === 'overall' && (
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-36 h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {availableYears.map(y => (
-                  <SelectItem key={y} value={y}>{y === CURRENT_YEAR ? `${y} (This Year)` : y}</SelectItem>
-                ))}
-                <SelectItem value="all">All Time</SelectItem>
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={selectedYear} onValueChange={v => { setSelectedYear(v); setSelectedOverallMonth('all'); }}>
+                <SelectTrigger className="w-36 h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableYears.map(y => (
+                    <SelectItem key={y} value={y}>{y === CURRENT_YEAR ? `${y} (This Year)` : y}</SelectItem>
+                  ))}
+                  <SelectItem value="all">All Time</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={selectedOverallMonth} onValueChange={setSelectedOverallMonth}>
+                <SelectTrigger className="w-44 h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  {overallMonthOptions.map(m => (
+                    <SelectItem key={m} value={m}>{m === CURRENT_MONTH ? `${monthLabel(m)} (Current)` : monthLabel(m)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
           )}
 
           {activeTab === 'clients' && (
