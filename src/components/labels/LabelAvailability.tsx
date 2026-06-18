@@ -5,12 +5,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Pagination } from "@/components/ui/pagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, Search, Filter, Maximize2, Minimize2 } from "lucide-react";
+import { Download, Search, Filter, Maximize2, Minimize2, ChevronDown, ChevronUp } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 
-const PAGE_SIZE = 5;
+const DEFAULT_ROWS = 5;
 
 interface ClientLabelSummary {
   client_id: string;
@@ -29,7 +28,7 @@ const LabelAvailability = () => {
   const [sortField, setSortField] = React.useState<keyof ClientLabelSummary>("client_name");
 
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc");
-  const [page, setPage] = React.useState(1);
+  const [isExpanded, setIsExpanded] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   // Fetch all label purchases
@@ -245,10 +244,9 @@ const LabelAvailability = () => {
     return filtered;
   }, [clientSummaries, searchTerm, statusFilter, sortField, sortDirection]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredAndSortedData.length / PAGE_SIZE));
-  const pageRows = filteredAndSortedData.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleRows = isFullscreen ? filteredAndSortedData : (isExpanded ? filteredAndSortedData : filteredAndSortedData.slice(0, DEFAULT_ROWS));
 
-  // Handle sort — also resets to page 1
+  // Handle sort — collapse back to default when sorting changes
   const handleSort = (field: keyof ClientLabelSummary) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -256,7 +254,6 @@ const LabelAvailability = () => {
       setSortField(field);
       setSortDirection('asc');
     }
-    setPage(1);
   };
 
   // Export to Excel
@@ -281,7 +278,7 @@ const LabelAvailability = () => {
         <div className="flex items-center gap-3">
           {filteredAndSortedData.length > 0 && (
             <div className="text-sm text-muted-foreground">
-              Showing {Math.min((page - 1) * PAGE_SIZE + 1, filteredAndSortedData.length)}–{Math.min(page * PAGE_SIZE, filteredAndSortedData.length)} of {filteredAndSortedData.length} clients
+              Showing {Math.min(isExpanded || isFullscreen ? filteredAndSortedData.length : DEFAULT_ROWS, filteredAndSortedData.length)} of {filteredAndSortedData.length} clients
             </div>
           )}
           <Button
@@ -403,7 +400,7 @@ const LabelAvailability = () => {
               </TableHeader>
               <TableBody>
                 {filteredAndSortedData.length > 0 ? (
-                  pageRows.map((summary, index) => (
+                  visibleRows.map((summary, index) => (
                     <TableRow key={`${summary.client_name}_${index}`}>
                       <TableCell className="font-medium">{summary.client_name}</TableCell>
                       <TableCell className="font-medium">{summary.total_labels_purchased.toLocaleString()}</TableCell>
@@ -440,21 +437,19 @@ const LabelAvailability = () => {
               </TableBody>
             </Table>
           </div>
-          {filteredAndSortedData.length > PAGE_SIZE && (
-            <div className="px-4 py-2 border-t">
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                total={filteredAndSortedData.length}
-                pageSize={PAGE_SIZE}
-                onNextPage={() => setPage(p => Math.min(p + 1, totalPages))}
-                onPreviousPage={() => setPage(p => Math.max(p - 1, 1))}
-                onFirstPage={() => setPage(1)}
-                onLastPage={() => setPage(totalPages)}
-                onPageChange={setPage}
-                hasNextPage={page < totalPages}
-                hasPreviousPage={page > 1}
-              />
+          {!isFullscreen && filteredAndSortedData.length > DEFAULT_ROWS && (
+            <div className="border-t">
+              <button
+                type="button"
+                onClick={() => setIsExpanded(e => !e)}
+                className="w-full py-2 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              >
+                {isExpanded ? (
+                  <><ChevronUp className="h-4 w-4" />Show less</>
+                ) : (
+                  <><ChevronDown className="h-4 w-4" />Show all {filteredAndSortedData.length} clients</>
+                )}
+              </button>
             </div>
           )}
         </div>
