@@ -462,152 +462,156 @@ const Dashboard = memo(() => {
     });
   }, [filteredAndSortedReceivables, toast]);
 
+  // Compact currency formatter: ₹1.2L / ₹45K / ₹999
+  const fmtCur = (n: number) => {
+    if (n >= 10_00_000) return `₹${(n / 10_00_000).toFixed(2)}Cr`;
+    if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(2)}L`;
+    if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
+    return `₹${Math.round(n).toLocaleString('en-IN')}`;
+  };
+
   return (
-    <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
-      {/* KPI Tiles — 2 compact rows */}
-      <div className="space-y-3">
-        {/* Row 1: Financials & Receivables */}
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Financials &amp; Receivables</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-purple-600 leading-tight mb-1">Factory Outstanding</p>
-                  <p className="text-lg font-bold text-purple-700 leading-none">₹{metrics?.factoryOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 2 }) || 0}</p>
-                  <p className="text-[10px] text-purple-400 mt-1">Elma payable</p>
-                </div>
-                <Building2 className="h-5 w-5 text-purple-300 shrink-0 mt-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+    <div className="space-y-4 p-6 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
+      {/* KPI Tiles — 2 rows of 5, left-accent design */}
+      <div className="space-y-2">
+        {/* Row 1: Financials */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          {/* Factory Outstanding */}
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-purple-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+            <Building2 className="h-9 w-9 text-purple-200 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Factory Outstanding</p>
+              <p className="text-xl font-bold text-purple-700 mt-1 leading-none tabular-nums">{fmtCur(metrics?.factoryOutstanding ?? 0)}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Elma payable</p>
+            </div>
+          </div>
 
-          <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-rose-600 leading-tight mb-1">Client Outstanding</p>
-                  <p className="text-lg font-bold text-rose-700 leading-none">₹{metrics?.totalOutstanding?.toLocaleString('en-IN', { maximumFractionDigits: 2 }) || 0}</p>
-                  <p className="text-[10px] text-rose-400 mt-1">Pending receivables</p>
-                </div>
-                <DollarSign className="h-5 w-5 text-rose-300 shrink-0 mt-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+          {/* Client Outstanding */}
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-rose-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+            <DollarSign className="h-9 w-9 text-rose-200 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Client Outstanding</p>
+              <p className="text-xl font-bold text-rose-700 mt-1 leading-none tabular-nums">{fmtCur(metrics?.totalOutstanding ?? 0)}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Pending receivables</p>
+            </div>
+          </div>
 
-          <Card className="bg-teal-50 border border-teal-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
+          {/* Sale This Month */}
+          {(() => {
+            const thisM = monthlySales?.saleThisMonth ?? 0;
+            const prevM = monthlySales?.salePrevMonth ?? 0;
+            const pct = prevM > 0 ? Math.round(((thisM - prevM) / prevM) * 100) : 0;
+            const up = pct >= 0;
+            return (
+              <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-teal-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+                <TrendingUp className="h-9 w-9 text-teal-200 shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-teal-600 leading-tight mb-1">Sale This Month</p>
-                  <p className="text-lg font-bold text-teal-700 leading-none">₹{monthlySales?.saleThisMonth.toLocaleString('en-IN', { maximumFractionDigits: 2 }) ?? 0}</p>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Sale This Month</p>
+                  <p className="text-xl font-bold text-teal-700 mt-1 leading-none tabular-nums">{fmtCur(thisM)}</p>
+                  <p className={`text-[10px] mt-0.5 font-medium ${up ? 'text-teal-500' : 'text-rose-500'}`}>{up ? '▲' : '▼'} {Math.abs(pct)}% vs last month</p>
                 </div>
-                <TrendingUp className="h-5 w-5 text-teal-300 shrink-0 mt-0.5" />
               </div>
-            </CardContent>
-          </Card>
+            );
+          })()}
 
-          <Card className="bg-cyan-50 border border-cyan-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-cyan-600 leading-tight mb-1">Sale Previous Month</p>
-                  <p className="text-lg font-bold text-cyan-700 leading-none">₹{monthlySales?.salePrevMonth.toLocaleString('en-IN', { maximumFractionDigits: 2 }) ?? 0}</p>
-                </div>
-                <TrendingUp className="h-5 w-5 text-cyan-300 shrink-0 mt-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+          {/* Sale Previous Month */}
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-cyan-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+            <TrendingUp className="h-9 w-9 text-cyan-200 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Sale Prev Month</p>
+              <p className="text-xl font-bold text-cyan-700 mt-1 leading-none tabular-nums">{fmtCur(monthlySales?.salePrevMonth ?? 0)}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Prior period</p>
+            </div>
+          </div>
 
+          {/* Collection Rate */}
           {(() => {
             const totalSales = receivables?.reduce((sum, r) => sum + (r.totalSales || 0), 0) ?? 0;
             const totalOutstanding = metrics?.totalOutstanding ?? 0;
             const rate = totalSales > 0 ? Math.round(((totalSales - totalOutstanding) / totalSales) * 100) : 0;
             const good = rate >= 70;
+            const barW = Math.min(100, Math.max(0, rate));
             return (
-              <Card className={`border hover:shadow-md transition-all ${good ? 'bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200' : 'bg-gradient-to-br from-rose-50 to-pink-50 border-rose-200'}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className={`text-[11px] font-medium leading-tight mb-1 ${good ? 'text-sky-600' : 'text-rose-600'}`}>Collection Rate</p>
-                      <p className={`text-lg font-bold leading-none ${good ? 'text-sky-700' : 'text-rose-700'}`}>{rate}%</p>
-                      <p className={`text-[10px] mt-1 ${good ? 'text-sky-400' : 'text-rose-400'}`}>Payment efficiency</p>
-                    </div>
-                    <CreditCard className={`h-5 w-5 shrink-0 mt-0.5 ${good ? 'text-sky-300' : 'text-rose-300'}`} />
+              <div className={`bg-white rounded-xl border border-gray-100 border-l-4 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 ${good ? 'border-l-sky-500' : 'border-l-rose-500'}`}>
+                <CreditCard className={`h-9 w-9 shrink-0 ${good ? 'text-sky-200' : 'text-rose-200'}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Collection Rate</p>
+                  <p className={`text-xl font-bold mt-1 leading-none tabular-nums ${good ? 'text-sky-700' : 'text-rose-700'}`}>{rate}%</p>
+                  <div className="mt-1.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${good ? 'bg-sky-400' : 'bg-rose-400'}`} style={{ width: `${barW}%` }} />
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             );
           })()}
         </div>
 
         {/* Row 2: Alerts & Risk */}
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest pt-1">Alerts &amp; Risk</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-medium text-amber-600 leading-tight mb-1">Critical Alerts</p>
-                  <p className="text-lg font-bold text-amber-700 leading-none">{receivables?.filter(r => r.outstanding > 100000).length || 0}</p>
-                  <p className="text-[10px] text-amber-400 mt-1">Outstanding &gt; ₹1L</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          {/* Critical Alerts */}
+          {(() => {
+            const count = receivables?.filter(r => r.outstanding > 100000).length || 0;
+            return (
+              <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-amber-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
                 </div>
-                <AlertTriangle className="h-5 w-5 text-amber-300 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Critical Alerts</p>
+                  <p className="text-xl font-bold text-amber-700 mt-1 leading-none tabular-nums">{count}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Outstanding &gt; ₹1L</p>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            );
+          })()}
 
-          <Card className="bg-red-50 border border-red-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-medium text-red-600 leading-tight mb-1">Payment Overdue</p>
-                  <p className="text-lg font-bold text-red-700 leading-none">{paymentFollowupMetrics?.overdue ?? 0}</p>
-                  <p className="text-[10px] text-red-400 mt-1">Past predicted due date</p>
-                </div>
-                <AlertTriangle className="h-5 w-5 text-red-300 shrink-0 mt-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+          {/* Payment Overdue */}
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-red-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Payment Overdue</p>
+              <p className="text-xl font-bold text-red-700 mt-1 leading-none tabular-nums">{paymentFollowupMetrics?.overdue ?? 0}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Past due date</p>
+            </div>
+          </div>
 
-          <Card className="bg-amber-50 border border-amber-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-medium text-amber-600 leading-tight mb-1">Due Soon</p>
-                  <p className="text-lg font-bold text-amber-700 leading-none">{paymentFollowupMetrics?.dueSoon ?? 0}</p>
-                  <p className="text-[10px] text-amber-400 mt-1">Within expected window</p>
-                </div>
-                <TrendingUp className="h-5 w-5 text-amber-300 shrink-0 mt-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+          {/* Due Soon */}
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-orange-400 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+              <TrendingUp className="h-5 w-5 text-orange-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Due Soon</p>
+              <p className="text-xl font-bold text-orange-700 mt-1 leading-none tabular-nums">{paymentFollowupMetrics?.dueSoon ?? 0}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Within expected window</p>
+            </div>
+          </div>
 
-          <Card className="bg-rose-50 border border-rose-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-medium text-rose-600 leading-tight mb-1">Over Credit Limit</p>
-                  <p className="text-lg font-bold text-rose-700 leading-none">{creditRiskMetrics?.overLimit ?? 0}</p>
-                  <p className="text-[10px] text-rose-400 mt-1">Exceeds monthly avg</p>
-                </div>
-                <AlertTriangle className="h-5 w-5 text-rose-300 shrink-0 mt-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+          {/* Over Credit Limit */}
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-rose-600 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
+              <AlertTriangle className="h-5 w-5 text-rose-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Over Credit Limit</p>
+              <p className="text-xl font-bold text-rose-700 mt-1 leading-none tabular-nums">{creditRiskMetrics?.overLimit ?? 0}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Exceeds monthly avg</p>
+            </div>
+          </div>
 
-          <Card className="bg-orange-50 border border-orange-200 hover:shadow-md transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-medium text-orange-600 leading-tight mb-1">Caution / Warning</p>
-                  <p className="text-lg font-bold text-orange-700 leading-none">{creditRiskMetrics?.warning ?? 0}</p>
-                  <p className="text-[10px] text-orange-400 mt-1">At 75–100% of limit</p>
-                </div>
-                <Eye className="h-5 w-5 text-orange-300 shrink-0 mt-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+          {/* Caution / Warning */}
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-yellow-400 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-yellow-50 flex items-center justify-center shrink-0">
+              <Eye className="h-5 w-5 text-yellow-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Caution / Warning</p>
+              <p className="text-xl font-bold text-yellow-700 mt-1 leading-none tabular-nums">{creditRiskMetrics?.warning ?? 0}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">At 75–100% of limit</p>
+            </div>
+          </div>
         </div>
       </div>
 
