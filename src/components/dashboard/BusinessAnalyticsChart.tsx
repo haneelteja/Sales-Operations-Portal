@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronDown, X } from 'lucide-react';
 import {
   ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, Cell,
+  Legend, ResponsiveContainer,
 } from 'recharts';
 
 interface SaleTx {
@@ -51,22 +51,14 @@ const fmtMoney = (v: number) => {
   return `₹${Math.round(v)}`;
 };
 
-// Gradient definitions for bars
-const GRADIENTS = [
-  { id: 'casesGrad', from: '#818cf8', to: '#c7d2fe' },
-  { id: 'revenueGrad', from: '#10b981', to: '#6ee7b7' },
-  { id: 'profitGrad', from: '#f59e0b', to: '#fcd34d' },
-  { id: 'collectionsGrad', from: '#0ea5e9', to: '#7dd3fc' },
-];
-
 const BAR_COLORS = {
-  cases: 'url(#casesGrad)',
-  revenue: 'url(#revenueGrad)',
-  profit: 'url(#profitGrad)',
-  collections: 'url(#collectionsGrad)',
+  cases: '#818cf8',
+  revenue: '#10b981',
+  profit: '#f59e0b',
+  collections: '#38bdf8',
 };
 
-const LEGEND_COLORS = { cases: '#818cf8', revenue: '#10b981', profit: '#f59e0b', collections: '#0ea5e9' };
+const LEGEND_COLORS = BAR_COLORS;
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -104,17 +96,6 @@ const CustomLegend = () => (
       </span>
     ))}
   </div>
-);
-
-const GradientDefs = () => (
-  <defs>
-    {GRADIENTS.map(g => (
-      <linearGradient key={g.id} id={g.id} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={g.from} stopOpacity={0.95} />
-        <stop offset="100%" stopColor={g.to} stopOpacity={0.5} />
-      </linearGradient>
-    ))}
-  </defs>
 );
 
 const TotalsRow = ({ totals }: { totals: { cases: number; revenue: number; profit: number; collections: number } }) => (
@@ -454,7 +435,6 @@ const BusinessAnalyticsChart: React.FC = () => {
             <div style={{ minWidth: chartWidth }} className="px-2">
               <ResponsiveContainer width="100%" height={340}>
                 <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 4, bottom: activeTab === 'clients' ? 70 : 20 }} barGap={2} barCategoryGap="25%">
-                  <GradientDefs />
                   <CartesianGrid strokeDasharray="4 4" stroke="#f1f5f9" vertical={false} />
                   <XAxis
                     dataKey="label"
@@ -485,10 +465,10 @@ const BusinessAnalyticsChart: React.FC = () => {
                   />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} />
                   <Legend content={<CustomLegend />} />
-                  <Bar yAxisId="cases" dataKey="cases" name="Cases" fill={BAR_COLORS.cases} barSize={barSize} radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill={BAR_COLORS.revenue} barSize={barSize} radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="money" dataKey="profit" name="Profit" fill={BAR_COLORS.profit} barSize={barSize} radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="money" dataKey="collections" name="Collections" fill={BAR_COLORS.collections} barSize={barSize} radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#818cf8" barSize={barSize} radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#10b981" barSize={barSize} radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#f59e0b" barSize={barSize} radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#38bdf8" barSize={barSize} radius={[4, 4, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
