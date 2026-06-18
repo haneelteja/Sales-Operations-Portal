@@ -60,6 +60,14 @@ const BAR_COLORS = {
 
 const LEGEND_COLORS = BAR_COLORS;
 
+const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
+  ({ x, y, value }: any) =>
+    value == null ? null : (
+      <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={600} fill={color}>
+        {fmt(value)}
+      </text>
+    );
+
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
@@ -532,7 +540,7 @@ const BusinessAnalyticsChart: React.FC = () => {
           <div className="overflow-x-auto -mx-2">
             <div style={{ minWidth: chartWidth }} className="px-2">
               <ResponsiveContainer width="100%" height={340}>
-                <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 4, bottom: activeTab === 'clients' ? 70 : 20 }} barGap={2} barCategoryGap="25%">
+                <ComposedChart data={chartData} margin={{ top: activeTab === 'overall' ? 28 : 4, right: 16, left: 4, bottom: activeTab === 'clients' ? 70 : 20 }} barGap={2} barCategoryGap="25%">
                   <CartesianGrid strokeDasharray="4 4" stroke="#f1f5f9" vertical={false} />
                   <XAxis
                     dataKey="label"
@@ -565,10 +573,10 @@ const BusinessAnalyticsChart: React.FC = () => {
                   <Legend content={<CustomLegend />} />
                   {activeTab === 'overall' ? (
                     <>
-                      <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke="#818cf8" strokeWidth={2.5} dot={{ r: 5, fill: '#818cf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#818cf8', stroke: '#fff', strokeWidth: 2 }} />
-                      <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
-                      <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }} />
-                      <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 5, fill: '#38bdf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#38bdf8', stroke: '#fff', strokeWidth: 2 }} />
+                      <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke="#818cf8" strokeWidth={2.5} dot={{ r: 5, fill: '#818cf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#818cf8', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#818cf8', v => v.toLocaleString('en-IN'), -12)} />
+                      <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#10b981', fmtMoney, -12)} />
+                      <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#f59e0b', fmtMoney, 20)} />
+                      <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 5, fill: '#38bdf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#38bdf8', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#38bdf8', fmtMoney, -24)} />
                     </>
                   ) : (
                     <>
