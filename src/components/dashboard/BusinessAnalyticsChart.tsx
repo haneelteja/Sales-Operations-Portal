@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronDown, X } from 'lucide-react';
 import {
-  ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from 'recharts';
 
@@ -465,10 +465,21 @@ const BusinessAnalyticsChart: React.FC = () => {
                   />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} />
                   <Legend content={<CustomLegend />} />
-                  <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#818cf8" barSize={barSize} radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#10b981" barSize={barSize} radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#f59e0b" barSize={barSize} radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#38bdf8" barSize={barSize} radius={[4, 4, 0, 0]} />
+                  {activeTab === 'overall' ? (
+                    <>
+                      <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke="#818cf8" strokeWidth={2.5} dot={{ r: 5, fill: '#818cf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#818cf8', stroke: '#fff', strokeWidth: 2 }} />
+                      <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
+                      <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }} />
+                      <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 5, fill: '#38bdf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#38bdf8', stroke: '#fff', strokeWidth: 2 }} />
+                    </>
+                  ) : (
+                    <>
+                      <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#818cf8" barSize={barSize} radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#10b981" barSize={barSize} radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#f59e0b" barSize={barSize} radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#38bdf8" barSize={barSize} radius={[4, 4, 0, 0]} />
+                    </>
+                  )}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
