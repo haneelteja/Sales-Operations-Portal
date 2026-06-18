@@ -153,6 +153,7 @@ const BusinessAnalyticsChart: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overall' | 'clients'>('overall');
   const [selectedMonth, setSelectedMonth] = useState<string>(CURRENT_MONTH);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [activeMetrics, setActiveMetrics] = useState<Set<string>>(new Set(['cases', 'revenue', 'profit', 'collections']));
   const [clientSearch, setClientSearch] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -384,17 +385,50 @@ const BusinessAnalyticsChart: React.FC = () => {
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2 mt-1">
           {activeTab === 'clients' && (
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-44 h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {availableMonths.map(m => (
-                  <SelectItem key={m} value={m}>{m === CURRENT_MONTH ? `${monthLabel(m)} (Current)` : monthLabel(m)}</SelectItem>
-                ))}
-                <SelectItem value="all">All Time</SelectItem>
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className="w-44 h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableMonths.map(m => (
+                    <SelectItem key={m} value={m}>{m === CURRENT_MONTH ? `${monthLabel(m)} (Current)` : monthLabel(m)}</SelectItem>
+                  ))}
+                  <SelectItem value="all">All Time</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Metric toggles */}
+              <div className="flex items-center gap-1">
+                {([
+                  { key: 'cases', label: 'Cases', color: '#818cf8' },
+                  { key: 'revenue', label: 'Revenue', color: '#10b981' },
+                  { key: 'profit', label: 'Profit', color: '#f59e0b' },
+                  { key: 'collections', label: 'Collections', color: '#38bdf8' },
+                ] as const).map(({ key, label, color }) => {
+                  const on = activeMetrics.has(key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveMetrics(prev => {
+                        const next = new Set(prev);
+                        if (next.has(key) && next.size > 1) next.delete(key);
+                        else next.add(key);
+                        return next;
+                      })}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                        on ? 'text-white border-transparent' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={on ? { background: color, borderColor: color } : {}}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? '#fff' : color }} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           <ClientDropdown
@@ -474,10 +508,10 @@ const BusinessAnalyticsChart: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#818cf8" barSize={barSize} radius={[4, 4, 0, 0]} />
-                      <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#10b981" barSize={barSize} radius={[4, 4, 0, 0]} />
-                      <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#f59e0b" barSize={barSize} radius={[4, 4, 0, 0]} />
-                      <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#38bdf8" barSize={barSize} radius={[4, 4, 0, 0]} />
+                      {activeMetrics.has('cases') && <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#818cf8" barSize={barSize} radius={[4, 4, 0, 0]} />}
+                      {activeMetrics.has('revenue') && <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#10b981" barSize={barSize} radius={[4, 4, 0, 0]} />}
+                      {activeMetrics.has('profit') && <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#f59e0b" barSize={barSize} radius={[4, 4, 0, 0]} />}
+                      {activeMetrics.has('collections') && <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#38bdf8" barSize={barSize} radius={[4, 4, 0, 0]} />}
                     </>
                   )}
                 </ComposedChart>
