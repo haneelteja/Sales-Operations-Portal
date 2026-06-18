@@ -151,6 +151,7 @@ const ClientDropdown = ({
 
 const BusinessAnalyticsChart: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overall' | 'clients'>('overall');
+  const [selectedYear, setSelectedYear] = useState<string>(CURRENT_YEAR);
   const [selectedMonth, setSelectedMonth] = useState<string>(CURRENT_MONTH);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [activeMetrics, setActiveMetrics] = useState<Set<string>>(new Set(['cases', 'revenue', 'profit', 'collections']));
@@ -237,6 +238,12 @@ const BusinessAnalyticsChart: React.FC = () => {
     return [...names].sort();
   }, [customers]);
 
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    availableMonths.forEach(m => years.add(m.slice(0, 4)));
+    return [...years].sort().reverse();
+  }, [availableMonths]);
+
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     salesTxs.forEach(tx => { if (tx.transaction_date) months.add(getMonthKey(tx.transaction_date)); });
@@ -303,16 +310,33 @@ const BusinessAnalyticsChart: React.FC = () => {
     return points;
   };
 
-  // Tab 1: Overall — monthly trend for current year
+  // Tab 1: Overall — monthly trend, no client filter, filtered by selected year or all
   const overallChartData = useMemo((): ChartPoint[] => {
-    const yearMonths = [...availableMonths].filter(m => m.startsWith(CURRENT_YEAR)).reverse();
-    return yearMonths.map(mk => {
-      const pts = getPointsForMonth(mk);
-      const agg: ChartPoint = { label: monthShort(mk), cases: 0, revenue: 0, profit: 0, collections: 0 };
-      pts.forEach(p => { agg.cases += p.cases; agg.revenue += p.revenue; agg.profit += p.profit; agg.collections += p.collections; });
-      return agg;
-    }).filter(p => p.cases > 0 || p.revenue > 0);
-  }, [computedData, availableMonths, selectedClients]);
+    const { byMonthClient, factoryByMonth, labelsByMonth, transportByMonthClient } = computedData;
+
+    const getAggForMonth = (mk: string): ChartPoint => {
+      const mMap = byMonthClient.get(mk) ?? new Map();
+      const factoryCost = factoryByMonth.get(mk) ?? 0;
+      const labelsCost = labelsByMonth.get(mk) ?? 0;
+      const transportMap = transportByMonthClient.get(mk) ?? new Map();
+      const totalCases = [...mMap.values()].reduce((s, v) => s + v.cases, 0);
+      let cases = 0, revenue = 0, profit = 0, collections = 0;
+      mMap.forEach(data => {
+        const share = totalCases > 0 ? data.cases / totalCases : 0;
+        cases += data.cases;
+        revenue += data.revenue;
+        collections += data.collections;
+        profit += data.revenue - factoryCost * share - labelsCost * share - (transportMap.get(data.clientId) ?? 0);
+      });
+      return { label: monthShort(mk), cases, revenue, profit, collections };
+    };
+
+    const months = selectedYear === 'all'
+      ? [...availableMonths].reverse()
+      : [...availableMonths].filter(m => m.startsWith(selectedYear)).reverse();
+
+    return months.map(getAggForMonth).filter(p => p.cases > 0 || p.revenue > 0);
+  }, [computedData, availableMonths, selectedYear]);
 
   // Tab 2: Clients — per-client for selected month
   const clientChartData = useMemo((): ChartPoint[] => {
@@ -353,7 +377,9 @@ const BusinessAnalyticsChart: React.FC = () => {
           <div>
             <CardTitle className="text-base font-semibold text-gray-800">Business Analytics</CardTitle>
             <p className="text-xs text-gray-400 mt-0.5">
-              {activeTab === 'overall' ? `${CURRENT_YEAR} monthly trend` : selectedMonth === 'all' ? 'All time — per client' : `${monthLabel(selectedMonth)} — per client`}
+              {activeTab === 'overall'
+                ? selectedYear === 'all' ? 'All time monthly trend' : `${selectedYear} monthly trend`
+                : selectedMonth === 'all' ? 'All time — per client' : `${monthLabel(selectedMonth)} — per client`}
             </p>
           </div>
 
@@ -384,6 +410,20 @@ const BusinessAnalyticsChart: React.FC = () => {
 
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2 mt-1">
+          {activeTab === 'overall' && (
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger className="w-36 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableYears.map(y => (
+                  <SelectItem key={y} value={y}>{y === CURRENT_YEAR ? `${y} (This Year)` : y}</SelectItem>
+                ))}
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
           {activeTab === 'clients' && (
             <>
               <Select value={selectedMonth} onValueChange={setSelectedMonth}>
@@ -428,24 +468,24 @@ const BusinessAnalyticsChart: React.FC = () => {
                   );
                 })}
               </div>
+
+              <ClientDropdown
+                dropdownRef={dropdownRef}
+                dropdownOpen={dropdownOpen}
+                setDropdownOpen={setDropdownOpen}
+                selectedClients={selectedClients}
+                filteredClientNames={filteredClientNames}
+                clientSearch={clientSearch}
+                setClientSearch={setClientSearch}
+                toggleClient={toggleClient}
+                setSelectedClients={setSelectedClients}
+              />
             </>
           )}
-
-          <ClientDropdown
-            dropdownRef={dropdownRef}
-            dropdownOpen={dropdownOpen}
-            setDropdownOpen={setDropdownOpen}
-            selectedClients={selectedClients}
-            filteredClientNames={filteredClientNames}
-            clientSearch={clientSearch}
-            setClientSearch={setClientSearch}
-            toggleClient={toggleClient}
-            setSelectedClients={setSelectedClients}
-          />
         </div>
 
-        {/* Selected client badges */}
-        {selectedClients.length > 0 && (
+        {/* Selected client badges (clients tab only) */}
+        {activeTab === 'clients' && selectedClients.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {selectedClients.map(name => (
               <Badge key={name} variant="secondary" className="gap-1 text-xs font-normal">
