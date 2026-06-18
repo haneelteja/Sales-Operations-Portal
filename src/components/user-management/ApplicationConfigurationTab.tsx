@@ -35,7 +35,6 @@ import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
 import { EditPaymentFollowupDaysDialog } from './EditPaymentFollowupDaysDialog';
 import { triggerManualBackup, getBackupConfig, getBackupLogs, formatDateInIST, formatFileSize, formatDuration, type BackupConfig, type BackupLog } from '@/services/backupService';
-import { PaymentReminderSchedules } from './PaymentReminderSchedules';
 import { Database, Play } from 'lucide-react';
 
 const BACKUP_TABLE_KEYS: string[] = [];
@@ -927,9 +926,6 @@ const ApplicationConfigurationTab: React.FC = () => {
         open={isDeprecatedClientsDialogOpen}
         onOpenChange={setIsDeprecatedClientsDialogOpen}
       />
-
-      {/* Payment Reminder Schedules */}
-      <PaymentReminderSchedules />
 
       {/* Invoice Number Format Dialog */}
       <Dialog open={isInvoiceFormatOpen} onOpenChange={setIsInvoiceFormatOpen}>

@@ -6,8 +6,9 @@ import { WhatsAppConfigurationSection } from './WhatsAppConfigurationSection';
 import { WhatsAppTemplatesSection } from './WhatsAppTemplatesSection';
 import { ProductionRecipientsSection } from './ProductionRecipientsSection';
 import { FestivalCampaignsSection } from './FestivalCampaignsSection';
+import { PaymentReminderSchedules } from './PaymentReminderSchedules';
 
-type SubTab = 'settings' | 'templates' | 'recipients' | 'campaigns';
+type SubTab = 'settings' | 'templates' | 'recipients' | 'campaigns' | 'reminders';
 
 const WhatsAppConfigurationTab: React.FC = () => {
   const { profile } = useAuth();
@@ -37,7 +38,7 @@ const WhatsAppConfigurationTab: React.FC = () => {
       {/* Sub-tabs */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex gap-6">
-          {(['settings', 'templates', 'recipients', 'campaigns'] as SubTab[]).map((tab) => (
+          {(['settings', 'templates', 'recipients', 'campaigns', 'reminders'] as SubTab[]).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -49,7 +50,7 @@ const WhatsAppConfigurationTab: React.FC = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
               ].join(' ')}
             >
-              {tab === 'settings' ? 'Settings' : tab === 'templates' ? 'Templates' : tab === 'recipients' ? 'Recipients' : 'Campaigns'}
+              {tab === 'settings' ? 'Settings' : tab === 'templates' ? 'Templates' : tab === 'recipients' ? 'Recipients' : tab === 'campaigns' ? 'Campaigns' : 'Payment Reminders'}
             </button>
           ))}
         </nav>
@@ -59,6 +60,7 @@ const WhatsAppConfigurationTab: React.FC = () => {
       {activeTab === 'templates' && <WhatsAppTemplatesSection />}
       {activeTab === 'recipients' && <ProductionRecipientsSection />}
       {activeTab === 'campaigns' && <FestivalCampaignsSection />}
+      {activeTab === 'reminders' && <PaymentReminderSchedules />}
     </div>
   );
 };
