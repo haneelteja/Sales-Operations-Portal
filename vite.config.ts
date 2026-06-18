@@ -30,6 +30,10 @@ export default defineConfig(({ mode }) => ({
 
       // Workbox configuration for the generated service worker
       workbox: {
+        // Immediately activate updated SW and claim all clients so stale JS is never served
+        skipWaiting: true,
+        clientsClaim: true,
+
         // Pre-cache the full app shell so it loads offline
         globPatterns: ["**/*.{js,css,html,ico,svg,png,woff2}"],
 
