@@ -238,17 +238,17 @@ const BusinessAnalyticsChart: React.FC = () => {
     return [...names].sort();
   }, [customers]);
 
-  const availableYears = useMemo(() => {
-    const years = new Set<string>();
-    availableMonths.forEach(m => years.add(m.slice(0, 4)));
-    return [...years].sort().reverse();
-  }, [availableMonths]);
-
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     salesTxs.forEach(tx => { if (tx.transaction_date) months.add(getMonthKey(tx.transaction_date)); });
     return [...months].sort().reverse();
   }, [salesTxs]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    availableMonths.forEach(m => years.add(m.slice(0, 4)));
+    return [...years].sort().reverse();
+  }, [availableMonths]);
 
   // Core data computation shared by both tabs
   const computedData = useMemo(() => {
