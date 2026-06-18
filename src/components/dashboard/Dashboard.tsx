@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo, memo, useCallback } from "react";
+import BusinessAnalyticsChart from "./BusinessAnalyticsChart";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Pagination } from "@/components/ui/pagination";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -782,6 +783,8 @@ const Dashboard = memo(() => {
           </Card>
         );
       })()}
+
+      <BusinessAnalyticsChart />
     </div>
   );
 });
