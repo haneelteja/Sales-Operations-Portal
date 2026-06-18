@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Send, Plus } from "lucide-react";
+import { Trash2, Send, Plus, PackageCheck } from "lucide-react";
 import { getWhatsAppConfig, sendWhatsAppMessage, sendProductionOrderNotification } from "@/services/whatsappService";
 import { getTentativeDeliveryDays } from "@/services/invoiceConfigService";
 import { logger } from "@/lib/logger";
@@ -33,6 +33,7 @@ interface OrderRow {
   expense_date?: string;
   tentative_delivery_date: string;
   status: "pending" | "dispatched";
+  stock_ready: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -369,6 +370,20 @@ const OrderManagement: React.FC = () => {
         description: error.message || "Failed to delete order",
         variant: "destructive",
       });
+    },
+  });
+
+  const stockReadyMutation = useMutation({
+    mutationFn: async ({ id, stock_ready }: { id: string; stock_ready: boolean }) => {
+      const { error } = await supabase.from("orders").update({ stock_ready }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_, variables) => {
+      log({ action: 'UPDATE', entityType: 'order', entityId: variables.id, description: `Order stock marked ${variables.stock_ready ? 'ready' : 'not ready'}`, newValues: { stock_ready: variables.stock_ready } });
+      invalidateRelated('orders');
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to update stock status", variant: "destructive" });
     },
   });
 
@@ -1304,6 +1319,7 @@ const OrderManagement: React.FC = () => {
                         />
                       </div>
                     </TableHead>
+                    <TableHead className="text-center text-gray-800 font-semibold border-b border-blue-200/50">Stock Ready</TableHead>
                     <TableHead className="text-right text-gray-800 font-semibold border-b border-blue-200/50">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1316,6 +1332,17 @@ const OrderManagement: React.FC = () => {
                       <TableCell className="text-right">{order.number_of_cases ?? "-"}</TableCell>
                       <TableCell>{order.expense_date || "-"}</TableCell>
                       <TableCell>{order.tentative_delivery_date || "-"}</TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => stockReadyMutation.mutate({ id: order.id, stock_ready: !order.stock_ready })}
+                          disabled={stockReadyMutation.isPending}
+                          title={order.stock_ready ? "Mark stock not ready" : "Mark stock ready"}
+                          className="inline-flex items-center justify-center rounded-full p-1 transition-colors hover:bg-gray-100 disabled:opacity-50"
+                        >
+                          <PackageCheck className={`h-5 w-5 ${order.stock_ready ? "text-green-500" : "text-gray-300"}`} />
+                        </button>
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -1348,7 +1375,7 @@ const OrderManagement: React.FC = () => {
                   ))}
                   {!filteredAndSortedOrders.length && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-sm text-gray-600 py-8">
+                      <TableCell colSpan={7} className="text-center text-sm text-gray-600 py-8">
                         No orders found.
                       </TableCell>
                     </TableRow>
