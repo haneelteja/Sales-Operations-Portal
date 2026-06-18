@@ -30,6 +30,7 @@ interface ChartPoint {
 }
 
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
+const CURRENT_YEAR = new Date().getFullYear().toString();
 
 const getMonthKey = (d: string) => d.slice(0, 7);
 
@@ -68,6 +69,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const BusinessAnalyticsChart: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'month' | 'year'>('month');
   const [selectedMonth, setSelectedMonth] = useState<string>(CURRENT_MONTH);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [clientSearch, setClientSearch] = useState('');
@@ -244,17 +246,35 @@ const BusinessAnalyticsChart: React.FC = () => {
       return points;
     };
 
-    if (selectedMonth === 'all') {
-      return [...availableMonths].reverse().map(mk => {
-        const pts = computePoints(mk);
-        const agg: ChartPoint = { label: monthLabel(mk), cases: 0, revenue: 0, profit: 0, collections: 0 };
-        pts.forEach(p => { agg.cases += p.cases; agg.revenue += p.revenue; agg.profit += p.profit; agg.collections += p.collections; });
-        return agg;
-      }).filter(p => p.cases > 0 || p.revenue > 0);
+    // Month tab: specific month (per-client) or all months trend
+    if (activeTab === 'month') {
+      if (selectedMonth === 'all') {
+        return [...availableMonths].reverse().map(mk => {
+          const pts = computePoints(mk);
+          const agg: ChartPoint = { label: monthLabel(mk), cases: 0, revenue: 0, profit: 0, collections: 0 };
+          pts.forEach(p => { agg.cases += p.cases; agg.revenue += p.revenue; agg.profit += p.profit; agg.collections += p.collections; });
+          return agg;
+        }).filter(p => p.cases > 0 || p.revenue > 0);
+      }
+      return computePoints(selectedMonth).sort((a, b) => b.revenue - a.revenue);
     }
 
-    return computePoints(selectedMonth).sort((a, b) => b.revenue - a.revenue);
-  }, [salesTxs, factoryPayables, labelPurchases, backLabelPurchases, transportExpenses, custMap, selectedMonth, selectedClients, availableMonths]);
+    // Year tab: all months of current year, one bar group per month
+    const yearMonths = [...availableMonths].filter(m => m.startsWith(CURRENT_YEAR)).reverse();
+    return yearMonths.map(mk => {
+      const pts = computePoints(mk);
+      const agg: ChartPoint = { label: monthLabel(mk), cases: 0, revenue: 0, profit: 0, collections: 0 };
+      pts.forEach(p => { agg.cases += p.cases; agg.revenue += p.revenue; agg.profit += p.profit; agg.collections += p.collections; });
+      return agg;
+    }).filter(p => p.cases > 0 || p.revenue > 0);
+  }, [salesTxs, factoryPayables, labelPurchases, backLabelPurchases, transportExpenses, custMap, selectedMonth, selectedClients, availableMonths, activeTab]);
+
+  const totals = useMemo(() => ({
+    cases: chartData.reduce((s, p) => s + p.cases, 0),
+    revenue: chartData.reduce((s, p) => s + p.revenue, 0),
+    profit: chartData.reduce((s, p) => s + p.profit, 0),
+    collections: chartData.reduce((s, p) => s + p.collections, 0),
+  }), [chartData]);
 
   const toggleClient = (name: string) => {
     setSelectedClients(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
@@ -268,16 +288,48 @@ const BusinessAnalyticsChart: React.FC = () => {
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <CardTitle className="text-base">Business Analytics</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {selectedMonth === 'all' ? 'Monthly trend' : `${monthLabel(selectedMonth)} — per client`}
-            </p>
+      <CardHeader className="pb-3">
+        {/* Title + tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-base">Business Analytics</CardTitle>
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('month')}
+              className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${activeTab === 'month' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              {activeTab === 'month' && selectedMonth !== 'all' ? monthLabel(selectedMonth) : 'By Month'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('year')}
+              className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${activeTab === 'year' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              {CURRENT_YEAR} (Year)
+            </button>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Month selector */}
+        </div>
+
+        {/* Totals row */}
+        {chartData.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+            {[
+              { label: 'Cases', value: totals.cases.toLocaleString('en-IN'), color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
+              { label: 'Revenue', value: fmtMoney(totals.revenue), color: 'text-green-600', bg: 'bg-green-50 border-green-100' },
+              { label: 'Profit', value: fmtMoney(totals.profit), color: totals.profit >= 0 ? 'text-purple-600' : 'text-red-500', bg: 'bg-purple-50 border-purple-100' },
+              { label: 'Collections', value: fmtMoney(totals.collections), color: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
+            ].map(({ label, value, color, bg }) => (
+              <div key={label} className={`rounded-lg border px-3 py-2 ${bg}`}>
+                <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+                <p className={`text-base font-bold leading-tight mt-0.5 ${color}`}>{value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Controls (hidden on year tab) */}
+        {activeTab === 'month' && (
+          <div className="flex flex-wrap items-center gap-3 mt-3">
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-44">
                 <SelectValue />
@@ -308,7 +360,69 @@ const BusinessAnalyticsChart: React.FC = () => {
                 <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
               </Button>
               {dropdownOpen && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-xl w-64 p-2">
+                <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-xl w-64 p-2">
+                  <Input
+                    placeholder="Search clients..."
+                    value={clientSearch}
+                    onChange={e => setClientSearch(e.target.value)}
+                    className="mb-2 h-8 text-sm"
+                  />
+                  <div className="max-h-52 overflow-y-auto space-y-0.5">
+                    {filteredClientNames.map(name => (
+                      <div
+                        key={name}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
+                        onClick={() => toggleClient(name)}
+                      >
+                        <Checkbox
+                          checked={selectedClients.includes(name)}
+                          onCheckedChange={() => toggleClient(name)}
+                        />
+                        <span className="text-sm truncate">{name}</span>
+                      </div>
+                    ))}
+                    {filteredClientNames.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-3">No clients found</p>
+                    )}
+                  </div>
+                  {selectedClients.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full mt-2 h-7 text-xs"
+                      onClick={() => setSelectedClients([])}
+                    >
+                      Clear selection
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Client filter also available on year tab — show badges always */}
+          </div>
+        )}
+
+        {/* Year tab: client filter */}
+        {activeTab === 'year' && (
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            <div ref={dropdownRef} className="relative">
+              <Button
+                type="button"
+                variant="outline"
+                className="min-w-40 justify-between gap-2"
+                onClick={() => setDropdownOpen(o => !o)}
+              >
+                <span className="truncate">
+                  {selectedClients.length === 0
+                    ? 'All Clients'
+                    : `${selectedClients.length} client${selectedClients.length > 1 ? 's' : ''}`}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+              {dropdownOpen && (
+                <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-xl w-64 p-2">
                   <Input
                     placeholder="Search clients..."
                     value={clientSearch}
@@ -348,7 +462,7 @@ const BusinessAnalyticsChart: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
+        )}
 
         {/* Selected client badges */}
         {selectedClients.length > 0 && (
