@@ -1,13 +1,8 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronDown, X } from 'lucide-react';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
@@ -132,56 +127,13 @@ const TotalsRow = ({ totals }: { totals: { cases: number; revenue: number; profi
   </div>
 );
 
-const ClientDropdown = ({
-  dropdownRef, dropdownOpen, setDropdownOpen,
-  selectedClients, filteredClientNames, clientSearch, setClientSearch,
-  toggleClient, setSelectedClients,
-}: any) => (
-  <div ref={dropdownRef} className="relative">
-    <Button type="button" variant="outline" className="min-w-40 justify-between gap-2 h-8 text-sm" onClick={() => setDropdownOpen((o: boolean) => !o)}>
-      <span className="truncate">
-        {selectedClients.length === 0 ? 'All Clients' : `${selectedClients.length} client${selectedClients.length > 1 ? 's' : ''}`}
-      </span>
-      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
-    </Button>
-    {dropdownOpen && (
-      <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-64 p-2">
-        <Input placeholder="Search clients..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="mb-2 h-8 text-sm" />
-        <div className="max-h-52 overflow-y-auto space-y-0.5">
-          {filteredClientNames.map((name: string) => (
-            <div key={name} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer" onClick={() => toggleClient(name)}>
-              <Checkbox checked={selectedClients.includes(name)} onCheckedChange={() => toggleClient(name)} />
-              <span className="text-sm truncate">{name}</span>
-            </div>
-          ))}
-          {filteredClientNames.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No clients found</p>}
-        </div>
-        {selectedClients.length > 0 && (
-          <Button type="button" variant="ghost" size="sm" className="w-full mt-2 h-7 text-xs" onClick={() => setSelectedClients([])}>Clear selection</Button>
-        )}
-      </div>
-    )}
-  </div>
-);
 
 const BusinessAnalyticsChart: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overall' | 'clients'>('overall');
   const [selectedYear, setSelectedYear] = useState<string>(CURRENT_YEAR);
   const [selectedOverallMonth, setSelectedOverallMonth] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(CURRENT_MONTH);
-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [activeMetrics, setActiveMetrics] = useState<Set<string>>(new Set(['cases', 'revenue', 'profit', 'collections']));
-  const [clientSearch, setClientSearch] = useState('');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   const { data: salesTxs = [] } = useQuery({
     queryKey: ['biz-analytics-sales'],
@@ -248,12 +200,6 @@ const BusinessAnalyticsChart: React.FC = () => {
     return m;
   }, [customers]);
 
-  const allClientNames = useMemo(() => {
-    const names = new Set<string>();
-    customers.forEach(c => names.add(c.client_name));
-    return [...names].sort();
-  }, [customers]);
-
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     salesTxs.forEach(tx => { if (tx.transaction_date) months.add(getMonthKey(tx.transaction_date)); });
@@ -318,7 +264,6 @@ const BusinessAnalyticsChart: React.FC = () => {
     const totalCases = [...mMap.values()].reduce((s, v) => s + v.cases, 0);
     const points: ChartPoint[] = [];
     mMap.forEach((data, clientName) => {
-      if (selectedClients.length > 0 && !selectedClients.includes(clientName)) return;
       const share = totalCases > 0 ? data.cases / totalCases : 0;
       const profit = data.revenue - factoryCost * share - labelsCost * share - (transportMap.get(data.clientId) ?? 0);
       points.push({ label: clientName, cases: data.cases, revenue: data.revenue, profit, collections: data.collections });
@@ -371,7 +316,7 @@ const BusinessAnalyticsChart: React.FC = () => {
       return [...clientMap.values()].sort((a, b) => b.revenue - a.revenue);
     }
     return getPointsForMonth(selectedMonth).sort((a, b) => b.revenue - a.revenue);
-  }, [computedData, selectedMonth, availableMonths, selectedClients]);
+  }, [computedData, selectedMonth, availableMonths]);
 
   const chartData = activeTab === 'overall' ? overallChartData : clientChartData;
 
@@ -387,8 +332,6 @@ const BusinessAnalyticsChart: React.FC = () => {
     return availableMonths.filter(m => m.startsWith(selectedYear));
   }, [availableMonths, selectedYear]);
 
-  const toggleClient = (name: string) => setSelectedClients(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
-  const filteredClientNames = allClientNames.filter(n => n.toLowerCase().includes(clientSearch.toLowerCase()));
   const chartWidth = Math.max(560, chartData.length * (activeTab === 'overall' ? 80 : 68));
   const barSize = activeTab === 'overall' ? 18 : 14;
 
@@ -495,47 +438,19 @@ const BusinessAnalyticsChart: React.FC = () => {
           )}
 
           {activeTab === 'clients' && (
-            <>
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="w-44 h-8 text-sm bg-white/10 border-white/10 text-slate-200 hover:bg-white/15">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableMonths.map(m => (
-                    <SelectItem key={m} value={m}>{m === CURRENT_MONTH ? `${monthLabel(m)} (Current)` : monthLabel(m)}</SelectItem>
-                  ))}
-                  <SelectItem value="all">All Time</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <ClientDropdown
-                dropdownRef={dropdownRef}
-                dropdownOpen={dropdownOpen}
-                setDropdownOpen={setDropdownOpen}
-                selectedClients={selectedClients}
-                filteredClientNames={filteredClientNames}
-                clientSearch={clientSearch}
-                setClientSearch={setClientSearch}
-                toggleClient={toggleClient}
-                setSelectedClients={setSelectedClients}
-              />
-            </>
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="w-44 h-8 text-sm bg-white/10 border-white/10 text-slate-200 hover:bg-white/15">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableMonths.map(m => (
+                  <SelectItem key={m} value={m}>{m === CURRENT_MONTH ? `${monthLabel(m)} (Current)` : monthLabel(m)}</SelectItem>
+                ))}
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
           )}
         </div>
-
-        {/* Selected client badges (clients tab only) */}
-        {activeTab === 'clients' && selectedClients.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {selectedClients.map(name => (
-              <Badge key={name} variant="secondary" className="gap-1 text-xs font-normal">
-                {name}
-                <button type="button" aria-label={`Remove ${name}`} onClick={() => toggleClient(name)} className="hover:text-destructive">
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
-          </div>
-        )}
       </CardHeader>
 
       <CardContent className="pt-0">
