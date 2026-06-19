@@ -47,11 +47,18 @@ const fmtMoney = (v: number) => {
 };
 
 const LINE_COLORS = {
-  cases: '#818cf8',
-  revenue: '#10b981',
-  profit: '#f59e0b',
-  collections: '#38bdf8',
+  cases: '#7c3aed',      // violet-700
+  revenue: '#059669',    // emerald-600
+  profit: '#d97706',     // amber-600
+  collections: '#0284c7', // sky-600
 };
+
+const METRIC_META = [
+  { key: 'cases',       label: 'Cases',       color: LINE_COLORS.cases,       pastel: '#ede9fe', text: '#5b21b6' },
+  { key: 'revenue',     label: 'Revenue',     color: LINE_COLORS.revenue,     pastel: '#d1fae5', text: '#065f46' },
+  { key: 'profit',      label: 'Profit',      color: LINE_COLORS.profit,      pastel: '#fef3c7', text: '#92400e' },
+  { key: 'collections', label: 'Collections', color: LINE_COLORS.collections, pastel: '#e0f2fe', text: '#075985' },
+] as const;
 
 const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
   ({ x, y, value }: any) => {
@@ -59,8 +66,9 @@ const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
     const text = fmt(value);
     return (
       <g>
+        {/* white halo so label reads over crossing lines */}
         <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
-          stroke="#0f172a" strokeWidth={4} strokeLinejoin="round" fill="#0f172a">{text}</text>
+          stroke="white" strokeWidth={4} strokeLinejoin="round" fill="white">{text}</text>
         <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
           fill={color}>{text}</text>
       </g>
@@ -70,33 +78,32 @@ const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white/95 backdrop-blur border border-gray-100 rounded-xl shadow-xl p-3 text-sm min-w-[180px]">
-      <p className="font-semibold text-gray-700 mb-2 pb-2 border-b border-gray-100">{label}</p>
-      {payload.map((entry: any) => (
-        <div key={entry.name} className="flex items-center justify-between gap-6 py-0.5">
-          <span className="flex items-center gap-1.5 text-gray-500">
-            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: LINE_COLORS[entry.dataKey as keyof typeof LINE_COLORS] ?? entry.color }} />
-            {entry.name}
-          </span>
-          <span className={`font-semibold tabular-nums ${entry.dataKey === 'profit' && entry.value < 0 ? 'text-red-500' : 'text-gray-800'}`}>
-            {entry.dataKey === 'cases' ? entry.value.toLocaleString('en-IN') : fmtMoney(entry.value)}
-          </span>
-        </div>
-      ))}
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-2xl p-3.5 text-sm min-w-[190px]">
+      <p className="font-semibold text-gray-800 mb-2 pb-2 border-b border-gray-100 text-xs uppercase tracking-wide">{label}</p>
+      {payload.map((entry: any) => {
+        const meta = METRIC_META.find(m => m.key === entry.dataKey);
+        return (
+          <div key={entry.name} className="flex items-center justify-between gap-6 py-0.5">
+            <span className="flex items-center gap-1.5 text-gray-500 text-xs">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ background: meta?.color ?? entry.color }} />
+              {entry.name}
+            </span>
+            <span className={`font-bold tabular-nums text-xs ${entry.dataKey === 'profit' && entry.value < 0 ? 'text-red-500' : ''}`}
+              style={{ color: entry.dataKey === 'profit' && entry.value < 0 ? undefined : meta?.color }}>
+              {entry.dataKey === 'cases' ? entry.value.toLocaleString('en-IN') : fmtMoney(entry.value)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 };
 
 const CustomLegend = () => (
-  <div className="flex flex-wrap justify-center gap-4 pt-2">
-    {[
-      { key: 'cases', label: 'Cases', color: LINE_COLORS.cases },
-      { key: 'revenue', label: 'Revenue', color: LINE_COLORS.revenue },
-      { key: 'profit', label: 'Profit', color: LINE_COLORS.profit },
-      { key: 'collections', label: 'Collections', color: LINE_COLORS.collections },
-    ].map(({ key, label, color }) => (
-      <span key={key} className="flex items-center gap-1.5 text-xs text-slate-400">
-        <span className="h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+  <div className="flex flex-wrap justify-center gap-5 pt-1">
+    {METRIC_META.map(({ key, label, color }) => (
+      <span key={key} className="flex items-center gap-1.5 text-xs font-medium" style={{ color }}>
+        <span className="h-3 w-3 rounded-full opacity-80" style={{ background: color }} />
         {label}
       </span>
     ))}
@@ -104,19 +111,19 @@ const CustomLegend = () => (
 );
 
 const TotalsRow = ({ totals }: { totals: { cases: number; revenue: number; profit: number; collections: number } }) => (
-  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
     {[
-      { label: 'Total Cases', value: totals.cases.toLocaleString('en-IN'), color: 'text-indigo-300', dot: '#818cf8', bg: 'bg-indigo-500/10 border-indigo-500/20' },
-      { label: 'Revenue', value: fmtMoney(totals.revenue), color: 'text-emerald-300', dot: '#10b981', bg: 'bg-emerald-500/10 border-emerald-500/20' },
-      { label: 'Profit', value: fmtMoney(totals.profit), color: totals.profit >= 0 ? 'text-amber-300' : 'text-red-400', dot: totals.profit >= 0 ? '#f59e0b' : '#f87171', bg: 'bg-amber-500/10 border-amber-500/20' },
-      { label: 'Collections', value: fmtMoney(totals.collections), color: 'text-sky-300', dot: '#38bdf8', bg: 'bg-sky-500/10 border-sky-500/20' },
-    ].map(({ label, value, color, dot, bg }) => (
-      <div key={label} className={`rounded-xl px-3 py-2.5 ${bg} border`}>
-        <div className="flex items-center gap-1.5 mb-1">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
-          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{label}</p>
+      { label: 'Total Cases', value: totals.cases.toLocaleString('en-IN'), meta: METRIC_META[0] },
+      { label: 'Revenue',     value: fmtMoney(totals.revenue),             meta: METRIC_META[1] },
+      { label: 'Profit',      value: fmtMoney(totals.profit),              meta: totals.profit >= 0 ? METRIC_META[2] : { ...METRIC_META[2], color: '#dc2626', pastel: '#fee2e2', text: '#991b1b' } },
+      { label: 'Collections', value: fmtMoney(totals.collections),         meta: METRIC_META[3] },
+    ].map(({ label, value, meta }) => (
+      <div key={label} className="rounded-2xl px-4 py-3 border" style={{ background: meta.pastel, borderColor: `${meta.color}25` }}>
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
+          <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: meta.text }}>{label}</p>
         </div>
-        <p className={`text-base font-bold leading-none ${color}`}>{value}</p>
+        <p className="text-xl font-bold leading-none tabular-nums" style={{ color: meta.color }}>{value}</p>
       </div>
     ))}
   </div>
@@ -294,12 +301,12 @@ const BusinessAnalyticsChart: React.FC = () => {
   const chartWidth = Math.max(560, chartData.length * 80);
 
   return (
-    <Card className="border-0 shadow-xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 overflow-hidden">
+    <Card className="border border-gray-100 shadow-sm bg-white overflow-hidden">
       <CardHeader className="pb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-base font-semibold text-white">Business Analytics</CardTitle>
-            <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>
+            <CardTitle className="text-base font-semibold text-gray-900">Business Analytics</CardTitle>
+            <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
           </div>
         </div>
 
@@ -308,12 +315,7 @@ const BusinessAnalyticsChart: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 mt-1">
           {/* Metric toggles */}
           <div className="flex items-center gap-1">
-            {([
-              { key: 'cases', label: 'Cases', color: '#818cf8' },
-              { key: 'revenue', label: 'Revenue', color: '#10b981' },
-              { key: 'profit', label: 'Profit', color: '#f59e0b' },
-              { key: 'collections', label: 'Collections', color: '#38bdf8' },
-            ] as const).map(({ key, label, color }) => {
+            {METRIC_META.map(({ key, label, color }) => {
               const on = activeMetrics.has(key);
               return (
                 <button
@@ -326,7 +328,7 @@ const BusinessAnalyticsChart: React.FC = () => {
                     return next;
                   })}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                    on ? 'text-white border-transparent' : 'text-slate-400 border-white/10 hover:border-white/30'
+                    on ? 'text-white border-transparent' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
                   }`}
                   style={on ? { background: color, borderColor: color } : {}}
                 >
@@ -339,7 +341,7 @@ const BusinessAnalyticsChart: React.FC = () => {
 
           {/* Year selector */}
           <Select value={selectedYear} onValueChange={v => { setSelectedYear(v); setSelectedOverallMonth('all'); }}>
-            <SelectTrigger className="w-36 h-8 text-sm bg-white/10 border-white/10 text-slate-200 hover:bg-white/15">
+            <SelectTrigger className="w-36 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -352,7 +354,7 @@ const BusinessAnalyticsChart: React.FC = () => {
 
           {/* Month selector */}
           <Select value={selectedOverallMonth} onValueChange={setSelectedOverallMonth}>
-            <SelectTrigger className="w-44 h-8 text-sm bg-white/10 border-white/10 text-slate-200 hover:bg-white/15">
+            <SelectTrigger className="w-44 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -367,7 +369,7 @@ const BusinessAnalyticsChart: React.FC = () => {
 
       <CardContent className="pt-0">
         {chartData.length === 0 ? (
-          <div className="flex items-center justify-center h-56 text-sm text-slate-500">
+          <div className="flex items-center justify-center h-56 text-sm text-gray-400">
             No data for the selected period.
           </div>
         ) : (
@@ -375,16 +377,16 @@ const BusinessAnalyticsChart: React.FC = () => {
             <div style={{ minWidth: chartWidth }} className="px-2">
               <ResponsiveContainer width="100%" height={340}>
                 <ComposedChart data={chartData} margin={{ top: 28, right: 16, left: 4, bottom: 20 }} barCategoryGap="25%">
-                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} interval={0} />
-                  <YAxis yAxisId="cases" orientation="left" tickFormatter={v => v.toLocaleString('en-IN')} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={48} />
-                  <YAxis yAxisId="money" orientation="right" tickFormatter={fmtMoney} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={56} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={0} />
+                  <YAxis yAxisId="cases" orientation="left" tickFormatter={v => v.toLocaleString('en-IN')} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={48} />
+                  <YAxis yAxisId="money" orientation="right" tickFormatter={fmtMoney} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={56} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(100,116,139,0.06)' }} />
                   <Legend content={<CustomLegend />} />
-                  {activeMetrics.has('cases') && <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke="#818cf8" strokeWidth={2.5} dot={{ r: 5, fill: '#818cf8', strokeWidth: 2, stroke: '#1e1b4b' }} activeDot={{ r: 7, fill: '#818cf8', stroke: '#1e1b4b', strokeWidth: 2 }} label={makeDotLabel('#818cf8', v => v.toLocaleString('en-IN'), -12)} />}
-                  {activeMetrics.has('revenue') && <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#022c22' }} activeDot={{ r: 7, fill: '#10b981', stroke: '#022c22', strokeWidth: 2 }} label={makeDotLabel('#10b981', fmtMoney, -12)} />}
-                  {activeMetrics.has('profit') && <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: '#f59e0b', strokeWidth: 2, stroke: '#1c1400' }} activeDot={{ r: 7, fill: '#f59e0b', stroke: '#1c1400', strokeWidth: 2 }} label={makeDotLabel('#f59e0b', fmtMoney, 20)} />}
-                  {activeMetrics.has('collections') && <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 5, fill: '#38bdf8', strokeWidth: 2, stroke: '#082f49' }} activeDot={{ r: 7, fill: '#38bdf8', stroke: '#082f49', strokeWidth: 2 }} label={makeDotLabel('#38bdf8', fmtMoney, -24)} />}
+                  {activeMetrics.has('cases') && <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke={LINE_COLORS.cases} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.cases, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.cases, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.cases, v => v.toLocaleString('en-IN'), -12)} />}
+                  {activeMetrics.has('revenue') && <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke={LINE_COLORS.revenue} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.revenue, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.revenue, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.revenue, fmtMoney, -12)} />}
+                  {activeMetrics.has('profit') && <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke={LINE_COLORS.profit} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.profit, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.profit, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.profit, fmtMoney, 20)} />}
+                  {activeMetrics.has('collections') && <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke={LINE_COLORS.collections} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.collections, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.collections, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.collections, fmtMoney, -24)} />}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
