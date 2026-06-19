@@ -60,8 +60,11 @@ const METRIC_META = [
   { key: 'collections', label: 'Collections', color: LINE_COLORS.collections, pastel: '#e0f2fe', text: '#075985' },
 ] as const;
 
+interface DotLabelProps { x?: number; y?: number; value?: number }
+interface TooltipEntry { name: string; dataKey: string; value: number; color: string }
+
 const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
-  ({ x, y, value }: any) => {
+  ({ x, y, value }: DotLabelProps) => {
     if (value == null) return null;
     const text = fmt(value);
     return (
@@ -75,12 +78,12 @@ const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
     );
   };
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-gray-100 rounded-2xl shadow-2xl p-3.5 text-sm min-w-[190px]">
       <p className="font-semibold text-gray-800 mb-2 pb-2 border-b border-gray-100 text-xs uppercase tracking-wide">{label}</p>
-      {payload.map((entry: any) => {
+      {payload.map((entry: TooltipEntry) => {
         const meta = METRIC_META.find(m => m.key === entry.dataKey);
         return (
           <div key={entry.name} className="flex items-center justify-between gap-6 py-0.5">
@@ -167,7 +170,8 @@ const BusinessAnalyticsChart: React.FC = () => {
   const { data: backLabelPurchases = [] } = useQuery({
     queryKey: ['biz-analytics-back-labels'],
     queryFn: async () => {
-      const { data } = await (supabase as any).from('back_label_purchases').select('purchase_date, total_amount');
+      type BackLabelClient = { from: (t: string) => { select: (c: string) => Promise<{ data: { purchase_date: string; total_amount: number }[] | null }> } };
+      const { data } = await (supabase as unknown as BackLabelClient).from('back_label_purchases').select('purchase_date, total_amount');
       return (data ?? []) as { purchase_date: string; total_amount: number }[];
     },
     staleTime: 5 * 60 * 1000,
