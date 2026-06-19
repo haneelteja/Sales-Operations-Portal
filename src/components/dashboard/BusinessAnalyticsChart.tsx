@@ -66,9 +66,9 @@ const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
     const text = fmt(value);
     return (
       <g>
-        {/* white halo so label is readable over crossing lines */}
+        {/* dark halo so label is readable over crossing lines on dark background */}
         <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
-          stroke="white" strokeWidth={4} strokeLinejoin="round" fill="white">{text}</text>
+          stroke="#0f172a" strokeWidth={4} strokeLinejoin="round" fill="#0f172a">{text}</text>
         <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
           fill={color}>{text}</text>
       </g>
@@ -116,15 +116,15 @@ const CustomLegend = () => (
 const TotalsRow = ({ totals }: { totals: { cases: number; revenue: number; profit: number; collections: number } }) => (
   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
     {[
-      { label: 'Total Cases', value: totals.cases.toLocaleString('en-IN'), color: 'text-indigo-600', dot: 'bg-indigo-400', bg: 'bg-indigo-50/60' },
-      { label: 'Revenue', value: fmtMoney(totals.revenue), color: 'text-emerald-600', dot: 'bg-emerald-400', bg: 'bg-emerald-50/60' },
-      { label: 'Profit', value: fmtMoney(totals.profit), color: totals.profit >= 0 ? 'text-amber-600' : 'text-red-500', dot: totals.profit >= 0 ? 'bg-amber-400' : 'bg-red-400', bg: 'bg-amber-50/60' },
-      { label: 'Collections', value: fmtMoney(totals.collections), color: 'text-sky-600', dot: 'bg-sky-400', bg: 'bg-sky-50/60' },
+      { label: 'Total Cases', value: totals.cases.toLocaleString('en-IN'), color: 'text-indigo-300', dot: '#818cf8', bg: 'bg-indigo-500/10 border-indigo-500/20' },
+      { label: 'Revenue', value: fmtMoney(totals.revenue), color: 'text-emerald-300', dot: '#10b981', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+      { label: 'Profit', value: fmtMoney(totals.profit), color: totals.profit >= 0 ? 'text-amber-300' : 'text-red-400', dot: totals.profit >= 0 ? '#f59e0b' : '#f87171', bg: 'bg-amber-500/10 border-amber-500/20' },
+      { label: 'Collections', value: fmtMoney(totals.collections), color: 'text-sky-300', dot: '#38bdf8', bg: 'bg-sky-500/10 border-sky-500/20' },
     ].map(({ label, value, color, dot, bg }) => (
-      <div key={label} className={`rounded-xl px-3 py-2.5 ${bg} border border-white/80`}>
+      <div key={label} className={`rounded-xl px-3 py-2.5 ${bg} border`}>
         <div className="flex items-center gap-1.5 mb-1">
-          <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
+          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{label}</p>
         </div>
         <p className={`text-base font-bold leading-none ${color}`}>{value}</p>
       </div>
@@ -393,13 +393,13 @@ const BusinessAnalyticsChart: React.FC = () => {
   const barSize = activeTab === 'overall' ? 18 : 14;
 
   return (
-    <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-slate-50/50">
+    <Card className="border-0 shadow-xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 overflow-hidden">
       <CardHeader className="pb-4">
         {/* Header row */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-base font-semibold text-gray-800">Business Analytics</CardTitle>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <CardTitle className="text-base font-semibold text-white">Business Analytics</CardTitle>
+            <p className="text-xs text-slate-400 mt-0.5">
               {activeTab === 'overall'
                 ? selectedOverallMonth !== 'all'
                   ? `${monthLabel(selectedOverallMonth)} — overall`
@@ -409,7 +409,7 @@ const BusinessAnalyticsChart: React.FC = () => {
           </div>
 
           {/* Tab switcher */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
+          <div className="flex items-center bg-white/10 rounded-lg p-0.5 gap-0.5">
             {([
               { key: 'overall', label: 'Overall' },
               { key: 'clients', label: 'Clients' },
@@ -421,7 +421,7 @@ const BusinessAnalyticsChart: React.FC = () => {
                 className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-150 ${
                   activeTab === tab.key
                     ? 'bg-white shadow text-gray-900'
-                    : 'text-gray-500 hover:text-gray-700'
+                    : 'text-slate-400 hover:text-white'
                 }`}
               >
                 {tab.label}
@@ -435,10 +435,41 @@ const BusinessAnalyticsChart: React.FC = () => {
 
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2 mt-1">
+          {/* Shared metric toggles — shown on both tabs */}
+          <div className="flex items-center gap-1">
+            {([
+              { key: 'cases', label: 'Cases', color: '#818cf8' },
+              { key: 'revenue', label: 'Revenue', color: '#10b981' },
+              { key: 'profit', label: 'Profit', color: '#f59e0b' },
+              { key: 'collections', label: 'Collections', color: '#38bdf8' },
+            ] as const).map(({ key, label, color }) => {
+              const on = activeMetrics.has(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveMetrics(prev => {
+                    const next = new Set(prev);
+                    if (next.has(key) && next.size > 1) next.delete(key);
+                    else next.add(key);
+                    return next;
+                  })}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                    on ? 'text-white border-transparent' : 'text-slate-400 border-white/10 hover:border-white/30'
+                  }`}
+                  style={on ? { background: color, borderColor: color } : {}}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? '#fff' : color }} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           {activeTab === 'overall' && (
             <>
               <Select value={selectedYear} onValueChange={v => { setSelectedYear(v); setSelectedOverallMonth('all'); }}>
-                <SelectTrigger className="w-36 h-8 text-sm">
+                <SelectTrigger className="w-36 h-8 text-sm bg-white/10 border-white/10 text-slate-200 hover:bg-white/15">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -450,7 +481,7 @@ const BusinessAnalyticsChart: React.FC = () => {
               </Select>
 
               <Select value={selectedOverallMonth} onValueChange={setSelectedOverallMonth}>
-                <SelectTrigger className="w-44 h-8 text-sm">
+                <SelectTrigger className="w-44 h-8 text-sm bg-white/10 border-white/10 text-slate-200 hover:bg-white/15">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -466,7 +497,7 @@ const BusinessAnalyticsChart: React.FC = () => {
           {activeTab === 'clients' && (
             <>
               <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="w-44 h-8 text-sm">
+                <SelectTrigger className="w-44 h-8 text-sm bg-white/10 border-white/10 text-slate-200 hover:bg-white/15">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -476,37 +507,6 @@ const BusinessAnalyticsChart: React.FC = () => {
                   <SelectItem value="all">All Time</SelectItem>
                 </SelectContent>
               </Select>
-
-              {/* Metric toggles */}
-              <div className="flex items-center gap-1">
-                {([
-                  { key: 'cases', label: 'Cases', color: '#818cf8' },
-                  { key: 'revenue', label: 'Revenue', color: '#10b981' },
-                  { key: 'profit', label: 'Profit', color: '#f59e0b' },
-                  { key: 'collections', label: 'Collections', color: '#38bdf8' },
-                ] as const).map(({ key, label, color }) => {
-                  const on = activeMetrics.has(key);
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setActiveMetrics(prev => {
-                        const next = new Set(prev);
-                        if (next.has(key) && next.size > 1) next.delete(key);
-                        else next.add(key);
-                        return next;
-                      })}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                        on ? 'text-white border-transparent' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                      }`}
-                      style={on ? { background: color, borderColor: color } : {}}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? '#fff' : color }} />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
 
               <ClientDropdown
                 dropdownRef={dropdownRef}
@@ -540,7 +540,7 @@ const BusinessAnalyticsChart: React.FC = () => {
 
       <CardContent className="pt-0">
         {chartData.length === 0 ? (
-          <div className="flex items-center justify-center h-56 text-sm text-gray-400">
+          <div className="flex items-center justify-center h-56 text-sm text-slate-500">
             No data for the selected period.
           </div>
         ) : (
@@ -548,12 +548,12 @@ const BusinessAnalyticsChart: React.FC = () => {
             <div style={{ minWidth: chartWidth }} className="px-2">
               <ResponsiveContainer width="100%" height={340}>
                 <ComposedChart data={chartData} margin={{ top: activeTab === 'overall' ? 28 : 4, right: 16, left: 4, bottom: activeTab === 'clients' ? 70 : 20 }} barGap={2} barCategoryGap="25%">
-                  <CartesianGrid strokeDasharray="4 4" stroke="#f1f5f9" vertical={false} />
+                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.06)" vertical={false} />
                   <XAxis
                     dataKey="label"
                     angle={activeTab === 'clients' ? -40 : 0}
                     textAnchor={activeTab === 'clients' ? 'end' : 'middle'}
-                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                     axisLine={false}
                     tickLine={false}
                     interval={0}
@@ -562,7 +562,7 @@ const BusinessAnalyticsChart: React.FC = () => {
                     yAxisId="cases"
                     orientation="left"
                     tickFormatter={v => v.toLocaleString('en-IN')}
-                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                     axisLine={false}
                     tickLine={false}
                     width={48}
@@ -571,19 +571,19 @@ const BusinessAnalyticsChart: React.FC = () => {
                     yAxisId="money"
                     orientation="right"
                     tickFormatter={fmtMoney}
-                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                     axisLine={false}
                     tickLine={false}
                     width={56}
                   />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                   <Legend content={<CustomLegend />} />
                   {activeTab === 'overall' ? (
                     <>
-                      <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke="#818cf8" strokeWidth={2.5} dot={{ r: 5, fill: '#818cf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#818cf8', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#818cf8', v => v.toLocaleString('en-IN'), -12)} />
-                      <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#10b981', fmtMoney, -12)} />
-                      <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#f59e0b', fmtMoney, 20)} />
-                      <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 5, fill: '#38bdf8', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#38bdf8', stroke: '#fff', strokeWidth: 2 }} label={makeDotLabel('#38bdf8', fmtMoney, -24)} />
+                      {activeMetrics.has('cases') && <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke="#818cf8" strokeWidth={2.5} dot={{ r: 5, fill: '#818cf8', strokeWidth: 2, stroke: '#1e1b4b' }} activeDot={{ r: 7, fill: '#818cf8', stroke: '#1e1b4b', strokeWidth: 2 }} label={makeDotLabel('#818cf8', v => v.toLocaleString('en-IN'), -12)} />}
+                      {activeMetrics.has('revenue') && <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#022c22' }} activeDot={{ r: 7, fill: '#10b981', stroke: '#022c22', strokeWidth: 2 }} label={makeDotLabel('#10b981', fmtMoney, -12)} />}
+                      {activeMetrics.has('profit') && <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: '#f59e0b', strokeWidth: 2, stroke: '#1c1400' }} activeDot={{ r: 7, fill: '#f59e0b', stroke: '#1c1400', strokeWidth: 2 }} label={makeDotLabel('#f59e0b', fmtMoney, 20)} />}
+                      {activeMetrics.has('collections') && <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 5, fill: '#38bdf8', strokeWidth: 2, stroke: '#082f49' }} activeDot={{ r: 7, fill: '#38bdf8', stroke: '#082f49', strokeWidth: 2 }} label={makeDotLabel('#38bdf8', fmtMoney, -24)} />}
                     </>
                   ) : (
                     <>
