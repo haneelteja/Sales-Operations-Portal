@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchReceivablesTracking, type FetchResult as ReceivablesFetchResult } from "@/components/receivables-tracking/ReceivablesTrackingView";
+import { fetchReceivablesTracking, type FetchResult as ReceivablesFetchResult } from "@/lib/receivablesUtils";
 import { getQueryConfig } from "@/lib/query-configs";
 import {
   DollarSign,
