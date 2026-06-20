@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(sql|json|ts\\)$\")",
+      "Bash(xargs grep -l \"follow_up\\\\|follow-up\\\\|receivable\")",
+      "Bash(xargs grep -l \"client_followup\\\\|payment_reminder\")",
+      "Bash(xargs grep -l \"credit_limit\\\\|is_deprecated\")",
+      "Bash(awk '{print $NF}')",
+      "Bash(xargs grep -l \"customers\")",
+      "Bash(xargs grep -l \"interface.*Customer\\\\|type.*Customer\")",
+      "Bash(powershell -Command \"\\(Get-Content f141fc11-cdca-4fa3-ac16-4d317598d71e.jsonl | Select-String '2024|2025' | Select-String 'Haneel|Venu|Morya|GMG' -A 2 -B 2 | Select-Object -First 200 | Out-String\\)\")",
+      "Bash(grep -E \"\\\\.\\(tsx|ts|sql\\)$\")",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(xargs grep -l \"price_per_bottle\\\\|price_per_case\")",
+      "Bash(xargs grep -l \"customers.*select\\\\|customer.*pricing\")",
+      "Bash(mkdir -p \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1/.claude/commands\")",
+      "Bash(mkdir -p \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1/.claude/skills\")"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '=== AAMODHA PORTAL — SESSION RULES ===' && echo '1. SUPABASE FIRST: npx supabase db push BEFORE git push (if any .sql files changed)' && echo '2. COMMIT + PUSH after every completed change' && echo '3. TYPESCRIPT: npx tsc --noEmit must pass before committing' && echo '4. MIGRATIONS are append-only — never edit a migration already pushed' && echo '' && echo '--- Git status ---' && git -C \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1\" status --short 2>/dev/null | head -15",
+            "timeout": 15,
+            "statusMessage": "Loading Aamodha Portal session context"
+          }
+        ]
+      }
+    ]
+  }
+}

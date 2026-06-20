@@ -45,3 +45,4 @@ Detailed guidance in `.claude/skills/`:
 - `security-and-hardening.md` — RLS, data exposure, input handling
 - `debugging.md` — Systematic debugging workflow
 - `git-workflow.md` — Commit discipline and migration naming
+- `hooks.md` — Claude Code lifecycle hooks pattern (SessionStart, PreToolUse)
