@@ -138,6 +138,7 @@ const LabelPurchases = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
   const [monthFilter, setMonthFilter] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
 
   // Filtering and sorting state
   const [searchTerm, setSearchTerm] = useState("");
@@ -515,13 +516,30 @@ const LabelPurchases = () => {
     return [...months].sort().reverse();
   }, [purchases]);
 
+  const availableClients = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { id: string; label: string }[] = [];
+    (purchases || []).forEach(p => {
+      if (p.client_id && !seen.has(p.client_id)) {
+        seen.add(p.client_id);
+        const customer = customers?.find(c => c.id === p.client_id);
+        if (customer?.client_name) result.push({ id: p.client_id, label: customer.client_name });
+      }
+    });
+    return result.sort((a, b) => a.label.localeCompare(b.label));
+  }, [purchases, customers]);
+
   // Filter and sort purchases
   const filteredAndSortedPurchases = useMemo(() => {
     if (!purchases) return [];
 
-    const baseList = monthFilter
+    const byMonth = monthFilter
       ? purchases.filter(p => (p.purchase_date || '').startsWith(monthFilter))
       : purchases;
+
+    const baseList = clientFilter
+      ? byMonth.filter(p => p.client_id === clientFilter)
+      : byMonth;
 
     const filtered = baseList.filter((purchase) => {
       if (debouncedSearchTerm) {
@@ -580,7 +598,7 @@ const LabelPurchases = () => {
     });
 
     return filtered;
-  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts, customers, monthFilter]);
+  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts, customers, monthFilter, clientFilter]);
 
   const totalPurchases = useMemo(
     () => filteredAndSortedPurchases.reduce((sum, p) => sum + (p.total_amount || 0), 0),
@@ -619,6 +637,7 @@ const LabelPurchases = () => {
   const clearAllFilters = useCallback(() => {
     setSearchTerm("");
     setMonthFilter("");
+    setClientFilter("");
     setCurrentPage(1);
     setColumnFilters({ client: "", vendor: "", sku: "", quantity: "", cost_per_label: "", total_amount: "", purchase_date: "" });
     setColumnSorts({ purchase_date: "desc", client: null, vendor: null, quantity: null, cost_per_label: null, total_amount: null });
@@ -781,6 +800,19 @@ const LabelPurchases = () => {
                   const label = new Date(Number(y), Number(mo) - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
                   return <option key={m} value={m}>{label}</option>;
                 })}
+              </select>
+            )}
+            {availableClients.length > 0 && (
+              <select
+                aria-label="Filter by client"
+                value={clientFilter}
+                onChange={e => { setClientFilter(e.target.value); setCurrentPage(1); }}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground max-w-[180px]"
+              >
+                <option value="">All Clients</option>
+                {availableClients.map(c => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
               </select>
             )}
             <Button variant="outline" onClick={clearAllFilters} className="flex items-center gap-2">
