@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo, memo, useCallback } from "react";
 import BusinessAnalyticsChart from "./BusinessAnalyticsChart";
+import ClientOverviewPanel from "./ClientOverviewPanel";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Pagination } from "@/components/ui/pagination";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -530,7 +531,9 @@ const Dashboard = memo(() => {
             const totalOutstanding = metrics?.totalOutstanding ?? 0;
             const rate = totalSales > 0 ? Math.round(((totalSales - totalOutstanding) / totalSales) * 100) : 0;
             const good = rate >= 70;
-            const barW = Math.min(100, Math.max(0, rate));
+            // Width in 10% steps so Tailwind includes the classes at build time
+            const BAR_WIDTHS = ['w-0','w-[10%]','w-[20%]','w-[30%]','w-[40%]','w-[50%]','w-[60%]','w-[70%]','w-[80%]','w-[90%]','w-full'] as const;
+            const barWClass = BAR_WIDTHS[Math.round(Math.min(100, Math.max(0, rate)) / 10)];
             return (
               <div className={`bg-white rounded-xl border border-gray-100 border-l-4 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 ${good ? 'border-l-sky-500' : 'border-l-rose-500'}`}>
                 <CreditCard className={`h-9 w-9 shrink-0 ${good ? 'text-sky-200' : 'text-rose-200'}`} />
@@ -538,7 +541,7 @@ const Dashboard = memo(() => {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Collection Rate</p>
                   <p className={`text-xl font-bold mt-1 leading-none tabular-nums ${good ? 'text-sky-700' : 'text-rose-700'}`}>{rate}%</p>
                   <div className="mt-1.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${good ? 'bg-sky-400' : 'bg-rose-400'}`} style={{ width: `${barW}%` }} />
+                    <div className={`h-full rounded-full ${good ? 'bg-sky-400' : 'bg-rose-400'} ${barWClass}`} />
                   </div>
                 </div>
               </div>
@@ -755,6 +758,8 @@ const Dashboard = memo(() => {
       })()}
 
       <BusinessAnalyticsChart />
+
+      <ClientOverviewPanel />
     </div>
   );
 });
