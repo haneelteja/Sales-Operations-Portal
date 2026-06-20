@@ -249,13 +249,18 @@ const LabelPayments = () => {
       return uuidRegex.test(str);
     };
 
-    const normalizeVendorName = (name: string) => name.trim().toLowerCase();
+    const canonicalizeVendorName = (name: string) => {
+      const t = name.trim();
+      if (/^gmg\s*(labels?)?$/i.test(t)) return 'GMG';
+      return t;
+    };
+    const normalizeVendorName = (name: string) => canonicalizeVendorName(name).toLowerCase();
 
     const vendorMap = new Map<string, { vendor_name: string; total_purchased: number; total_paid: number; outstanding: number }>();
 
     purchases.forEach((purchase) => {
       if (purchase.vendor_id && typeof purchase.vendor_id === 'string') {
-        const vendorName = isUUID(purchase.vendor_id) ? 'GMG' : purchase.vendor_id.trim();
+        const vendorName = isUUID(purchase.vendor_id) ? 'GMG' : canonicalizeVendorName(purchase.vendor_id);
         const normalizedName = normalizeVendorName(vendorName);
         const totalAmount = parseFloat(purchase.total_amount) || 0;
         const existing = vendorMap.get(normalizedName);
@@ -269,7 +274,7 @@ const LabelPayments = () => {
 
     payments.forEach((payment) => {
       if (payment.vendor_id && typeof payment.vendor_id === 'string') {
-        const vendorName = isUUID(payment.vendor_id) ? 'GMG' : payment.vendor_id.trim();
+        const vendorName = isUUID(payment.vendor_id) ? 'GMG' : canonicalizeVendorName(payment.vendor_id);
         const normalizedName = normalizeVendorName(vendorName);
         const paymentAmount = parseFloat(payment.payment_amount) || 0;
         const existing = vendorMap.get(normalizedName);
