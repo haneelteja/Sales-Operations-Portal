@@ -179,6 +179,18 @@ const LabelPurchases = () => {
     },
   });
 
+  // All customers (no is_active/is_deprecated filter) for display lookups on historical purchases
+  const { data: customersForLookup } = useQuery({
+    queryKey: ["customers-all-for-labels-lookup"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, client_name")
+        .order("client_name", { ascending: true });
+      return data || [];
+    },
+  });
+
   const { data: skuConfigs } = useQuery({
     queryKey: ["sku_configurations"],
     queryFn: async () => {
@@ -522,12 +534,12 @@ const LabelPurchases = () => {
     (purchases || []).forEach(p => {
       if (p.client_id && !seen.has(p.client_id)) {
         seen.add(p.client_id);
-        const customer = customers?.find(c => c.id === p.client_id);
+        const customer = customersForLookup?.find(c => c.id === p.client_id);
         if (customer?.client_name) result.push({ id: p.client_id, label: customer.client_name });
       }
     });
     return result.sort((a, b) => a.label.localeCompare(b.label));
-  }, [purchases, customers]);
+  }, [purchases, customersForLookup]);
 
   // Filter and sort purchases
   const filteredAndSortedPurchases = useMemo(() => {
@@ -545,7 +557,7 @@ const LabelPurchases = () => {
       if (debouncedSearchTerm) {
         const searchLower = debouncedSearchTerm.toLowerCase();
         const vendorName = purchase.vendor_id?.toLowerCase() || '';
-        const customer = customers?.find(c => c.id === purchase.client_id);
+        const customer = customersForLookup?.find(c => c.id === purchase.client_id);
         const clientName = customer?.client_name?.toLowerCase() || '';
         const skuName = purchase.sku?.toLowerCase() || '';
         const description = purchase.description?.toLowerCase() || '';
@@ -558,7 +570,7 @@ const LabelPurchases = () => {
         if (!(purchase.vendor_id?.toLowerCase() || '').includes(columnFilters.vendor.toLowerCase())) return false;
       }
       if (columnFilters.client) {
-        const customer = customers?.find(c => c.id === purchase.client_id);
+        const customer = customersForLookup?.find(c => c.id === purchase.client_id);
         if (!(customer?.client_name?.toLowerCase() || '').includes(columnFilters.client.toLowerCase())) return false;
       }
       if (columnFilters.sku && !(purchase.sku?.toLowerCase() || '').includes(columnFilters.sku.toLowerCase())) return false;
@@ -582,8 +594,8 @@ const LabelPurchases = () => {
           case 'purchase_date': aValue = new Date(a.purchase_date); bValue = new Date(b.purchase_date); break;
           case 'vendor': aValue = a.vendor_id || ''; bValue = b.vendor_id || ''; break;
           case 'client': {
-            const ca = customers?.find(c => c.id === a.client_id);
-            const cb = customers?.find(c => c.id === b.client_id);
+            const ca = customersForLookup?.find(c => c.id === a.client_id);
+            const cb = customersForLookup?.find(c => c.id === b.client_id);
             aValue = ca?.client_name || ''; bValue = cb?.client_name || ''; break;
           }
           case 'quantity': aValue = a.quantity || 0; bValue = b.quantity || 0; break;
@@ -598,7 +610,7 @@ const LabelPurchases = () => {
     });
 
     return filtered;
-  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts, customers, monthFilter, clientFilter]);
+  }, [purchases, debouncedSearchTerm, columnFilters, columnSorts, customersForLookup, monthFilter, clientFilter]);
 
   const totalPurchases = useMemo(
     () => filteredAndSortedPurchases.reduce((sum, p) => sum + (p.total_amount || 0), 0),
@@ -645,7 +657,7 @@ const LabelPurchases = () => {
 
   const handleExport = useCallback(async () => {
     const exportData = filteredAndSortedPurchases.map(purchase => {
-      const customer = customers?.find(c => c.id === purchase.client_id);
+      const customer = customersForLookup?.find(c => c.id === purchase.client_id);
       return {
         'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
         'Client': customer?.client_name || 'N/A',
@@ -906,7 +918,7 @@ const LabelPurchases = () => {
                 paginatedPurchases.map((purchase) => (
                   <TableRow key={purchase.id}>
                     <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
-                    <TableCell>{customers?.find(c => c.id === purchase.client_id)?.client_name || 'N/A'}</TableCell>
+                    <TableCell>{customersForLookup?.find(c => c.id === purchase.client_id)?.client_name || 'N/A'}</TableCell>
                     <TableCell>{purchase.sku || '—'}</TableCell>
                     <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
                     <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>

@@ -44,6 +44,7 @@ const TransportExpenses = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
   const [monthFilter, setMonthFilter] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState({
@@ -462,6 +463,19 @@ const TransportExpenses = () => {
     return [...months].sort().reverse();
   }, [enrichedExpenses]);
 
+  const availableClients = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { id: string; label: string }[] = [];
+    (enrichedExpenses || []).forEach(e => {
+      const cid = (e as { client_id?: string | null }).client_id;
+      if (cid && e.client_name && !seen.has(cid)) {
+        seen.add(cid);
+        result.push({ id: cid, label: e.client_name });
+      }
+    });
+    return result.sort((a, b) => a.label.localeCompare(b.label));
+  }, [enrichedExpenses]);
+
   // Filter and sort expenses (memoized for performance)
   const filteredAndSortedExpenses = useMemo(() => {
     if (!enrichedExpenses || enrichedExpenses.length === 0) return [];
@@ -470,6 +484,10 @@ const TransportExpenses = () => {
 
     if (monthFilter) {
       filtered = filtered.filter(t => (t.expense_date || '').startsWith(monthFilter));
+    }
+
+    if (clientFilter) {
+      filtered = filtered.filter(t => (t as { client_id?: string | null }).client_id === clientFilter);
     }
 
     return filtered.filter((expense) => {
@@ -550,7 +568,7 @@ const TransportExpenses = () => {
     if (valueA > valueB) return direction === 'asc' ? 1 : -1;
     return 0;
     });
-  }, [enrichedExpenses, debouncedSearchTerm, columnFilters, columnSorts, monthFilter]);
+  }, [enrichedExpenses, debouncedSearchTerm, columnFilters, columnSorts, monthFilter, clientFilter]);
 
   const totalExpenses = useMemo(() => {
     return filteredAndSortedExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
@@ -726,13 +744,27 @@ const TransportExpenses = () => {
               })}
             </select>
           )}
-          {(searchTerm || monthFilter || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
+          {availableClients.length > 0 && (
+            <select
+              aria-label="Filter by client"
+              value={clientFilter}
+              onChange={e => { setClientFilter(e.target.value); setCurrentPage(1); }}
+              className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground max-w-[180px]"
+            >
+              <option value="">All Clients</option>
+              {availableClients.map(c => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          )}
+          {(searchTerm || monthFilter || clientFilter || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
                 setSearchTerm("");
                 setMonthFilter("");
+                setClientFilter("");
                 setCurrentPage(1);
                 setColumnFilters({
                   date: "",

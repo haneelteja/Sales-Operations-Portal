@@ -101,7 +101,8 @@ const SalesEntry = () => {
     setMonthFilter,
     resetFilters,
   } = useTransactionFilters(20);
-  
+  const [clientFilter, setClientFilter] = useState('');
+
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
 
   const { toast } = useToast();
@@ -640,6 +641,19 @@ const SalesEntry = () => {
     return [...months].sort().reverse();
   }, [recentTransactions]);
 
+  const availableClientsForFilter = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    (recentTransactions || []).forEach(t => {
+      const name = t.customers?.client_name;
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        result.push(name);
+      }
+    });
+    return result.sort((a, b) => a.localeCompare(b));
+  }, [recentTransactions]);
+
   // Calculate cumulative outstanding for a specific customer up to a given transaction
   const calculateCumulativeOutstanding = useCallback((customerId: string, transactionDate: string, transactionId: string) => {
     try {
@@ -764,7 +778,11 @@ const SalesEntry = () => {
         ? transactionsWithOutstanding.filter(t => (t.transaction_date || '').startsWith(monthFilter))
         : transactionsWithOutstanding;
 
-      return monthFiltered.filter((transaction) => {
+      const clientFiltered = clientFilter
+        ? monthFiltered.filter(t => t.customers?.client_name === clientFilter)
+        : monthFiltered;
+
+      return clientFiltered.filter((transaction) => {
         try {
           const customerName = transaction.customers?.client_name || '';
           const area = getTransactionBranch(transaction);
@@ -915,7 +933,7 @@ const SalesEntry = () => {
       return [];
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts, monthFilter]);
+  }, [recentTransactions, debouncedSearchTerm, columnFilters, columnSorts, monthFilter, clientFilter]);
 
   // Paginate the filtered results
   const totalFilteredTransactions = filteredAndSortedRecentTransactions.length;
@@ -1708,7 +1726,20 @@ const SalesEntry = () => {
                 })}
               </select>
             )}
-            {(searchTerm || monthFilter || Object.values(columnFilters).some(filter => {
+            {availableClientsForFilter.length > 0 && (
+              <select
+                aria-label="Filter by client"
+                value={clientFilter}
+                onChange={e => { setClientFilter(e.target.value); setPage(1); }}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground max-w-[180px]"
+              >
+                <option value="">All Clients</option>
+                {availableClientsForFilter.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            )}
+            {(searchTerm || monthFilter || clientFilter || Object.values(columnFilters).some(filter => {
               if (Array.isArray(filter)) return filter.length > 0;
               return filter && filter !== "";
             }) || Object.values(columnSorts).some(sort => sort !== null)) && (
@@ -1717,6 +1748,7 @@ const SalesEntry = () => {
                 size="sm"
                 onClick={() => {
                   resetFilters();
+                  setClientFilter('');
                 }}
                 className="whitespace-nowrap"
               >

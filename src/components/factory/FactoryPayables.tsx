@@ -89,6 +89,7 @@ const FactoryPayables = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
   const [monthFilter, setMonthFilter] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -263,13 +264,30 @@ const FactoryPayables = () => {
     return [...months].sort().reverse();
   }, [transactions]);
 
+  const availableClients = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { id: string; label: string }[] = [];
+    (transactions || []).forEach(t => {
+      if (t.customer_id && !seen.has(t.customer_id)) {
+        seen.add(t.customer_id);
+        const name = customerById[t.customer_id]?.client_name;
+        if (name) result.push({ id: t.customer_id, label: name });
+      }
+    });
+    return result.sort((a, b) => a.label.localeCompare(b.label));
+  }, [transactions, customerById]);
+
   // Filter and sort transactions (memoized for performance)
   const filteredAndSortedTransactions = useMemo(() => {
     if (!transactions) return [];
 
-    const baseList = monthFilter
+    const byMonth = monthFilter
       ? transactions.filter(t => (t.transaction_date || '').startsWith(monthFilter))
       : transactions;
+
+    const baseList = clientFilter
+      ? byMonth.filter(t => t.customer_id === clientFilter)
+      : byMonth;
 
     return baseList.filter((transaction) => {
     const sku = transaction.sku || '';
@@ -414,7 +432,7 @@ const FactoryPayables = () => {
     return 0;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing, monthFilter]);
+  }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing, monthFilter, clientFilter, customerById]);
 
   // Paginated slice of filtered+sorted transactions
   const paginatedTransactions = useMemo(() => {
@@ -1008,13 +1026,27 @@ const FactoryPayables = () => {
                 })}
               </select>
             )}
-            {(searchTerm || monthFilter || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
+            {availableClients.length > 0 && (
+              <select
+                aria-label="Filter by client"
+                value={clientFilter}
+                onChange={e => { setClientFilter(e.target.value); setCurrentPage(1); }}
+                className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground max-w-[180px]"
+              >
+                <option value="">All Clients</option>
+                {availableClients.map(c => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
+            )}
+            {(searchTerm || monthFilter || clientFilter || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
                   setSearchTerm("");
                   setMonthFilter("");
+                  setClientFilter("");
                   setCurrentPage(1);
                   setColumnFilters({
                     date: "",
