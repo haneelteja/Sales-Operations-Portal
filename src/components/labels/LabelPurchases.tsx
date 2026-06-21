@@ -909,6 +909,8 @@ const LabelPurchases = () => {
                     <ColumnFilter columnKey="vendor" columnName="Vendor" filterValue={columnFilters.vendor} onFilterChange={(v) => handleColumnFilterChange('vendor', v)} sortDirection={columnSorts.vendor} onSortChange={(d) => handleSortDir('vendor', d)} dataType="text" />
                   </div>
                 </TableHead>
+                {/* Description */}
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Description</TableHead>
                 {/* Actions */}
                 <TableHead className="text-center bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Actions</TableHead>
               </TableRow>
@@ -924,6 +926,7 @@ const LabelPurchases = () => {
                     <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
                     <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell>{purchase.vendor_id || 'N/A'}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate" title={purchase.description || ''}>{purchase.description || '—'}</TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center gap-2">
                         <Dialog>
@@ -1057,7 +1060,7 @@ const LabelPurchases = () => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground">
                     No label purchases found
                   </TableCell>
                 </TableRow>
