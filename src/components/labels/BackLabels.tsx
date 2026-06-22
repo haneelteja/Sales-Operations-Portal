@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useAuditLog } from "@/hooks/useAuditLog";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -11,8 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ColumnFilter } from "@/components/ui/column-filter";
+import { PageSizeSelector } from "@/components/ui/page-size-selector";
 import { useToast } from "@/hooks/use-toast";
-import { Edit, Trash2, Download, ChevronDown, ChevronRight } from "lucide-react";
+import { Edit, Trash2, Download, ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 
 interface BackLabelPurchase {
@@ -54,6 +57,36 @@ const BackLabels = () => {
   const [editForm, setEditForm] = useState(emptyPurchaseForm(today));
   const [toggleForm, setToggleForm] = useState({ client_name: "", effective_from: today });
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
+
+  // ── Table filter / sort / pagination state ────────────────────────────────────
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebouncedValue(searchTerm, 300);
+  const [monthFilter, setMonthFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [columnFilters, setColumnFilters] = useState({
+    purchase_date: "", quantity: "", cost_per_label: "", total_amount: "", vendor: "", description: "",
+  });
+  const [columnSorts, setColumnSorts] = useState<Record<string, "asc" | "desc" | null>>({
+    purchase_date: "desc", quantity: null, cost_per_label: null, total_amount: null, vendor: null, description: null,
+  });
+
+  const handleColumnFilterChange = useCallback((col: string, val: string) =>
+    setColumnFilters((prev) => ({ ...prev, [col]: val })), []);
+
+  const handleSortDir = useCallback((col: string, dir: "asc" | "desc" | null) =>
+    setColumnSorts((prev) => ({
+      ...Object.keys(prev).reduce((acc, k) => ({ ...acc, [k]: null }), {} as typeof prev),
+      [col]: dir,
+    })), []);
+
+  const clearAllFilters = useCallback(() => {
+    setSearchTerm("");
+    setMonthFilter("");
+    setCurrentPage(1);
+    setColumnFilters({ purchase_date: "", quantity: "", cost_per_label: "", total_amount: "", vendor: "", description: "" });
+    setColumnSorts({ purchase_date: "desc", quantity: null, cost_per_label: null, total_amount: null, vendor: null, description: null });
+  }, []);
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -198,6 +231,65 @@ const BackLabels = () => {
 
     return { totalPurchased, totalConsumed, netStock: totalPurchased - totalConsumed };
   }, [purchases, productionRows, customers, historyByClient, bottlesPerCaseMap]);
+
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    purchases.forEach((p) => { if (p.purchase_date) months.add(p.purchase_date.slice(0, 7)); });
+    return [...months].sort().reverse();
+  }, [purchases]);
+
+  const filteredAndSortedPurchases = useMemo(() => {
+    let list = purchases;
+
+    if (monthFilter) list = list.filter((p) => p.purchase_date.startsWith(monthFilter));
+
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      list = list.filter((p) =>
+        new Date(p.purchase_date).toLocaleDateString().includes(q) ||
+        p.quantity.toString().includes(q) ||
+        (p.vendor_id || "").toLowerCase().includes(q) ||
+        (p.description || "").toLowerCase().includes(q)
+      );
+    }
+
+    if (columnFilters.purchase_date) {
+      list = list.filter((p) => new Date(p.purchase_date).toLocaleDateString().includes(columnFilters.purchase_date));
+    }
+    if (columnFilters.quantity) list = list.filter((p) => p.quantity.toString() === columnFilters.quantity);
+    if (columnFilters.cost_per_label) list = list.filter((p) => p.cost_per_label.toString() === columnFilters.cost_per_label);
+    if (columnFilters.total_amount) list = list.filter((p) => p.total_amount.toString() === columnFilters.total_amount);
+    if (columnFilters.vendor) list = list.filter((p) => (p.vendor_id || "").toLowerCase().includes(columnFilters.vendor.toLowerCase()));
+    if (columnFilters.description) list = list.filter((p) => (p.description || "").toLowerCase().includes(columnFilters.description.toLowerCase()));
+
+    const activeSort = Object.entries(columnSorts).find(([, d]) => d !== null);
+    if (activeSort) {
+      const [col, dir] = activeSort;
+      list = [...list].sort((a, b) => {
+        let av: string | number, bv: string | number;
+        switch (col) {
+          case "purchase_date": av = a.purchase_date; bv = b.purchase_date; break;
+          case "quantity": av = a.quantity; bv = b.quantity; break;
+          case "cost_per_label": av = a.cost_per_label; bv = b.cost_per_label; break;
+          case "total_amount": av = a.total_amount; bv = b.total_amount; break;
+          case "vendor": av = a.vendor_id || ""; bv = b.vendor_id || ""; break;
+          case "description": av = a.description || ""; bv = b.description || ""; break;
+          default: return 0;
+        }
+        if (av < bv) return dir === "asc" ? -1 : 1;
+        if (av > bv) return dir === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return list;
+  }, [purchases, debouncedSearch, monthFilter, columnFilters, columnSorts]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedPurchases.length / pageSize));
+  const paginatedPurchases = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredAndSortedPurchases.slice(start, start + pageSize);
+  }, [filteredAndSortedPurchases, currentPage, pageSize]);
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
@@ -609,76 +701,168 @@ const BackLabels = () => {
         </form>
 
         {purchases.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">{purchases.length} purchases recorded</p>
-              <Button variant="outline" size="sm" onClick={handleExport} className="flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                Export Excel
-              </Button>
+          <div className="space-y-3">
+            {/* Filter bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredAndSortedPurchases.length} of {purchases.length} purchases
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Search purchases..."
+                    value={searchTerm}
+                    onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                    className="pl-10 w-52"
+                  />
+                </div>
+                {availableMonths.length > 0 && (
+                  <select
+                    aria-label="Filter by month"
+                    value={monthFilter}
+                    onChange={(e) => { setMonthFilter(e.target.value); setCurrentPage(1); }}
+                    className="text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-foreground"
+                  >
+                    <option value="">All Months</option>
+                    {availableMonths.map((m) => {
+                      const [y, mo] = m.split("-");
+                      const label = new Date(Number(y), Number(mo) - 1).toLocaleString("en-IN", { month: "short", year: "numeric" });
+                      return <option key={m} value={m}>{label}</option>;
+                    })}
+                  </select>
+                )}
+                {(searchTerm || monthFilter || Object.values(columnFilters).some(Boolean)) && (
+                  <Button variant="outline" size="sm" onClick={clearAllFilters} className="flex items-center gap-1">
+                    <X className="h-4 w-4" /> Clear Filters
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={handleExport} className="flex items-center gap-2">
+                  <Download className="h-4 w-4" /> Export Excel
+                </Button>
+              </div>
             </div>
+
+            {/* Table */}
             <div className="border rounded-lg">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4">Date</TableHead>
-                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4 text-right">Quantity</TableHead>
-                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4 text-right">Cost/Label</TableHead>
-                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4 text-right">Total</TableHead>
-                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4">Vendor</TableHead>
-                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4">Description</TableHead>
+                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4">
+                      <div className="flex items-center gap-1">
+                        Date
+                        <ColumnFilter columnKey="purchase_date" columnName="Date" filterValue={columnFilters.purchase_date} onFilterChange={(v) => { handleColumnFilterChange("purchase_date", v); setCurrentPage(1); }} sortDirection={columnSorts.purchase_date} onSortChange={(d) => handleSortDir("purchase_date", d)} dataType="date" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Quantity
+                        <ColumnFilter columnKey="quantity" columnName="Quantity" filterValue={columnFilters.quantity} onFilterChange={(v) => { handleColumnFilterChange("quantity", v); setCurrentPage(1); }} sortDirection={columnSorts.quantity} onSortChange={(d) => handleSortDir("quantity", d)} dataType="number" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Cost/Label
+                        <ColumnFilter columnKey="cost_per_label" columnName="Cost/Label" filterValue={columnFilters.cost_per_label} onFilterChange={(v) => { handleColumnFilterChange("cost_per_label", v); setCurrentPage(1); }} sortDirection={columnSorts.cost_per_label} onSortChange={(d) => handleSortDir("cost_per_label", d)} dataType="number" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        Total
+                        <ColumnFilter columnKey="total_amount" columnName="Total" filterValue={columnFilters.total_amount} onFilterChange={(v) => { handleColumnFilterChange("total_amount", v); setCurrentPage(1); }} sortDirection={columnSorts.total_amount} onSortChange={(d) => handleSortDir("total_amount", d)} dataType="number" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4">
+                      <div className="flex items-center gap-1">
+                        Vendor
+                        <ColumnFilter columnKey="vendor" columnName="Vendor" filterValue={columnFilters.vendor} onFilterChange={(v) => { handleColumnFilterChange("vendor", v); setCurrentPage(1); }} sortDirection={columnSorts.vendor} onSortChange={(d) => handleSortDir("vendor", d)} dataType="text" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="bg-slate-50 text-slate-700 py-3 px-4">
+                      <div className="flex items-center gap-1">
+                        Description
+                        <ColumnFilter columnKey="description" columnName="Description" filterValue={columnFilters.description} onFilterChange={(v) => { handleColumnFilterChange("description", v); setCurrentPage(1); }} sortDirection={columnSorts.description} onSortChange={(d) => handleSortDir("description", d)} dataType="text" />
+                      </div>
+                    </TableHead>
                     <TableHead className="bg-slate-50 text-slate-700 py-3 px-4 text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {purchases.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell>{new Date(p.purchase_date).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-right">{p.quantity.toLocaleString()}</TableCell>
-                      <TableCell className="text-right">₹{p.cost_per_label}</TableCell>
-                      <TableCell className="text-right font-medium">
-                        ₹{p.total_amount.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
-                      </TableCell>
-                      <TableCell>{p.vendor_id || "—"}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                        {p.description || "—"}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex justify-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handleEditClick(p)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete this purchase?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will permanently delete the back label purchase record from{" "}
-                                  {new Date(p.purchase_date).toLocaleDateString()}.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => deletePurchaseMutation.mutate(p.id)}
-                                  className="bg-red-600 hover:bg-red-700"
-                                >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
+                  {paginatedPurchases.length > 0 ? (
+                    paginatedPurchases.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell>{new Date(p.purchase_date).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-right">{p.quantity.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">₹{p.cost_per_label}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          ₹{p.total_amount.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
+                        </TableCell>
+                        <TableCell>{p.vendor_id || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={p.description || ""}>
+                          {p.description || "—"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex justify-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => handleEditClick(p)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete this purchase?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete the back label purchase record from{" "}
+                                    {new Date(p.purchase_date).toLocaleDateString()}.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deletePurchaseMutation.mutate(p.id)}
+                                    className="bg-red-600 hover:bg-red-700"
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                        No purchases match the current filters
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between pt-1">
+              <PageSizeSelector
+                pageSize={pageSize}
+                onPageSizeChange={(s) => { setPageSize(s); setCurrentPage(1); }}
+                totalRecords={filteredAndSortedPurchases.length}
+              />
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">
+                  {filteredAndSortedPurchases.length > 0
+                    ? `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredAndSortedPurchases.length)} of ${filteredAndSortedPurchases.length}`
+                    : "0 records"}
+                </span>
+                <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage((p) => p - 1)}>←</Button>
+                <span className="text-sm font-medium px-2">{currentPage} / {totalPages}</span>
+                <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => p + 1)}>→</Button>
+              </div>
             </div>
           </div>
         )}
