@@ -89,8 +89,6 @@ const FactoryPricingTab: React.FC = () => {
         .order('pricing_date', { ascending: false });
       return (data || []) as PricingRecord[];
     },
-    staleTime: 0,
-    refetchOnMount: 'always',
   });
 
   const selectedSkuConfig = useMemo(

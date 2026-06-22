@@ -397,8 +397,6 @@ const SalesEntry = () => {
     findCustomerRecord,
   });
 
-  const getAvailableSKUs = useCallback(() => availableSkus, [availableSkus]);
-  const getAvailableAreas = useCallback(() => availableAreas, [availableAreas]);
   const getAvailableAreasForEdit = useCallback(() => availableAreasForEdit, [availableAreasForEdit]);
 
   const multiSaleMutation = useMultiSaleSubmission({
@@ -500,8 +498,6 @@ const SalesEntry = () => {
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
-
-  const getUniqueCustomersForForm = useCallback(() => uniqueCustomersForForm, [uniqueCustomersForForm]);
 
   const handleSaleSuccess = useCallback(() => {
     resetSaleForm();
