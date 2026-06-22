@@ -670,7 +670,7 @@ const LabelPurchases = () => {
       };
     });
     await exportJsonToExcel(exportData, 'Label Purchases', `label-purchases-${new Date().toISOString().split('T')[0]}.xlsx`);
-  }, [filteredAndSortedPurchases, customers]);
+  }, [filteredAndSortedPurchases, customersForLookup]);
 
   return (
     <div className="space-y-6">
