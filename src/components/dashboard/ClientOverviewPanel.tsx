@@ -118,17 +118,16 @@ export default function ClientOverviewPanel() {
   const [notesOpen, setNotesOpen] = useState(false);
 
   // ── Customers list ──────────────────────────────────────────────────────────
-  const { data: customers = [] } = useQuery<Customer[]>({
+  const { data: customers = [], error: customersError } = useQuery<Customer[]>({
     queryKey: ['overview-customers'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, client_name, branch, contact_person, phone, whatsapp_number')
+        .select('id, client_name, branch, contact_person, phone, whatsapp_number, is_deprecated')
         .eq('is_active', true)
-        .eq('is_deprecated', false)
         .order('client_name');
       if (error) throw error;
-      return (data ?? []) as Customer[];
+      return (data ?? []).filter(c => !(c as Record<string, unknown>).is_deprecated) as Customer[];
     },
     staleTime: 10 * 60 * 1000,
   });
@@ -406,6 +405,11 @@ export default function ClientOverviewPanel() {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <CardTitle className="text-base font-semibold">Client Overview</CardTitle>
+          {customersError && (
+            <p className="text-xs text-red-500 max-w-xs truncate" title={String(customersError)}>
+              Error loading clients: {String(customersError)}
+            </p>
+          )}
           <Select value={selectedId || '__none__'} onValueChange={v => setSelectedId(v === '__none__' ? '' : v)}>
             <SelectTrigger className="w-[260px]">
               <SelectValue placeholder="Select a client..." />
