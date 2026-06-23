@@ -406,8 +406,8 @@ export default function ClientOverviewPanel() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <CardTitle className="text-base font-semibold">Client Overview</CardTitle>
           {customersError && (
-            <p className="text-xs text-red-500 max-w-xs truncate" title={String(customersError)}>
-              Error loading clients: {String(customersError)}
+            <p className="text-xs text-red-500 max-w-sm break-all">
+              Error: {(customersError as {message?: string}).message ?? JSON.stringify(customersError)}
             </p>
           )}
           <Select value={selectedId || '__none__'} onValueChange={v => setSelectedId(v === '__none__' ? '' : v)}>
