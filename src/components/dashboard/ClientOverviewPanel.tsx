@@ -44,7 +44,6 @@ interface Customer {
   id: string;
   client_name: string;
   branch: string | null;
-  contact_person: string | null;
   phone: string | null;
   whatsapp_number: string | null;
 }
@@ -118,12 +117,12 @@ export default function ClientOverviewPanel() {
   const [notesOpen, setNotesOpen] = useState(false);
 
   // ── Customers list ──────────────────────────────────────────────────────────
-  const { data: customers = [], error: customersError } = useQuery<Customer[]>({
+  const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['overview-customers'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, client_name, branch, contact_person, phone, whatsapp_number, is_deprecated')
+        .select('id, client_name, branch, phone, whatsapp_number, is_deprecated')
         .eq('is_active', true)
         .order('client_name');
       if (error) throw error;
@@ -405,11 +404,6 @@ export default function ClientOverviewPanel() {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <CardTitle className="text-base font-semibold">Client Overview</CardTitle>
-          {customersError && (
-            <p className="text-xs text-red-500 max-w-sm break-all">
-              Error: {(customersError as {message?: string}).message ?? JSON.stringify(customersError)}
-            </p>
-          )}
           <Select value={selectedId || '__none__'} onValueChange={v => setSelectedId(v === '__none__' ? '' : v)}>
             <SelectTrigger className="w-[260px]">
               <SelectValue placeholder="Select a client..." />
@@ -455,9 +449,6 @@ export default function ClientOverviewPanel() {
                 <span className="text-sm text-muted-foreground">
                   {selectedCustomer.phone || selectedCustomer.whatsapp_number}
                 </span>
-              )}
-              {selectedCustomer.contact_person && (
-                <span className="text-sm text-muted-foreground">Contact: {selectedCustomer.contact_person}</span>
               )}
             </div>
 
