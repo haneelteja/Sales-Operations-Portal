@@ -12,6 +12,13 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Send, Plus, PackageCheck } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { getWhatsAppConfig, sendWhatsAppMessage, sendProductionOrderNotification } from "@/services/whatsappService";
 import { getTentativeDeliveryDays } from "@/services/invoiceConfigService";
 import { logger } from "@/lib/logger";
@@ -123,6 +130,21 @@ const OrderManagement: React.FC = () => {
   const [dispatchPage, setDispatchPage] = useState(1);
   const [dispatchPageSize, setDispatchPageSize] = useState(5);
   const [dispatchMonthFilter, setDispatchMonthFilter] = useState('');
+
+  // Dispatch modal state
+  const [dispatchModal, setDispatchModal] = useState<{
+    open: boolean;
+    order: OrderRow | null;
+    casesToDispatch: string;
+  }>({ open: false, order: null, casesToDispatch: "" });
+
+  const openDispatchModal = useCallback((order: OrderRow) => {
+    setDispatchModal({ open: true, order, casesToDispatch: String(order.number_of_cases) });
+  }, []);
+
+  const closeDispatchModal = useCallback(() => {
+    setDispatchModal({ open: false, order: null, casesToDispatch: "" });
+  }, []);
 
   const { data: tentativeDeliveryDays = 5 } = useQuery({
     queryKey: ["tentative-delivery-days"],
@@ -253,9 +275,9 @@ const OrderManagement: React.FC = () => {
     },
   });
 
-  // Dispatch order mutation
+  // Dispatch order mutation — supports partial dispatch
   const dispatchOrderMutation = useMutation({
-    mutationFn: async (orderId: string) => {
+    mutationFn: async ({ orderId, casesToDispatch }: { orderId: string; casesToDispatch: number }) => {
       const { data: orderData } = await supabase
         .from("orders")
         .select("client, branch, sku, number_of_cases, order_date, tentative_delivery_date")
@@ -264,77 +286,105 @@ const OrderManagement: React.FC = () => {
 
       if (!orderData) throw new Error("Order not found");
 
+      const totalCases = orderData.number_of_cases ?? 0;
+      const remaining = totalCases - casesToDispatch;
+      const isFullDispatch = remaining <= 0;
+
+      // Insert dispatched record
       const { error: dispatchError } = await supabase
         .from("orders_dispatch")
         .insert([{
           client: orderData.client,
           branch: orderData.branch,
           sku: orderData.sku,
-          cases: orderData.number_of_cases ?? 0,
+          cases: casesToDispatch,
           order_date: orderData.order_date ?? new Date().toISOString().split("T")[0],
           delivery_date: new Date().toISOString().split("T")[0],
         }]);
 
       if (dispatchError) throw dispatchError;
 
-      const { error: deleteError } = await supabase
-        .from("orders")
-        .delete()
-        .eq("id", orderId);
+      if (isFullDispatch) {
+        // Full dispatch — remove the order
+        const { error: deleteError } = await supabase
+          .from("orders")
+          .delete()
+          .eq("id", orderId);
+        if (deleteError) throw deleteError;
+      } else {
+        // Partial dispatch — reduce remaining cases on the order
+        const { error: updateError } = await supabase
+          .from("orders")
+          .update({ number_of_cases: remaining })
+          .eq("id", orderId);
+        if (updateError) throw updateError;
+      }
 
-      if (deleteError) throw deleteError;
+      // Send "Stock Delivered" WhatsApp notification if enabled (full dispatch only).
+      if (isFullDispatch) {
+        try {
+          const whatsappConfig = await getWhatsAppConfig();
+          if (whatsappConfig.whatsapp_enabled && whatsappConfig.whatsapp_stock_delivered_enabled) {
+            const clientName = (orderData.client || "").trim();
+            const branch = (orderData.branch || "").trim();
+            if (clientName && branch) {
+              const { data: customerRows } = await supabase
+                .from("customers")
+                .select("id, client_name, whatsapp_number")
+                .eq("client_name", clientName)
+                .eq("branch", branch)
+                .not("whatsapp_number", "is", null)
+                .limit(1);
 
-      // Send "Stock Delivered" WhatsApp notification if enabled.
-      try {
-        const whatsappConfig = await getWhatsAppConfig();
-        if (whatsappConfig.whatsapp_enabled && whatsappConfig.whatsapp_stock_delivered_enabled) {
-          const clientName = (orderData.client || "").trim();
-          const branch = (orderData.branch || "").trim();
-          if (clientName && branch) {
-            const { data: customerRows } = await supabase
-              .from("customers")
-              .select("id, client_name, whatsapp_number")
-              .eq("client_name", clientName)
-              .eq("branch", branch)
-              .not("whatsapp_number", "is", null)
-              .limit(1);
-
-            const customerRow = Array.isArray(customerRows) ? customerRows[0] : customerRows;
-            if (customerRow?.id && customerRow.whatsapp_number) {
-              const deliveryDate = orderData.tentative_delivery_date
-                ? new Date(orderData.tentative_delivery_date).toLocaleDateString("en-IN")
-                : "—";
-              const items = `${orderData.sku || ""} - ${orderData.number_of_cases ?? 0} cases`;
-              const result = await sendWhatsAppMessage({
-                customerId: customerRow.id,
-                messageType: "stock_delivered",
-                triggerType: "auto",
-                placeholders: {
-                  customerName: customerRow.client_name || clientName,
-                  orderNumber: orderId.slice(0, 8),
-                  deliveryDate,
-                  items,
-                },
-              });
-              if (result?.success) {
-                toast({
-                  title: "WhatsApp sent",
-                  description: "Stock delivered notification sent to customer.",
+              const customerRow = Array.isArray(customerRows) ? customerRows[0] : customerRows;
+              if (customerRow?.id && customerRow.whatsapp_number) {
+                const deliveryDate = orderData.tentative_delivery_date
+                  ? new Date(orderData.tentative_delivery_date).toLocaleDateString("en-IN")
+                  : "—";
+                const items = `${orderData.sku || ""} - ${casesToDispatch} cases`;
+                const result = await sendWhatsAppMessage({
+                  customerId: customerRow.id,
+                  messageType: "stock_delivered",
+                  triggerType: "auto",
+                  placeholders: {
+                    customerName: customerRow.client_name || clientName,
+                    orderNumber: orderId.slice(0, 8),
+                    deliveryDate,
+                    items,
+                  },
                 });
+                if (result?.success) {
+                  toast({
+                    title: "WhatsApp sent",
+                    description: "Stock delivered notification sent to customer.",
+                  });
+                }
               }
             }
           }
+        } catch (err) {
+          logger.warn("Stock delivered WhatsApp notification skipped or failed", err);
         }
-      } catch (err) {
-        logger.warn("Stock delivered WhatsApp notification skipped or failed", err);
       }
+
+      return { isFullDispatch, casesToDispatch, remaining };
     },
-    onSuccess: (_, variables) => {
-      log({ action: 'UPDATE', entityType: 'order', entityId: variables, description: `Order dispatched (moved to dispatched): order ID ${variables}` });
+    onSuccess: ({ isFullDispatch, casesToDispatch, remaining }, variables) => {
+      log({
+        action: 'UPDATE',
+        entityType: 'order',
+        entityId: variables.orderId,
+        description: isFullDispatch
+          ? `Order fully dispatched (${casesToDispatch} cases): order ID ${variables.orderId}`
+          : `Order partially dispatched (${casesToDispatch} cases dispatched, ${remaining} remaining): order ID ${variables.orderId}`,
+      });
       toast({
         title: "Success",
-        description: "Order dispatched successfully!",
+        description: isFullDispatch
+          ? "Order dispatched successfully!"
+          : `${casesToDispatch} cases dispatched. ${remaining} case${remaining === 1 ? "" : "s"} remain in Current Orders.`,
       });
+      closeDispatchModal();
       invalidateRelated('orders');
     },
     onError: (error: Error) => {
@@ -1348,7 +1398,7 @@ const OrderManagement: React.FC = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => dispatchOrderMutation.mutate(order.id)}
+                            onClick={() => openDispatchModal(order)}
                             disabled={dispatchOrderMutation.isPending}
                             title="Dispatch this order"
                             className="text-green-600 hover:text-green-700"
@@ -1621,6 +1671,83 @@ const OrderManagement: React.FC = () => {
 
       {/* Client Analysis */}
       <ClientAnalysis />
+
+      {/* Dispatch Modal */}
+      <Dialog open={dispatchModal.open} onOpenChange={(open) => { if (!open) closeDispatchModal(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dispatch Order</DialogTitle>
+          </DialogHeader>
+          {dispatchModal.order && (
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <span className="text-muted-foreground">Client</span>
+                <span className="font-medium">{dispatchModal.order.client}</span>
+                <span className="text-muted-foreground">Branch</span>
+                <span className="font-medium">{dispatchModal.order.branch}</span>
+                <span className="text-muted-foreground">SKU</span>
+                <span className="font-medium">{dispatchModal.order.sku}</span>
+                <span className="text-muted-foreground">Order Date</span>
+                <span className="font-medium">{dispatchModal.order.expense_date || "-"}</span>
+                <span className="text-muted-foreground">Tentative Delivery</span>
+                <span className="font-medium">{dispatchModal.order.tentative_delivery_date || "-"}</span>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="dispatch-cases" className="text-sm">
+                  Cases to Dispatch
+                  <span className="ml-1 text-muted-foreground font-normal">(ordered: {dispatchModal.order.number_of_cases})</span>
+                </Label>
+                <Input
+                  id="dispatch-cases"
+                  type="number"
+                  min={1}
+                  max={dispatchModal.order.number_of_cases}
+                  value={dispatchModal.casesToDispatch}
+                  onChange={(e) =>
+                    setDispatchModal((prev) => ({ ...prev, casesToDispatch: e.target.value }))
+                  }
+                />
+                {(() => {
+                  const cases = parseInt(dispatchModal.casesToDispatch);
+                  const total = dispatchModal.order!.number_of_cases;
+                  if (!isNaN(cases) && cases > 0 && cases < total) {
+                    return (
+                      <p className="text-xs text-amber-600">
+                        Partial dispatch — {total - cases} case{total - cases === 1 ? "" : "s"} will remain in Current Orders.
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeDispatchModal} disabled={dispatchOrderMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!dispatchModal.order) return;
+                const cases = parseInt(dispatchModal.casesToDispatch);
+                if (isNaN(cases) || cases <= 0) {
+                  toast({ title: "Validation Error", description: "Enter a valid number of cases", variant: "destructive" });
+                  return;
+                }
+                if (cases > dispatchModal.order.number_of_cases) {
+                  toast({ title: "Validation Error", description: `Cannot dispatch more than ${dispatchModal.order.number_of_cases} cases`, variant: "destructive" });
+                  return;
+                }
+                dispatchOrderMutation.mutate({ orderId: dispatchModal.order.id, casesToDispatch: cases });
+              }}
+              disabled={dispatchOrderMutation.isPending}
+              className="text-white bg-green-600 hover:bg-green-700"
+            >
+              {dispatchOrderMutation.isPending ? "Dispatching..." : "Confirm Dispatch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
