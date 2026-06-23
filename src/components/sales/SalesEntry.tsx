@@ -763,11 +763,27 @@ const SalesEntry = () => {
         return [];
       }
       
-      // Use total_amount from DB as the running outstanding (source of truth)
-      // total_amount is updated by the one-time recalculation SQL and on new inserts
+      // Compute running outstanding client-side per client+branch, sorted by date then created_at.
+      // DB total_amount can be stale; client-side is always consistent with loaded data.
+      const sorted = [...recentTransactions].sort((a, b) => {
+        const dA = new Date(a.transaction_date).getTime();
+        const dB = new Date(b.transaction_date).getTime();
+        if (dA !== dB) return dA - dB;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+      const customerBalance: Record<string, number> = {};
+      const outstandingMap = new Map<string, number>();
+      for (const tx of sorted) {
+        const key = `${tx.customers?.client_name ?? ''}||${tx.customers?.branch ?? tx.branch ?? ''}`;
+        if (customerBalance[key] === undefined) customerBalance[key] = 0;
+        const amt = Number(tx.amount) || 0;
+        if (tx.transaction_type === 'sale') customerBalance[key] += amt;
+        else if (tx.transaction_type === 'payment') customerBalance[key] -= amt;
+        outstandingMap.set(tx.id, customerBalance[key]);
+      }
       const transactionsWithOutstanding = recentTransactions.map((transaction) => ({
         ...transaction,
-        outstanding: transaction.total_amount ?? 0,
+        outstanding: outstandingMap.get(transaction.id) ?? 0,
       }));
 
       const monthFiltered = monthFilter
