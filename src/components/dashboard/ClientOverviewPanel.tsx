@@ -43,7 +43,7 @@ const daysDiff = (dateStr: string): number => {
 interface Customer {
   id: string;
   client_name: string;
-  area: string | null;
+  branch: string | null;
   contact_person: string | null;
   phone: string | null;
   whatsapp_number: string | null;
@@ -123,7 +123,7 @@ export default function ClientOverviewPanel() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, client_name, area, contact_person, phone, whatsapp_number')
+        .select('id, client_name, branch, contact_person, phone, whatsapp_number')
         .eq('is_active', true)
         .eq('is_deprecated', false)
         .order('client_name');
@@ -153,7 +153,7 @@ export default function ClientOverviewPanel() {
 
   // ── client_followups ────────────────────────────────────────────────────────
   const { data: followup } = useQuery({
-    queryKey: ['overview-followup', selectedCustomer?.client_name, selectedCustomer?.area],
+    queryKey: ['overview-followup', selectedCustomer?.client_name, selectedCustomer?.branch],
     queryFn: async () => {
       if (!selectedCustomer) return null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -161,7 +161,7 @@ export default function ClientOverviewPanel() {
         .from('client_followups')
         .select('next_followup_date, comments')
         .eq('dealer_name', selectedCustomer.client_name)
-        .eq('branch', selectedCustomer.area ?? '')
+        .eq('branch', selectedCustomer.branch ?? '')
         .maybeSingle();
       return data as { next_followup_date: string | null; comments: string | null } | null;
     },
@@ -414,7 +414,7 @@ export default function ClientOverviewPanel() {
               <SelectItem value="__none__">— Select a client —</SelectItem>
               {customers.map(c => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.client_name}{c.area ? ` · ${c.area}` : ''}
+                  {c.client_name}{c.branch ? ` · ${c.branch}` : ''}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -441,10 +441,10 @@ export default function ClientOverviewPanel() {
                 <User className="h-4 w-4 text-muted-foreground" />
                 <span className="font-semibold text-base">{selectedCustomer.client_name}</span>
               </div>
-              {selectedCustomer.area && (
+              {selectedCustomer.branch && (
                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                   <MapPin className="h-3.5 w-3.5" />
-                  {selectedCustomer.area}
+                  {selectedCustomer.branch}
                 </div>
               )}
               {(selectedCustomer.phone || selectedCustomer.whatsapp_number) && (
@@ -638,7 +638,7 @@ export default function ClientOverviewPanel() {
             onClose={() => setLedgerOpen(false)}
             customerId={selectedCustomer.id}
             dealerName={selectedCustomer.client_name}
-            branch={selectedCustomer.area ?? ''}
+            branch={selectedCustomer.branch ?? ''}
             outstanding={metrics?.outstanding ?? 0}
           />
           <FollowupNotesDrawer
@@ -646,7 +646,7 @@ export default function ClientOverviewPanel() {
             onClose={() => setNotesOpen(false)}
             customerId={selectedCustomer.id}
             dealerName={selectedCustomer.client_name}
-            branch={selectedCustomer.area ?? ''}
+            branch={selectedCustomer.branch ?? ''}
             outstanding={metrics?.outstanding ?? 0}
             currentFollowupDate={followupDateStr}
           />
