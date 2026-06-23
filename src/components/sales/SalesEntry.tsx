@@ -769,12 +769,19 @@ const SalesEntry = () => {
         const dA = new Date(a.transaction_date).getTime();
         const dB = new Date(b.transaction_date).getTime();
         if (dA !== dB) return dA - dB;
+        // payments before sales on the same date (matches DB trigger ordering)
+        const typeOrderA = a.transaction_type === 'payment' ? 0 : 1;
+        const typeOrderB = b.transaction_type === 'payment' ? 0 : 1;
+        if (typeOrderA !== typeOrderB) return typeOrderA - typeOrderB;
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
       const customerBalance: Record<string, number> = {};
       const outstandingMap = new Map<string, number>();
       for (const tx of sorted) {
-        const key = `${tx.customers?.client_name ?? ''}||${tx.customers?.branch ?? tx.branch ?? ''}`;
+        // branch priority matches getTransactionBranch: tx.branch first, then customers join
+        const clientName = tx.customers?.client_name ?? '';
+        const branch = tx.branch || tx.customers?.branch || '';
+        const key = `${clientName}||${branch}`;
         if (customerBalance[key] === undefined) customerBalance[key] = 0;
         const amt = Number(tx.amount) || 0;
         if (tx.transaction_type === 'sale') customerBalance[key] += amt;
