@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, StickyNote, Receipt, User, MapPin } from 'lucide-react';
 import {
-  ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from 'recharts';
 import { fetchFollowupNotes } from '@/lib/receivablesUtils';
@@ -106,6 +106,73 @@ function CreditUtilizationTile({ utilization }: { utilization: number }) {
     </div>
   );
 }
+
+// ── Chart helpers (matches BusinessAnalyticsChart style) ──────────────────────
+
+const LINE_COLORS = {
+  cases: '#7c3aed',
+  revenue: '#059669',
+  profit: '#d97706',
+  collections: '#0284c7',
+};
+
+const CHART_METRIC_META = [
+  { key: 'cases',       label: 'Cases',       color: LINE_COLORS.cases },
+  { key: 'revenue',     label: 'Revenue',     color: LINE_COLORS.revenue },
+  { key: 'profit',      label: 'Profit',      color: LINE_COLORS.profit },
+  { key: 'collections', label: 'Collections', color: LINE_COLORS.collections },
+] as const;
+
+interface DotLabelProps { x?: number; y?: number; value?: number }
+interface TooltipEntry { name: string; dataKey: string; value: number; color: string }
+
+const makeDotLabel = (color: string, fmt: (v: number) => string, dy = -12) =>
+  ({ x, y, value }: DotLabelProps) => {
+    if (value == null) return null;
+    const text = fmt(value);
+    return (
+      <g>
+        <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
+          stroke="white" strokeWidth={4} strokeLinejoin="round" fill="white">{text}</text>
+        <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={10} fontWeight={700}
+          fill={color}>{text}</text>
+      </g>
+    );
+  };
+
+const ChartTooltip = ({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-2xl p-3.5 text-sm min-w-[190px]">
+      <p className="font-semibold text-gray-800 mb-2 pb-2 border-b border-gray-100 text-xs uppercase tracking-wide">{label}</p>
+      {payload.map((entry: TooltipEntry) => {
+        const meta = CHART_METRIC_META.find(m => m.key === entry.dataKey);
+        return (
+          <div key={entry.name} className="flex items-center justify-between gap-6 py-0.5">
+            <span className="flex items-center gap-1.5 text-gray-500 text-xs">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ background: meta?.color ?? entry.color }} />
+              {entry.name}
+            </span>
+            <span className="font-bold tabular-nums text-xs" style={{ color: meta?.color }}>
+              {entry.dataKey === 'cases' ? entry.value.toLocaleString('en-IN') : fmtMoney(entry.value)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const ChartLegend = () => (
+  <div className="flex flex-wrap justify-center gap-5 pt-1">
+    {CHART_METRIC_META.map(({ key, label, color }) => (
+      <span key={key} className="flex items-center gap-1.5 text-xs font-medium" style={{ color }}>
+        <span className="h-3 w-3 rounded-full opacity-80" style={{ background: color }} />
+        {label}
+      </span>
+    ))}
+  </div>
+);
 
 // ── ClientOverviewPanel ────────────────────────────────────────────────────────
 
@@ -538,57 +605,28 @@ export default function ClientOverviewPanel() {
               <p className="text-sm text-muted-foreground">No transaction data found for this client.</p>
             )}
 
-            {/* Bar chart */}
+            {/* Line chart — same style as Business Analytics */}
             {chartData.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Monthly Performance</p>
-                <ResponsiveContainer width="100%" height={300}>
-                  <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }} barCategoryGap="28%" barGap={2}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 11, fill: '#6b7280' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      yAxisId="cases"
-                      orientation="left"
-                      tick={{ fontSize: 10, fill: '#6b7280' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={28}
-                      label={{ value: 'Cases', angle: -90, position: 'insideLeft', offset: 8, style: { fontSize: 10, fill: '#9ca3af' } }}
-                    />
-                    <YAxis
-                      yAxisId="money"
-                      orientation="right"
-                      tick={{ fontSize: 10, fill: '#6b7280' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={56}
-                      tickFormatter={v => fmtMoney(v)}
-                    />
-                    <Tooltip
-                      contentStyle={{ borderRadius: 10, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.10)', fontSize: 12, padding: '10px 14px' }}
-                      labelStyle={{ fontWeight: 600, marginBottom: 6, color: '#111827' }}
-                      formatter={(value: number, name: string) => {
-                        if (name === 'Cases') return [`${value} cs`, 'Cases'];
-                        return [fmtMoney(value), name];
-                      }}
-                      cursor={{ fill: 'rgba(0,0,0,0.04)' }}
-                    />
-                    <Legend
-                      wrapperStyle={{ fontSize: 11, paddingTop: 12 }}
-                      iconType="circle"
-                      iconSize={8}
-                    />
-                    <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#7c3aed" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                    <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#059669" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                    <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#0284c7" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                    <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#d97706" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                <div className="overflow-x-auto -mx-2">
+                  <div style={{ minWidth: Math.max(420, chartData.length * 80) }} className="px-2">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <ComposedChart data={chartData} margin={{ top: 28, right: 16, left: 4, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={0} />
+                        <YAxis yAxisId="cases" orientation="left" tickFormatter={v => v.toLocaleString('en-IN')} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={40} />
+                        <YAxis yAxisId="money" orientation="right" tickFormatter={fmtMoney} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={56} />
+                        <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(100,116,139,0.06)' }} />
+                        <Legend content={<ChartLegend />} />
+                        <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke={LINE_COLORS.cases} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.cases, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.cases, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.cases, v => v.toLocaleString('en-IN'), -12)} />
+                        <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke={LINE_COLORS.revenue} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.revenue, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.revenue, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.revenue, fmtMoney, -12)} />
+                        <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke={LINE_COLORS.profit} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.profit, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.profit, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.profit, fmtMoney, 20)} />
+                        <Line yAxisId="money" type="monotone" dataKey="collections" name="Collections" stroke={LINE_COLORS.collections} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.collections, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.collections, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.collections, fmtMoney, -24)} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             )}
 
