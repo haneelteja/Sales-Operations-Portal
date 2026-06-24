@@ -117,16 +117,15 @@ export default function ClientOverviewPanel() {
   const [notesOpen, setNotesOpen] = useState(false);
 
   // ── Customers list ──────────────────────────────────────────────────────────
-  const { data: customers = [] } = useQuery<Customer[]>({
+  const { data: customers = [], error: customersError } = useQuery<Customer[]>({
     queryKey: ['overview-customers'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, client_name, branch, phone, whatsapp_number, is_deprecated')
-        .eq('is_active', true)
+        .select('id, client_name, branch, phone, whatsapp_number')
         .order('client_name');
       if (error) throw error;
-      return (data ?? []).filter(c => !(c as Record<string, unknown>).is_deprecated) as Customer[];
+      return (data ?? []) as Customer[];
     },
     staleTime: 10 * 60 * 1000,
   });
@@ -421,6 +420,9 @@ export default function ClientOverviewPanel() {
       </CardHeader>
 
       <CardContent>
+        {customersError && (
+          <p className="text-xs text-red-500 mb-2">Error loading clients: {String(customersError)}</p>
+        )}
         {!selectedCustomer ? (
           <div className="text-center py-16 text-muted-foreground text-sm">
             <User className="h-10 w-10 mx-auto mb-3 opacity-20" />
