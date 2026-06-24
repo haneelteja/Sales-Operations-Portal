@@ -44,8 +44,6 @@ interface Customer {
   id: string;
   client_name: string;
   branch: string | null;
-  phone: string | null;
-  whatsapp_number: string | null;
 }
 
 interface SaleTx {
@@ -122,7 +120,7 @@ export default function ClientOverviewPanel() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, client_name, branch, phone, whatsapp_number')
+        .select('id, client_name, branch')
         .order('client_name');
       if (error) throw error;
       return (data ?? []) as Customer[];
@@ -448,11 +446,6 @@ export default function ClientOverviewPanel() {
                   <MapPin className="h-3.5 w-3.5" />
                   {selectedCustomer.branch}
                 </div>
-              )}
-              {(selectedCustomer.phone || selectedCustomer.whatsapp_number) && (
-                <span className="text-sm text-muted-foreground">
-                  {selectedCustomer.phone || selectedCustomer.whatsapp_number}
-                </span>
               )}
             </div>
 
