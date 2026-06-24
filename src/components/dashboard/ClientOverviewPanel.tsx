@@ -123,7 +123,14 @@ export default function ClientOverviewPanel() {
         .select('id, client_name, branch')
         .order('client_name');
       if (error) throw error;
-      return (data ?? []) as Customer[];
+      // Deduplicate by client_name + branch — keep first row per unique pair
+      const seen = new Set<string>();
+      return (data ?? []).filter(c => {
+        const key = `${c.client_name}||${c.branch ?? ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }) as Customer[];
     },
     staleTime: 10 * 60 * 1000,
   });
@@ -534,25 +541,52 @@ export default function ClientOverviewPanel() {
             {/* Bar chart */}
             {chartData.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Monthly Performance</p>
-                <ResponsiveContainer width="100%" height={260}>
-                  <ComposedChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="cases" orientation="left" tick={{ fontSize: 10 }} width={32} />
-                    <YAxis yAxisId="money" orientation="right" tick={{ fontSize: 10 }} width={52}
-                      tickFormatter={v => fmtMoney(v)} />
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Monthly Performance</p>
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }} barCategoryGap="28%" barGap={2}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11, fill: '#6b7280' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="cases"
+                      orientation="left"
+                      tick={{ fontSize: 10, fill: '#6b7280' }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={28}
+                      label={{ value: 'Cases', angle: -90, position: 'insideLeft', offset: 8, style: { fontSize: 10, fill: '#9ca3af' } }}
+                    />
+                    <YAxis
+                      yAxisId="money"
+                      orientation="right"
+                      tick={{ fontSize: 10, fill: '#6b7280' }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={56}
+                      tickFormatter={v => fmtMoney(v)}
+                    />
                     <Tooltip
+                      contentStyle={{ borderRadius: 10, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.10)', fontSize: 12, padding: '10px 14px' }}
+                      labelStyle={{ fontWeight: 600, marginBottom: 6, color: '#111827' }}
                       formatter={(value: number, name: string) => {
-                        if (name === 'Cases') return [value, 'Cases'];
+                        if (name === 'Cases') return [`${value} cs`, 'Cases'];
                         return [fmtMoney(value), name];
                       }}
+                      cursor={{ fill: 'rgba(0,0,0,0.04)' }}
                     />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#7c3aed" opacity={0.85} radius={[3, 3, 0, 0]} />
-                    <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#059669" opacity={0.85} radius={[3, 3, 0, 0]} />
-                    <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#0284c7" opacity={0.85} radius={[3, 3, 0, 0]} />
-                    <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#d97706" opacity={0.85} radius={[3, 3, 0, 0]} />
+                    <Legend
+                      wrapperStyle={{ fontSize: 11, paddingTop: 12 }}
+                      iconType="circle"
+                      iconSize={8}
+                    />
+                    <Bar yAxisId="cases" dataKey="cases" name="Cases" fill="#7c3aed" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="#059669" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar yAxisId="money" dataKey="collections" name="Collections" fill="#0284c7" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar yAxisId="money" dataKey="profit" name="Profit" fill="#d97706" radius={[4, 4, 0, 0]} maxBarSize={32} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
