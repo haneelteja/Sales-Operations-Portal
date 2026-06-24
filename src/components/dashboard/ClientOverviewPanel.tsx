@@ -421,7 +421,9 @@ export default function ClientOverviewPanel() {
 
       <CardContent>
         {customersError && (
-          <p className="text-xs text-red-500 mb-2">Error loading clients: {String(customersError)}</p>
+          <p className="text-xs text-red-500 mb-2">
+            Error loading clients: {(customersError as { message?: string })?.message ?? JSON.stringify(customersError)}
+          </p>
         )}
         {!selectedCustomer ? (
           <div className="text-center py-16 text-muted-foreground text-sm">
