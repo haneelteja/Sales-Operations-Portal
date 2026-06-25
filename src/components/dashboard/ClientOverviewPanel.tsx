@@ -494,7 +494,7 @@ export default function ClientOverviewPanel() {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[280px] p-0" align="end">
-              <Command>
+              <Command filter={(value, search) => value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0}>
                 <CommandInput placeholder="Search client..." />
                 <CommandList>
                   <CommandEmpty>No client found.</CommandEmpty>
