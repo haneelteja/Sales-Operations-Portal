@@ -763,34 +763,14 @@ const SalesEntry = () => {
         return [];
       }
       
-      // Compute running outstanding client-side per client+branch, sorted by date then created_at.
-      // DB total_amount can be stale; client-side is always consistent with loaded data.
-      const sorted = [...recentTransactions].sort((a, b) => {
-        const dA = new Date(a.transaction_date).getTime();
-        const dB = new Date(b.transaction_date).getTime();
-        if (dA !== dB) return dA - dB;
-        // payments before sales on the same date (matches DB trigger ordering)
-        const typeOrderA = a.transaction_type === 'payment' ? 0 : 1;
-        const typeOrderB = b.transaction_type === 'payment' ? 0 : 1;
-        if (typeOrderA !== typeOrderB) return typeOrderA - typeOrderB;
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      });
-      const customerBalance: Record<string, number> = {};
-      const outstandingMap = new Map<string, number>();
-      for (const tx of sorted) {
-        // branch priority matches getTransactionBranch: tx.branch first, then customers join
-        const clientName = tx.customers?.client_name ?? '';
-        const branch = tx.branch || tx.customers?.branch || '';
-        const key = `${clientName}||${branch}`;
-        if (customerBalance[key] === undefined) customerBalance[key] = 0;
-        const amt = Number(tx.amount) || 0;
-        if (tx.transaction_type === 'sale') customerBalance[key] += amt;
-        else if (tx.transaction_type === 'payment') customerBalance[key] -= amt;
-        outstandingMap.set(tx.id, customerBalance[key]);
-      }
+      // Use DB total_amount for outstanding — the trigger recalculate_outstanding_for_client
+      // computes a full-history running balance on every insert/update/delete, so it is
+      // always correct regardless of how much history the 90-day UI window loads.
+      // Client-side recomputation from the 90-day window gives wrong values because it
+      // starts the running balance at 0 instead of the true pre-window balance.
       const transactionsWithOutstanding = recentTransactions.map((transaction) => ({
         ...transaction,
-        outstanding: outstandingMap.get(transaction.id) ?? 0,
+        outstanding: transaction.total_amount ?? 0,
       }));
 
       const monthFiltered = monthFilter
