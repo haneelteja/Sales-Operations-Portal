@@ -37,7 +37,7 @@ export const useCustomers = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, client_name, branch, sku, price_per_case, price_per_bottle, contact_person, phone, email, address, is_active, created_at, updated_at")
+        .select("id, client_name, branch, sku, price_per_case, price_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, is_deprecated, created_at, updated_at")
         .eq("is_active", true)
         .order("client_name", { ascending: true });
       
