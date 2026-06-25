@@ -2,10 +2,11 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, StickyNote, Receipt, User, MapPin } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Loader2, StickyNote, Receipt, User, MapPin, ChevronsUpDown, Check } from 'lucide-react';
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
@@ -178,6 +179,7 @@ const ChartLegend = () => (
 
 export default function ClientOverviewPanel() {
   const [selectedId, setSelectedId] = useState<string>('');
+  const [comboOpen, setComboOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
 
@@ -475,19 +477,49 @@ export default function ClientOverviewPanel() {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <CardTitle className="text-base font-semibold">Client Overview</CardTitle>
-          <Select value={selectedId || '__none__'} onValueChange={v => setSelectedId(v === '__none__' ? '' : v)}>
-            <SelectTrigger className="w-[260px]">
-              <SelectValue placeholder="Select a client..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— Select a client —</SelectItem>
-              {customers.map(c => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.client_name}{c.branch ? ` · ${c.branch}` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={comboOpen} onOpenChange={setComboOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={comboOpen}
+                className="w-[280px] justify-between font-normal"
+              >
+                <span className="truncate">
+                  {selectedCustomer
+                    ? `${selectedCustomer.client_name}${selectedCustomer.branch ? ` · ${selectedCustomer.branch}` : ''}`
+                    : '— Select a client —'}
+                </span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[280px] p-0" align="end">
+              <Command>
+                <CommandInput placeholder="Search client..." />
+                <CommandList>
+                  <CommandEmpty>No client found.</CommandEmpty>
+                  <CommandGroup>
+                    {customers.map(c => {
+                      const label = `${c.client_name}${c.branch ? ` · ${c.branch}` : ''}`;
+                      return (
+                        <CommandItem
+                          key={c.id}
+                          value={label}
+                          onSelect={() => {
+                            setSelectedId(c.id);
+                            setComboOpen(false);
+                          }}
+                        >
+                          <Check className={`mr-2 h-4 w-4 ${selectedId === c.id ? 'opacity-100' : 'opacity-0'}`} />
+                          {label}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
       </CardHeader>
 
