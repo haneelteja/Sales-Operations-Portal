@@ -578,14 +578,10 @@ const SalesEntry = () => {
 
   // Fetch transactions (limited for performance, paginated client-side after filtering)
   const { data: allTransactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
-    queryKey: ["recent-transactions"],
-    ...getQueryConfig("recent-transactions"),
+    queryKey: ["sales-transactions"],
+    ...getQueryConfig("sales-transactions"),
     queryFn: async () => {
       try {
-        // Limit to last 90 days or max 2000 records for performance
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-        
         const { data, error, count } = await supabase
           .from("sales_transactions")
           .select(`
@@ -603,10 +599,9 @@ const SalesEntry = () => {
             created_at,
             customers (client_name, branch)
           `, { count: 'exact' })
-          .gte("created_at", ninetyDaysAgo.toISOString())
           .order("transaction_date", { ascending: false })
           .order("created_at", { ascending: false })
-          .limit(2000); // Safety limit
+          .limit(5000);
         
         if (error) {
           logger.error('Error fetching transactions:', error);
@@ -764,10 +759,7 @@ const SalesEntry = () => {
       }
       
       // Use DB total_amount for outstanding — the trigger recalculate_outstanding_for_client
-      // computes a full-history running balance on every insert/update/delete, so it is
-      // always correct regardless of how much history the 90-day UI window loads.
-      // Client-side recomputation from the 90-day window gives wrong values because it
-      // starts the running balance at 0 instead of the true pre-window balance.
+      // computes a full-history running balance on every insert/update/delete.
       const transactionsWithOutstanding = recentTransactions.map((transaction) => ({
         ...transaction,
         outstanding: transaction.total_amount ?? 0,
