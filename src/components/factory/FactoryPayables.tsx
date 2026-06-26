@@ -1267,13 +1267,7 @@ const FactoryPayables = () => {
                   transaction.transaction_type === 'production' ? 'text-red-600' : 'text-green-600'
                 }`}>
                   {(() => {
-                    let amount = transaction.amount || 0;
-
-                    // Use date-aware pricePerCase (already computed above) for production transactions
-                    if (transaction.transaction_type === 'production' && transaction.quantity && pricePerCase) {
-                      amount = transaction.quantity * pricePerCase;
-                    }
-
+                    const amount = transaction.amount || 0;
                     return `${transaction.transaction_type === 'production' ? '+' : '-'}₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`;
                   })()}
                 </TableCell>
@@ -1355,6 +1349,21 @@ const FactoryPayables = () => {
             <DialogTitle>Edit Transaction</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEditSubmit} className="space-y-4">
+            {(() => {
+              const editingCustomer = customers?.find(c => c.id === editingTransaction?.customer_id);
+              return editingCustomer ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Client</Label>
+                    <Input value={editingCustomer.client_name || '-'} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Branch</Label>
+                    <Input value={editingCustomer.branch || '-'} disabled className="bg-muted" />
+                  </div>
+                </div>
+              ) : null;
+            })()}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-date">Date</Label>
