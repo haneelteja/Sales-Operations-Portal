@@ -98,3 +98,4 @@ supabase/.temp/
 
 # Build outputs
 *.tsbuildinfo
+.vercel
