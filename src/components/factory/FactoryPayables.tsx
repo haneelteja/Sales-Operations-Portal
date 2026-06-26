@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, lazy, Suspense } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 const FactoryPricingTab = lazy(() => import("./FactoryPricingTab"));
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAuditLog } from "@/hooks/useAuditLog";
@@ -29,6 +30,9 @@ import { passesMultiFilter } from '@/lib/utils';
 import { PageSizeSelector } from '@/components/ui/page-size-selector';
 
 const FactoryPayables = () => {
+  const { profile } = useAuth();
+  const isManager = profile?.role === 'manager' || profile?.role === 'admin';
+
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
     description: "",
@@ -670,13 +674,17 @@ const FactoryPayables = () => {
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: async (data: { id: string; transaction_type: string } & Partial<FactoryProductionForm & FactoryPaymentForm>) => {
-      const updateData = { ...data };
-      
-      // For production transactions, recalculate amount based on date-aware factory pricing
+    mutationFn: async (data: { id: string; transaction_type: string; overrideAmount?: number } & Partial<FactoryProductionForm & FactoryPaymentForm>) => {
+      const { overrideAmount, ...updateData } = data;
+
+      // For production transactions, recalculate amount unless manager has set a manual override
       if (data.transaction_type === 'production' && data.quantity && data.sku) {
-        const pricePerCase = getPricePerCase(data.sku, data.transaction_date as string | undefined);
-        updateData.amount = pricePerCase ? parseInt(data.quantity) * pricePerCase : data.amount;
+        if (overrideAmount !== undefined) {
+          updateData.amount = overrideAmount;
+        } else {
+          const pricePerCase = getPricePerCase(data.sku, data.transaction_date as string | undefined);
+          updateData.amount = pricePerCase ? parseInt(data.quantity) * pricePerCase : data.amount;
+        }
       }
 
       const { error } = await supabase
@@ -767,11 +775,13 @@ const FactoryPayables = () => {
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTransaction) return;
-    
+
+    const isProduction = editingTransaction.transaction_type === 'production';
     updateMutation.mutate({
       id: editingTransaction.id,
       transaction_type: editingTransaction.transaction_type,
-      amount: editingTransaction.transaction_type === 'payment' ? parseFloat(editForm.amount) : editForm.amount,
+      amount: isProduction ? editForm.amount : parseFloat(editForm.amount),
+      ...(isProduction && isManager && editForm.amount !== '' && { overrideAmount: parseFloat(editForm.amount) }),
       quantity: editForm.quantity ? parseInt(editForm.quantity) : null,
       sku: editForm.sku || null,
       description: editForm.description,
@@ -1379,17 +1389,26 @@ const FactoryPayables = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Total Amount (₹)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={(() => {
-                        const price = getPricePerCase(editForm.sku, editForm.transaction_date);
-                        return price && editForm.quantity ? (parseInt(editForm.quantity) * price).toFixed(4) : '0';
-                      })()}
-                      disabled
-                      className="bg-muted"
-                    />
+                    <Label>Total Amount (₹){isManager && <span className="ml-1 text-xs text-muted-foreground">(editable)</span>}</Label>
+                    {isManager ? (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={editForm.amount}
+                        onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                      />
+                    ) : (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={(() => {
+                          const price = getPricePerCase(editForm.sku, editForm.transaction_date);
+                          return price && editForm.quantity ? (parseInt(editForm.quantity) * price).toFixed(4) : '0';
+                        })()}
+                        disabled
+                        className="bg-muted"
+                      />
+                    )}
                   </div>
                 </>
               )}
