@@ -176,27 +176,36 @@ const FactoryPayables = () => {
       customers!.filter(c => c.client_name === selected.client_name).map(c => c.branch).filter(Boolean)
     )] as string[];
     const autoArea = branches.length === 1 ? branches[0] : "";
+
+    // If a branch was auto-selected, use that branch's specific customer row id
+    let finalCustomerId = clientId;
     let autoSku = "";
     if (autoArea) {
+      const branchCustomer = customers!.find(c => c.client_name === selected.client_name && c.branch === autoArea);
+      if (branchCustomer) finalCustomerId = branchCustomer.id;
       const skus = [...new Set(
         customers!.filter(c => c.client_name === selected.client_name && c.branch === autoArea && c.sku).map(c => c.sku as string)
       )];
       autoSku = skus.length === 1 ? skus[0] : "";
     }
-    setProductionForm(f => ({ ...f, customer_id: clientId, area: autoArea, sku: autoSku }));
+    setProductionForm(f => ({ ...f, customer_id: finalCustomerId, area: autoArea, sku: autoSku }));
   };
 
-  // Handle production branch change — auto-select SKU if only one
+  // Handle production branch change — update customer_id to the correct branch row and auto-select SKU
   const handleProductionBranchChange = (area: string) => {
     const selected = customers?.find(c => c.id === productionForm.customer_id);
-    let autoSku = "";
-    if (selected) {
-      const skus = [...new Set(
-        customers!.filter(c => c.client_name === selected.client_name && c.branch === area && c.sku).map(c => c.sku as string)
-      )];
-      autoSku = skus.length === 1 ? skus[0] : "";
-    }
-    setProductionForm(f => ({ ...f, area, sku: autoSku }));
+    if (!selected) { setProductionForm(f => ({ ...f, area, sku: "" })); return; }
+
+    // Find the customer row for this exact client+branch combination so customer_id is correct
+    const branchCustomer = customers!.find(c => c.client_name === selected.client_name && c.branch === area);
+    const newCustomerId = branchCustomer?.id ?? productionForm.customer_id;
+
+    const skus = [...new Set(
+      customers!.filter(c => c.client_name === selected.client_name && c.branch === area && c.sku).map(c => c.sku as string)
+    )];
+    const autoSku = skus.length === 1 ? skus[0] : "";
+
+    setProductionForm(f => ({ ...f, customer_id: newCustomerId, area, sku: autoSku }));
   };
 
   // Fetch factory transactions
