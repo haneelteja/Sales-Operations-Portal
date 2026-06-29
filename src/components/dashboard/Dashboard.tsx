@@ -117,24 +117,33 @@ const Dashboard = memo(() => {
           .eq("transaction_type", "sale"),
       ]);
 
-      // Sum production per (customer_id, sku)
+      // Sum production per (client_name, branch, sku).
+      // Keying on customer_id was wrong: customers table has one row per (client, branch, SKU),
+      // so factory_payables and sales_transactions can reference different customer_id values
+      // for the same client+branch when the SKU-specific rows differ. Matching on the
+      // resolved (client_name, branch, sku) tuple is reliable regardless of which customer row
+      // each table happened to reference.
       const prodMap = new Map<string, { clientName: string; branch: string; sku: string; qty: number }>();
       for (const r of prodRows ?? []) {
-        const key = `${r.customer_id}|||${r.sku ?? ""}`;
-        const existing = prodMap.get(key);
         const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
         const area = (r.customers as { branch?: string } | null)?.branch ?? "";
+        const sku = r.sku ?? "";
+        const key = `${clientName}|||${area}|||${sku}`;
+        const existing = prodMap.get(key);
         if (existing) {
           existing.qty += r.quantity ?? 0;
         } else {
-          prodMap.set(key, { clientName, branch: area, sku: r.sku ?? "", qty: r.quantity ?? 0 });
+          prodMap.set(key, { clientName, branch: area, sku, qty: r.quantity ?? 0 });
         }
       }
 
-      // Sum sales per (customer_id, sku)
+      // Sum sales per (client_name, branch, sku)
       const salesMap = new Map<string, number>();
       for (const r of salesRows ?? []) {
-        const key = `${r.customer_id}|||${r.sku ?? ""}`;
+        const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
+        const area = (r.customers as { branch?: string } | null)?.branch ?? "";
+        const sku = r.sku ?? "";
+        const key = `${clientName}|||${area}|||${sku}`;
         salesMap.set(key, (salesMap.get(key) ?? 0) + (r.quantity ?? 0));
       }
 
