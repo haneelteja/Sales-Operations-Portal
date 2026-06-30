@@ -576,41 +576,74 @@ const SalesEntry = () => {
     checkSingleSKUMode();
   }, [checkSingleSKUMode]);
 
-  // Fetch transactions (limited for performance, paginated client-side after filtering)
+  // Fetch ALL transactions using range pagination to bypass PostgREST max_rows (default 1000).
+  // Without this, the oldest entries are silently dropped when total rows > max_rows.
   const { data: allTransactions, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ["sales-transactions"],
     ...getQueryConfig("sales-transactions"),
     queryFn: async () => {
       try {
-        const { data, error, count } = await supabase
+        const PAGE_SIZE = 1000;
+        const fields = `
+          id,
+          customer_id,
+          transaction_date,
+          transaction_type,
+          amount,
+          total_amount,
+          quantity,
+          sku,
+          description,
+          branch,
+          invoice_id,
+          created_at,
+          customers (client_name, branch)
+        `;
+
+        // First page — also gets the exact count
+        const { data: firstPage, error: firstError, count } = await supabase
           .from("sales_transactions")
-          .select(`
-            id,
-            customer_id,
-            transaction_date,
-            transaction_type,
-            amount,
-            total_amount,
-            quantity,
-            sku,
-            description,
-            branch,
-            invoice_id,
-            created_at,
-            customers (client_name, branch)
-          `, { count: 'exact' })
+          .select(fields, { count: 'exact' })
           .order("transaction_date", { ascending: false })
           .order("created_at", { ascending: false })
-          .limit(5000);
-        
-        if (error) {
-          logger.error('Error fetching transactions:', error);
-          throw new Error(`Failed to fetch transactions: ${error.message}`);
+          .range(0, PAGE_SIZE - 1);
+
+        if (firstError) {
+          logger.error('Error fetching transactions:', firstError);
+          throw new Error(`Failed to fetch transactions: ${firstError.message}`);
         }
-        
+
+        const total = count ?? 0;
+        let allData = firstPage ?? [];
+
+        // Fetch remaining pages if total exceeds first page
+        if (total > PAGE_SIZE) {
+          const pageCount = Math.ceil(total / PAGE_SIZE);
+          const remaining = await Promise.all(
+            Array.from({ length: pageCount - 1 }, (_, i) => {
+              const from = (i + 1) * PAGE_SIZE;
+              const to = from + PAGE_SIZE - 1;
+              return supabase
+                .from("sales_transactions")
+                .select(fields)
+                .order("transaction_date", { ascending: false })
+                .order("created_at", { ascending: false })
+                .range(from, to);
+            })
+          );
+
+          for (const { data: pageData, error: pageError } of remaining) {
+            if (pageError) {
+              logger.error('Error fetching transactions page:', pageError);
+              throw new Error(`Failed to fetch transactions: ${pageError.message}`);
+            }
+            if (pageData) allData = allData.concat(pageData);
+          }
+        }
+
         return {
-          data: data || [],
-          total: count || 0
+          data: allData,
+          total,
         };
       } catch (error) {
         logger.error('Critical error in transactions query:', error);
