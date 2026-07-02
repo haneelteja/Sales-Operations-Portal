@@ -48,6 +48,13 @@ const FactoryPayables = () => {
     area: "",
   });
 
+  const [plantStockForm, setPlantStockForm] = useState({
+    sku: "",
+    quantity: "",
+    description: "",
+    transaction_date: new Date().toISOString().split('T')[0],
+  });
+
   const [editingTransaction, setEditingTransaction] = useState<FactoryPayable | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -447,6 +454,20 @@ const FactoryPayables = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing, monthFilter, clientFilter, customerById]);
 
+  // Latest plant stock per SKU (for display in Plant Stock tab)
+  const currentPlantStock = useMemo(() => {
+    if (!transactions) return [];
+    const latestBySku = new Map<string, { sku: string; quantity: number; transaction_date: string }>();
+    transactions
+      .filter(t => t.transaction_type === 'plant_stock' && t.sku)
+      .forEach(t => {
+        if (!latestBySku.has(t.sku!)) {
+          latestBySku.set(t.sku!, { sku: t.sku!, quantity: t.quantity || 0, transaction_date: t.transaction_date });
+        }
+      });
+    return Array.from(latestBySku.values()).sort((a, b) => a.sku.localeCompare(b.sku));
+  }, [transactions]);
+
   // Paginated slice of filtered+sorted transactions
   const paginatedTransactions = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -611,13 +632,14 @@ const FactoryPayables = () => {
   const productionMutation = useMutation({
     mutationFn: async (data: FactoryProductionForm) => {
       const pricePerCase = getPricePerCase(data.sku, data.transaction_date);
-      const calculatedAmount = pricePerCase ? parseInt(data.quantity) * pricePerCase : 0;
+      const dispatchedQty = parseInt(data.quantity);
+      const calculatedAmount = pricePerCase ? dispatchedQty * pricePerCase : 0;
 
       const { error } = await supabase
         .from("factory_payables")
         .insert({
           sku: data.sku,
-          quantity: parseInt(data.quantity),
+          quantity: dispatchedQty,
           description: data.description || null,
           transaction_date: data.transaction_date,
           transaction_type: "production",
@@ -626,6 +648,33 @@ const FactoryPayables = () => {
         });
 
       if (error) throw error;
+
+      // Auto-reduce plant stock for this SKU if any stock exists
+      const { data: latestStock } = await supabase
+        .from("factory_payables")
+        .select("quantity")
+        .eq("transaction_type", "plant_stock")
+        .eq("sku", data.sku)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestStock !== null) {
+        const currentQty = latestStock.quantity || 0;
+        const newQty = Math.max(0, currentQty - dispatchedQty);
+        const { error: stockError } = await supabase
+          .from("factory_payables")
+          .insert({
+            sku: data.sku,
+            quantity: newQty,
+            description: `Auto-deducted: ${dispatchedQty} cases dispatched`,
+            transaction_date: data.transaction_date,
+            transaction_type: "plant_stock",
+            amount: 0,
+            customer_id: null,
+          });
+        if (stockError) throw stockError;
+      }
     },
     onSuccess: (_result, variables) => {
       log({ action: 'CREATE', entityType: 'factory_production', description: `Factory production recorded: ${variables.quantity} cases of ${variables.sku} on ${variables.transaction_date}`, newValues: { sku: variables.sku, quantity: variables.quantity, date: variables.transaction_date } });
@@ -678,6 +727,33 @@ const FactoryPayables = () => {
         description: "Failed to record payment: " + (error instanceof Error ? error.message : ''),
         variant: "destructive"
       });
+    },
+  });
+
+  // Plant stock mutation
+  const plantStockMutation = useMutation({
+    mutationFn: async (data: typeof plantStockForm) => {
+      const { error } = await supabase
+        .from("factory_payables")
+        .insert({
+          sku: data.sku,
+          quantity: parseInt(data.quantity),
+          description: data.description || null,
+          transaction_date: data.transaction_date,
+          transaction_type: "plant_stock",
+          amount: 0,
+          customer_id: null,
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      log({ action: 'CREATE', entityType: 'plant_stock', description: `Plant stock recorded: ${plantStockForm.quantity} cases of ${plantStockForm.sku}`, newValues: { sku: plantStockForm.sku, quantity: plantStockForm.quantity } });
+      toast({ title: "Success", description: "Plant stock recorded!" });
+      setPlantStockForm({ sku: "", quantity: "", description: "", transaction_date: new Date().toISOString().split('T')[0] });
+      invalidateRelated('factory_payables');
+    },
+    onError: (error: unknown) => {
+      toast({ title: "Error", description: "Failed to record plant stock: " + (error instanceof Error ? error.message : ''), variant: "destructive" });
     },
   });
 
@@ -769,6 +845,15 @@ const FactoryPayables = () => {
     paymentMutation.mutate(paymentForm);
   };
 
+  const handlePlantStockSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!plantStockForm.sku || !plantStockForm.quantity) {
+      toast({ title: "Error", description: "Please fill in SKU and quantity", variant: "destructive" });
+      return;
+    }
+    plantStockMutation.mutate(plantStockForm);
+  };
+
   const handleEditClick = (transaction: FactoryPayable) => {
     setEditingTransaction(transaction);
     setEditForm({
@@ -838,9 +923,10 @@ const FactoryPayables = () => {
 
       {/* Tabs for Production and Payment Forms */}
       <Tabs defaultValue="payment" value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="payment">Record Payment to Elma Industries</TabsTrigger>
           <TabsTrigger value="production">Record Production Transaction</TabsTrigger>
+          <TabsTrigger value="plant-stock">Plant Stock</TabsTrigger>
           <TabsTrigger value="pricing">Factory Pricing</TabsTrigger>
         </TabsList>
 
@@ -992,6 +1078,94 @@ const FactoryPayables = () => {
           </div>
         </TabsContent>
 
+        <TabsContent value="plant-stock">
+          <div className="border rounded-lg p-6 space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Record Plant Stock (Fresh Count)</h3>
+              <form onSubmit={handlePlantStockSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="plant-stock-date">Date</Label>
+                    <Input
+                      id="plant-stock-date"
+                      type="date"
+                      max={new Date().toISOString().split('T')[0]}
+                      value={plantStockForm.transaction_date}
+                      onChange={(e) => setPlantStockForm({ ...plantStockForm, transaction_date: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="plant-stock-sku">SKU *</Label>
+                    <SearchableSelect
+                      options={(availableSKUs ?? []).map(sku => ({ value: sku, label: sku }))}
+                      value={plantStockForm.sku}
+                      onValueChange={(value) => setPlantStockForm({ ...plantStockForm, sku: value })}
+                      placeholder="Select SKU"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="plant-stock-quantity">Quantity (Cases) *</Label>
+                    <Input
+                      id="plant-stock-quantity"
+                      type="number"
+                      min="0"
+                      value={plantStockForm.quantity}
+                      onChange={(e) => setPlantStockForm({ ...plantStockForm, quantity: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plant-stock-description">Description</Label>
+                  <Textarea
+                    id="plant-stock-description"
+                    value={plantStockForm.description}
+                    onChange={(e) => setPlantStockForm({ ...plantStockForm, description: e.target.value })}
+                    placeholder="e.g. End of day count"
+                  />
+                </div>
+                <Button type="submit" disabled={plantStockMutation.isPending}>
+                  {plantStockMutation.isPending ? "Recording..." : "Record Stock Count"}
+                </Button>
+              </form>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Current Stock at Plant</h3>
+              {currentPlantStock.length === 0 ? (
+                <p className="text-muted-foreground text-sm">No plant stock recorded yet.</p>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">SKU</TableHead>
+                        <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-center">Current Qty (Cases)</TableHead>
+                        <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">Last Updated</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {currentPlantStock.map((stock) => (
+                        <TableRow key={stock.sku}>
+                          <TableCell className="font-medium">{stock.sku}</TableCell>
+                          <TableCell className="text-center">
+                            <span className={`font-semibold ${stock.quantity === 0 ? 'text-muted-foreground' : 'text-blue-700'}`}>
+                              {stock.quantity}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {new Date(stock.transaction_date).toLocaleDateString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
         <TabsContent value="pricing">
           <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
             <FactoryPricingTab />
@@ -999,8 +1173,8 @@ const FactoryPayables = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Transactions Table — hidden on Factory Pricing tab */}
-      {activeTab !== 'pricing' &&
+      {/* Transactions Table — hidden on Factory Pricing and Plant Stock tabs */}
+      {activeTab !== 'pricing' && activeTab !== 'plant-stock' &&
       <div className="border rounded-lg p-6">
         <div className="space-y-4 mb-6">
           <div className="flex items-center justify-between">
@@ -1070,7 +1244,7 @@ const FactoryPayables = () => {
                   setColumnFilters({
                     date: "",
                     client: "",
-                    area: "",
+                    branch: "",
                     sku: "",
                     quantity: "",
                     price_per_case: "",
@@ -1080,7 +1254,7 @@ const FactoryPayables = () => {
                   setColumnSorts({
                     date: null,
                     client: null,
-                    area: null,
+                    branch: null,
                     sku: null,
                     quantity: null,
                     price_per_case: null,
@@ -1268,14 +1442,20 @@ const FactoryPayables = () => {
                   {pricePerCase ? `₹${pricePerCase.toLocaleString('en-IN', { maximumFractionDigits: 4 })}` : '-'}
                 </TableCell>
                 <TableCell className="text-center">
-                  <Badge variant={transaction.transaction_type === 'production' ? 'default' : 'secondary'}>
-                    {transaction.transaction_type === 'production' ? 'Production' : 'Payment'}
+                  <Badge variant={
+                    transaction.transaction_type === 'production' ? 'default' :
+                    transaction.transaction_type === 'plant_stock' ? 'outline' : 'secondary'
+                  }>
+                    {transaction.transaction_type === 'production' ? 'Production' :
+                     transaction.transaction_type === 'plant_stock' ? 'Plant Stock' : 'Payment'}
                   </Badge>
                 </TableCell>
                 <TableCell className={`text-right font-medium ${
-                  transaction.transaction_type === 'production' ? 'text-red-600' : 'text-green-600'
+                  transaction.transaction_type === 'production' ? 'text-red-600' :
+                  transaction.transaction_type === 'plant_stock' ? 'text-muted-foreground' : 'text-green-600'
                 }`}>
                   {(() => {
+                    if (transaction.transaction_type === 'plant_stock') return `${transaction.quantity ?? 0} cases`;
                     const amount = transaction.amount || 0;
                     return `${transaction.transaction_type === 'production' ? '+' : '-'}₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`;
                   })()}
