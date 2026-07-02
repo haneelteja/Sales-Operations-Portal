@@ -22,8 +22,6 @@ import {
   Eye,
   Phone,
   Download,
-  ChevronRight,
-  ChevronDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { exportJsonToExcel } from "@/services/export/excelExport";
@@ -56,8 +54,7 @@ const Dashboard = memo(() => {
   // Inventory table state
   const [inventorySearch, setInventorySearch] = useState("");
   const debouncedInventorySearch = useDebouncedValue(inventorySearch, 200);
-  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
-  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
+  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
 
   // Single RPC replacing 8 separate Supabase calls (profit, monthly-sales, metrics counts)
   const { data: aggregates } = useQuery({
@@ -124,7 +121,10 @@ const Dashboard = memo(() => {
     },
   });
 
-  // Fetch inventory: factory production qty minus sales qty per client (only where stock > 0)
+  // Fetch inventory: factory production minus net sales per client+branch.
+  // Grouped by client+branch only (no per-SKU breakdown).
+  // Negative sale entries (returns/adjustments) reduce the production commitment,
+  // not the sales total — so they correctly bring inventory down toward 0.
   const { data: inventoryRows } = useQuery({
     queryKey: ["dashboard-inventory"],
     ...getQueryConfig("dashboard-inventory"),
@@ -141,43 +141,45 @@ const Dashboard = memo(() => {
           .eq("transaction_type", "sale"),
       ]);
 
-      // Sum production per (client_name, branch, sku).
-      // Keying on customer_id was wrong: customers table has one row per (client, branch, SKU),
-      // so factory_payables and sales_transactions can reference different customer_id values
-      // for the same client+branch when the SKU-specific rows differ. Matching on the
-      // resolved (client_name, branch, sku) tuple is reliable regardless of which customer row
-      // each table happened to reference.
-      const prodMap = new Map<string, { clientName: string; branch: string; sku: string; qty: number }>();
+      // Group production by (client_name, branch)
+      const prodMap = new Map<string, { clientName: string; branch: string; qty: number }>();
       for (const r of prodRows ?? []) {
         const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
         const area = (r.customers as { branch?: string } | null)?.branch ?? "";
-        const sku = r.sku ?? "";
-        const key = `${clientName}|||${area}|||${sku}`;
+        const key = `${clientName}|||${area}`;
         const existing = prodMap.get(key);
         if (existing) {
           existing.qty += r.quantity ?? 0;
         } else {
-          prodMap.set(key, { clientName, branch: area, sku, qty: r.quantity ?? 0 });
+          prodMap.set(key, { clientName, branch: area, qty: r.quantity ?? 0 });
         }
       }
 
-      // Sum sales per (client_name, branch, sku)
+      // Separate positive sales (delivered) from negative adjustments (returns/cancellations).
+      // Returns are subtracted from production rather than added to sales so that
+      // fully-returned production correctly shows 0 inventory (not negative).
       const salesMap = new Map<string, number>();
+      const adjMap = new Map<string, number>();
       for (const r of salesRows ?? []) {
         const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
         const area = (r.customers as { branch?: string } | null)?.branch ?? "";
-        const sku = r.sku ?? "";
-        const key = `${clientName}|||${area}|||${sku}`;
-        salesMap.set(key, (salesMap.get(key) ?? 0) + (r.quantity ?? 0));
+        const key = `${clientName}|||${area}`;
+        const qty = r.quantity ?? 0;
+        if (qty >= 0) {
+          salesMap.set(key, (salesMap.get(key) ?? 0) + qty);
+        } else {
+          adjMap.set(key, (adjMap.get(key) ?? 0) + Math.abs(qty));
+        }
       }
 
-      // Compute inventory; only return rows where stock > 0
-      const result: { clientName: string; branch: string; sku: string; stock: number }[] = [];
+      // inventory = production - returns - deliveries; only show rows where stock > 0
+      const result: { clientName: string; branch: string; stock: number }[] = [];
       for (const [key, prod] of prodMap.entries()) {
         const sold = salesMap.get(key) ?? 0;
-        const stock = prod.qty - sold;
+        const returned = adjMap.get(key) ?? 0;
+        const stock = prod.qty - returned - sold;
         if (stock > 0) {
-          result.push({ clientName: prod.clientName, branch: prod.branch, sku: prod.sku, stock });
+          result.push({ clientName: prod.clientName, branch: prod.branch, stock });
         }
       }
       return result.sort((a, b) => a.clientName.localeCompare(b.clientName));
@@ -683,45 +685,17 @@ const Dashboard = memo(() => {
         </Card>
       )}
 
-      {/* Inventory Table */}
+      {/* Inventory Table — grouped by client+branch (no SKU breakdown) */}
       {inventoryRows && inventoryRows.length > 0 && (() => {
         const q = debouncedInventorySearch.toLowerCase();
-        const filtered = inventoryRows.filter(r =>
+        let rows = inventoryRows.filter(r =>
           !q ||
           r.clientName.toLowerCase().includes(q) ||
           r.branch.toLowerCase().includes(q) ||
-          r.sku.toLowerCase().includes(q) ||
           r.stock.toString().includes(q)
         );
 
-        // Group filtered rows by clientName
-        type SkuRow = { sku: string; branch: string; stock: number };
-        type Group = { clientName: string; branch: string; skus: SkuRow[]; total: number };
-        const groupMap = new Map<string, Group>();
-        for (const row of filtered) {
-          if (!groupMap.has(row.clientName)) {
-            groupMap.set(row.clientName, { clientName: row.clientName, branch: row.branch, skus: [], total: 0 });
-          }
-          const g = groupMap.get(row.clientName)!;
-          g.skus.push({ sku: row.sku, branch: row.branch, stock: row.stock });
-          g.total += row.stock;
-        }
-        let groups: Group[] = [...groupMap.values()];
-
-        // Sort groups
-        if (inventorySort) {
-          groups = [...groups].sort((a, b) => {
-            let av: string | number, bv: string | number;
-            if (inventorySort.col === 'stock') { av = a.total; bv = b.total; }
-            else if (inventorySort.col === 'sku') { av = a.skus.length; bv = b.skus.length; }
-            else if (inventorySort.col === 'branch') { av = a.branch; bv = b.branch; }
-            else { av = a.clientName; bv = b.clientName; }
-            const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
-            return inventorySort.dir === 'asc' ? cmp : -cmp;
-          });
-        }
-
-        const toggleSort = (col: 'clientName' | 'branch' | 'sku' | 'stock') => {
+        const toggleSort = (col: 'clientName' | 'branch' | 'stock') => {
           setInventorySort(prev =>
             prev?.col === col
               ? prev.dir === 'asc' ? { col, dir: 'desc' } : null
@@ -729,13 +703,16 @@ const Dashboard = memo(() => {
           );
         };
 
-        const toggleExpand = (clientName: string) => {
-          setExpandedClients(prev => {
-            const next = new Set(prev);
-            if (next.has(clientName)) next.delete(clientName); else next.add(clientName);
-            return next;
+        if (inventorySort) {
+          rows = [...rows].sort((a, b) => {
+            let av: string | number, bv: string | number;
+            if (inventorySort.col === 'stock') { av = a.stock; bv = b.stock; }
+            else if (inventorySort.col === 'branch') { av = a.branch; bv = b.branch; }
+            else { av = a.clientName; bv = b.clientName; }
+            const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+            return inventorySort.dir === 'asc' ? cmp : -cmp;
           });
-        };
+        }
 
         const SortIcon = ({ col }: { col: string }) => {
           if (inventorySort?.col !== col) return <span className="ml-1 text-gray-300">↕</span>;
@@ -759,15 +736,11 @@ const Dashboard = memo(() => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8" />
                     <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('clientName')}>
                       Client <SortIcon col="clientName" />
                     </TableHead>
                     <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('branch')}>
                       Branch <SortIcon col="branch" />
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('sku')}>
-                      SKU <SortIcon col="sku" />
                     </TableHead>
                     <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => toggleSort('stock')}>
                       Stock (Cases) <SortIcon col="stock" />
@@ -775,46 +748,17 @@ const Dashboard = memo(() => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {groups.length === 0 ? (
+                  {rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-4">No results</TableCell>
+                      <TableCell colSpan={3} className="text-center text-muted-foreground py-4">No results</TableCell>
                     </TableRow>
-                  ) : groups.map((group) => {
-                    const isExpanded = expandedClients.has(group.clientName);
-                    const multi = group.skus.length > 1;
-                    return (
-                      <>
-                        <TableRow
-                          key={group.clientName}
-                          className={`${multi ? 'cursor-pointer' : ''} hover:bg-muted/50 ${isExpanded ? 'bg-muted/20 font-medium' : ''}`}
-                          onClick={() => multi && toggleExpand(group.clientName)}
-                        >
-                          <TableCell className="w-8 text-muted-foreground pl-3">
-                            {multi
-                              ? isExpanded
-                                ? <ChevronDown className="h-4 w-4" />
-                                : <ChevronRight className="h-4 w-4" />
-                              : null}
-                          </TableCell>
-                          <TableCell className="font-medium">{group.clientName}</TableCell>
-                          <TableCell>{group.branch}</TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
-                            {multi ? `${group.skus.length} SKUs` : group.skus[0].sku}
-                          </TableCell>
-                          <TableCell className="text-right font-medium">{group.total}</TableCell>
-                        </TableRow>
-                        {isExpanded && group.skus.map((item, j) => (
-                          <TableRow key={`${group.clientName}-${j}`} className="bg-muted/10 hover:bg-muted/20">
-                            <TableCell />
-                            <TableCell />
-                            <TableCell className="text-muted-foreground text-xs">{item.branch}</TableCell>
-                            <TableCell className="text-sm pl-6 text-muted-foreground">↳ {item.sku}</TableCell>
-                            <TableCell className="text-right text-sm">{item.stock}</TableCell>
-                          </TableRow>
-                        ))}
-                      </>
-                    );
-                  })}
+                  ) : rows.map((row, i) => (
+                    <TableRow key={i} className="hover:bg-muted/50">
+                      <TableCell className="font-medium">{row.clientName}</TableCell>
+                      <TableCell>{row.branch}</TableCell>
+                      <TableCell className="text-right font-medium">{row.stock}</TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>
