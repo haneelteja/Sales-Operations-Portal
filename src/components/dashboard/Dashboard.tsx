@@ -100,6 +100,30 @@ const Dashboard = memo(() => {
     };
   }, [aggregates]);
 
+  // Fetch latest plant stock per SKU from factory_payables
+  const { data: plantStockRows } = useQuery({
+    queryKey: ["plant-stock-dashboard"],
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("factory_payables")
+        .select("sku, quantity, transaction_date")
+        .eq("transaction_type", "plant_stock")
+        .not("sku", "is", null)
+        .order("created_at", { ascending: false });
+
+      if (!data) return [];
+      const latestBySku = new Map<string, { sku: string; quantity: number; transaction_date: string }>();
+      data.forEach(row => {
+        if (row.sku && !latestBySku.has(row.sku)) {
+          latestBySku.set(row.sku, { sku: row.sku!, quantity: row.quantity ?? 0, transaction_date: row.transaction_date });
+        }
+      });
+      return Array.from(latestBySku.values()).sort((a, b) => a.sku.localeCompare(b.sku));
+    },
+  });
+
   // Fetch inventory: factory production qty minus sales qty per client (only where stock > 0)
   const { data: inventoryRows } = useQuery({
     queryKey: ["dashboard-inventory"],
@@ -626,6 +650,38 @@ const Dashboard = memo(() => {
           </div>
         </div>
       </div>
+
+      {/* Stock at Plant */}
+      {plantStockRows && plantStockRows.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Stock at Plant</CardTitle>
+            <CardDescription>Current cases held at the factory, per SKU</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              {plantStockRows.map(row => (
+                <div
+                  key={row.sku}
+                  className={`flex items-center gap-3 rounded-lg border px-4 py-3 min-w-[140px] ${
+                    row.quantity === 0
+                      ? 'border-gray-200 bg-gray-50'
+                      : 'border-blue-200 bg-blue-50'
+                  }`}
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{row.sku}</p>
+                    <p className={`text-2xl font-bold tabular-nums leading-none mt-1 ${row.quantity === 0 ? 'text-gray-400' : 'text-blue-700'}`}>
+                      {row.quantity}
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">cases · as of {new Date(row.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Inventory Table */}
       {inventoryRows && inventoryRows.length > 0 && (() => {
