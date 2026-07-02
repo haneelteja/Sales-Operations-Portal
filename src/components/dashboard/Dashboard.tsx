@@ -54,7 +54,7 @@ const Dashboard = memo(() => {
   // Inventory table state
   const [inventorySearch, setInventorySearch] = useState("");
   const debouncedInventorySearch = useDebouncedValue(inventorySearch, 200);
-  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
+  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
 
   // Single RPC replacing 8 separate Supabase calls (profit, monthly-sales, metrics counts)
   const { data: aggregates } = useQuery({
@@ -141,17 +141,18 @@ const Dashboard = memo(() => {
           .eq("transaction_type", "sale"),
       ]);
 
-      // Group production by (client_name, branch)
-      const prodMap = new Map<string, { clientName: string; branch: string; qty: number }>();
+      // Group production by (client_name, branch, sku)
+      const prodMap = new Map<string, { clientName: string; branch: string; sku: string; qty: number }>();
       for (const r of prodRows ?? []) {
         const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
         const area = (r.customers as { branch?: string } | null)?.branch ?? "";
-        const key = `${clientName}|||${area}`;
+        const sku = r.sku ?? "";
+        const key = `${clientName}|||${area}|||${sku}`;
         const existing = prodMap.get(key);
         if (existing) {
           existing.qty += r.quantity ?? 0;
         } else {
-          prodMap.set(key, { clientName, branch: area, qty: r.quantity ?? 0 });
+          prodMap.set(key, { clientName, branch: area, sku, qty: r.quantity ?? 0 });
         }
       }
 
@@ -163,7 +164,8 @@ const Dashboard = memo(() => {
       for (const r of salesRows ?? []) {
         const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
         const area = (r.customers as { branch?: string } | null)?.branch ?? "";
-        const key = `${clientName}|||${area}`;
+        const sku = r.sku ?? "";
+        const key = `${clientName}|||${area}|||${sku}`;
         const qty = r.quantity ?? 0;
         if (qty >= 0) {
           salesMap.set(key, (salesMap.get(key) ?? 0) + qty);
@@ -173,13 +175,13 @@ const Dashboard = memo(() => {
       }
 
       // inventory = production - returns - deliveries; only show rows where stock > 0
-      const result: { clientName: string; branch: string; stock: number }[] = [];
+      const result: { clientName: string; branch: string; sku: string; stock: number }[] = [];
       for (const [key, prod] of prodMap.entries()) {
         const sold = salesMap.get(key) ?? 0;
         const returned = adjMap.get(key) ?? 0;
         const stock = prod.qty - returned - sold;
         if (stock > 0) {
-          result.push({ clientName: prod.clientName, branch: prod.branch, stock });
+          result.push({ clientName: prod.clientName, branch: prod.branch, sku: prod.sku, stock });
         }
       }
       return result.sort((a, b) => a.clientName.localeCompare(b.clientName));
@@ -692,10 +694,11 @@ const Dashboard = memo(() => {
           !q ||
           r.clientName.toLowerCase().includes(q) ||
           r.branch.toLowerCase().includes(q) ||
+          r.sku.toLowerCase().includes(q) ||
           r.stock.toString().includes(q)
         );
 
-        const toggleSort = (col: 'clientName' | 'branch' | 'stock') => {
+        const toggleSort = (col: 'clientName' | 'branch' | 'sku' | 'stock') => {
           setInventorySort(prev =>
             prev?.col === col
               ? prev.dir === 'asc' ? { col, dir: 'desc' } : null
@@ -708,6 +711,7 @@ const Dashboard = memo(() => {
             let av: string | number, bv: string | number;
             if (inventorySort.col === 'stock') { av = a.stock; bv = b.stock; }
             else if (inventorySort.col === 'branch') { av = a.branch; bv = b.branch; }
+            else if (inventorySort.col === 'sku') { av = a.sku; bv = b.sku; }
             else { av = a.clientName; bv = b.clientName; }
             const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
             return inventorySort.dir === 'asc' ? cmp : -cmp;
@@ -742,6 +746,9 @@ const Dashboard = memo(() => {
                     <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('branch')}>
                       Branch <SortIcon col="branch" />
                     </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('sku')}>
+                      SKU <SortIcon col="sku" />
+                    </TableHead>
                     <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => toggleSort('stock')}>
                       Stock (Cases) <SortIcon col="stock" />
                     </TableHead>
@@ -750,12 +757,13 @@ const Dashboard = memo(() => {
                 <TableBody>
                   {rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground py-4">No results</TableCell>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-4">No results</TableCell>
                     </TableRow>
                   ) : rows.map((row, i) => (
                     <TableRow key={i} className="hover:bg-muted/50">
                       <TableCell className="font-medium">{row.clientName}</TableCell>
                       <TableCell>{row.branch}</TableCell>
+                      <TableCell>{row.sku}</TableCell>
                       <TableCell className="text-right font-medium">{row.stock}</TableCell>
                     </TableRow>
                   ))}
