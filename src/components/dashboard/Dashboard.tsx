@@ -97,7 +97,7 @@ const Dashboard = memo(() => {
     };
   }, [aggregates]);
 
-  // Fetch latest plant stock per SKU from factory_payables
+  // Fetch latest plant stock per (client, SKU) from factory_payables
   const { data: plantStockRows } = useQuery({
     queryKey: ["plant-stock-dashboard"],
     staleTime: 2 * 60 * 1000,
@@ -105,19 +105,23 @@ const Dashboard = memo(() => {
     queryFn: async () => {
       const { data } = await supabase
         .from("factory_payables")
-        .select("sku, quantity, transaction_date")
+        .select("customer_id, sku, quantity, transaction_date, customers(client_name, branch)")
         .eq("transaction_type", "plant_stock")
         .not("sku", "is", null)
         .order("created_at", { ascending: false });
 
       if (!data) return [];
-      const latestBySku = new Map<string, { sku: string; quantity: number; transaction_date: string }>();
+      const latestByKey = new Map<string, { clientName: string; sku: string; quantity: number; transaction_date: string }>();
       data.forEach(row => {
-        if (row.sku && !latestBySku.has(row.sku)) {
-          latestBySku.set(row.sku, { sku: row.sku!, quantity: row.quantity ?? 0, transaction_date: row.transaction_date });
+        const clientName = (row.customers as { client_name?: string } | null)?.client_name ?? "";
+        const key = `${row.customer_id}|||${row.sku}`;
+        if (row.sku && !latestByKey.has(key)) {
+          latestByKey.set(key, { clientName, sku: row.sku!, quantity: row.quantity ?? 0, transaction_date: row.transaction_date });
         }
       });
-      return Array.from(latestBySku.values()).sort((a, b) => a.sku.localeCompare(b.sku));
+      return Array.from(latestByKey.values()).sort((a, b) =>
+        a.clientName.localeCompare(b.clientName) || a.sku.localeCompare(b.sku)
+      );
     },
   });
 
@@ -655,29 +659,33 @@ const Dashboard = memo(() => {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Stock at Plant</CardTitle>
-            <CardDescription>Current cases held at the factory, per SKU</CardDescription>
+            <CardDescription>Current cases held at the factory, per client and SKU</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              {plantStockRows.map(row => (
-                <div
-                  key={row.sku}
-                  className={`flex items-center gap-3 rounded-lg border px-4 py-3 min-w-[140px] ${
-                    row.quantity === 0
-                      ? 'border-gray-200 bg-gray-50'
-                      : 'border-blue-200 bg-blue-50'
-                  }`}
-                >
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{row.sku}</p>
-                    <p className={`text-2xl font-bold tabular-nums leading-none mt-1 ${row.quantity === 0 ? 'text-gray-400' : 'text-blue-700'}`}>
-                      {row.quantity}
-                    </p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">cases · as of {new Date(row.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Client</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead className="text-right">Cases</TableHead>
+                  <TableHead className="text-right">Last Updated</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {plantStockRows.map((row, i) => (
+                  <TableRow key={i} className="hover:bg-muted/50">
+                    <TableCell className="font-medium">{row.clientName}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">{row.sku}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-bold text-blue-700 tabular-nums">{row.quantity}</TableCell>
+                    <TableCell className="text-right text-muted-foreground text-sm">
+                      {new Date(row.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
