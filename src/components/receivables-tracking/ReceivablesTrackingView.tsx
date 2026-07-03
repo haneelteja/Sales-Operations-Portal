@@ -49,8 +49,8 @@ export default function ReceivablesTrackingView() {
   const { data, isLoading } = useQuery<FetchResult>({
     queryKey: ['receivables-tracking'],
     queryFn: fetchReceivablesTracking,
-    staleTime: 2 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     refetchOnMount: true,
   });
 
