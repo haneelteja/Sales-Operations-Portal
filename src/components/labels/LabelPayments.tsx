@@ -104,16 +104,16 @@ const LabelPayments = () => {
     },
   });
 
-  // Get all label purchases for vendor outstanding calculation
+  // Get only purchase-type label records for vendor outstanding (exclude adjustments)
   const { data: purchases } = useQuery({
     queryKey: ["label-purchases-for-outstanding"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_purchases")
-        .select("vendor_id, total_amount, purchase_date")
+        .select("vendor_id, total_amount, purchase_date, record_type")
         .order("purchase_date", { ascending: false });
       if (error) throw error;
-      return data || [];
+      return (data || []).filter(p => (p.record_type as string) !== 'adjustment');
     },
   });
 
@@ -256,19 +256,29 @@ const LabelPayments = () => {
     };
     const normalizeVendorName = (name: string) => canonicalizeVendorName(name).toLowerCase();
 
+    // Only commercial vendors (those configured in label_vendors) contribute to outstanding.
+    // Direct/internal sources (Haneel, Venu, ABS, etc.) are excluded.
+    const commercialVendorSet = new Set(
+      (labelVendors || []).map(v => normalizeVendorName(v))
+    );
+    const isCommercialVendor = (vendorId: string) => {
+      if (isUUID(vendorId)) return true; // historical UUID = GMG
+      return commercialVendorSet.has(normalizeVendorName(vendorId));
+    };
+
     const vendorMap = new Map<string, { vendor_name: string; total_purchased: number; total_paid: number; outstanding: number }>();
 
     purchases.forEach((purchase) => {
-      if (purchase.vendor_id && typeof purchase.vendor_id === 'string') {
-        const vendorName = isUUID(purchase.vendor_id) ? 'GMG labels' : canonicalizeVendorName(purchase.vendor_id);
-        const normalizedName = normalizeVendorName(vendorName);
-        const totalAmount = parseFloat(purchase.total_amount) || 0;
-        const existing = vendorMap.get(normalizedName);
-        if (existing) {
-          existing.total_purchased += totalAmount;
-        } else {
-          vendorMap.set(normalizedName, { vendor_name: vendorName, total_purchased: totalAmount, total_paid: 0, outstanding: 0 });
-        }
+      if (!purchase.vendor_id || typeof purchase.vendor_id !== 'string') return;
+      if (!isCommercialVendor(purchase.vendor_id)) return;
+      const vendorName = isUUID(purchase.vendor_id) ? 'GMG labels' : canonicalizeVendorName(purchase.vendor_id);
+      const normalizedName = normalizeVendorName(vendorName);
+      const totalAmount = parseFloat(purchase.total_amount) || 0;
+      const existing = vendorMap.get(normalizedName);
+      if (existing) {
+        existing.total_purchased += totalAmount;
+      } else {
+        vendorMap.set(normalizedName, { vendor_name: vendorName, total_purchased: totalAmount, total_paid: 0, outstanding: 0 });
       }
     });
 

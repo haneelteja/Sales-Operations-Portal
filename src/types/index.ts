@@ -101,6 +101,8 @@ export interface LabelPurchase {
   total_amount: number;
   purchase_date: string;
   description: string | null;
+  record_type: 'purchase' | 'adjustment';
+  reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -198,11 +200,14 @@ export interface TransportExpenseForm {
 export interface LabelPurchaseForm {
   vendor_id: string; // This will contain vendor name as text
   client_id: string;
+  sku: string;
   quantity: string;
   cost_per_label: string;
   total_amount: string;
   purchase_date: string;
   description: string;
+  record_type: 'purchase' | 'adjustment';
+  reason: string;
 }
 
 // Report types

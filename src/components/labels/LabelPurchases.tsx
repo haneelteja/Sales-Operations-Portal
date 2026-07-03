@@ -111,7 +111,7 @@ interface VendorPricingEntry {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const LabelPurchases = () => {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<LabelPurchaseForm>({
     vendor_id: "",
     client_id: "",
     sku: "",
@@ -119,11 +119,13 @@ const LabelPurchases = () => {
     cost_per_label: "",
     total_amount: "",
     purchase_date: new Date().toISOString().split('T')[0],
-    description: ""
+    description: "",
+    record_type: "purchase",
+    reason: "",
   });
 
   const [editingPurchase, setEditingPurchase] = useState<LabelPurchase | null>(null);
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<LabelPurchaseForm>({
     vendor_id: "",
     client_id: "",
     sku: "",
@@ -131,7 +133,9 @@ const LabelPurchases = () => {
     cost_per_label: "",
     total_amount: "",
     purchase_date: "",
-    description: ""
+    description: "",
+    record_type: "purchase",
+    reason: "",
   });
 
   // Pagination and month filter state
@@ -273,35 +277,27 @@ const LabelPurchases = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
-        .select("id, vendor_id, client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description")
+        .select("id, vendor_id, client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description, record_type, reason")
         .order("created_at", { ascending: false });
-      return data || [];
+      return (data || []) as LabelPurchase[];
     },
   });
 
   const mutation = useMutation({
     mutationFn: async (data: LabelPurchaseForm) => {
-      const insertData: {
-        vendor_id: string;
-        client_id: string | null;
-        sku: string | null;
-        quantity: number;
-        cost_per_label: number;
-        total_amount: number;
-        purchase_date: string;
-        description?: string;
-      } = {
-        vendor_id: data.vendor_id,
+      const isAdj = data.record_type === 'adjustment';
+      const insertData = {
+        vendor_id: data.vendor_id || null,
         client_id: data.client_id || null,
         sku: data.sku || null,
         quantity: parseInt(data.quantity),
-        cost_per_label: parseFloat(data.cost_per_label),
-        total_amount: parseFloat(data.total_amount),
-        purchase_date: data.purchase_date
+        cost_per_label: isAdj ? 0 : parseFloat(data.cost_per_label || '0'),
+        total_amount: isAdj ? 0 : parseFloat(data.total_amount || '0'),
+        purchase_date: data.purchase_date,
+        record_type: data.record_type,
+        reason: isAdj ? (data.reason?.trim() || null) : null,
+        description: data.description?.trim() || null,
       };
-      if (data.description && data.description.trim() !== "") {
-        insertData.description = data.description.trim();
-      }
       const { error } = await supabase.from("label_purchases").insert(insertData);
       if (error) {
         console.error("Database error:", JSON.stringify(error, null, 2));
@@ -309,8 +305,9 @@ const LabelPurchases = () => {
       }
     },
     onSuccess: (_result, variables) => {
-      log({ action: 'CREATE', entityType: 'label_purchase', description: `Label purchase recorded: ${variables.quantity} labels @ ₹${variables.cost_per_label} on ${variables.purchase_date}`, newValues: { quantity: variables.quantity, cost_per_label: variables.cost_per_label, sku: variables.sku, date: variables.purchase_date } });
-      toast({ title: "Success", description: "Label purchase recorded!" });
+      const isAdj = variables.record_type === 'adjustment';
+      log({ action: 'CREATE', entityType: 'label_purchase', description: isAdj ? `Label adjustment: ${variables.quantity} labels for ${variables.reason || 'count mismatch'} on ${variables.purchase_date}` : `Label purchase recorded: ${variables.quantity} labels @ ₹${variables.cost_per_label} on ${variables.purchase_date}`, newValues: { quantity: variables.quantity, cost_per_label: variables.cost_per_label, sku: variables.sku, date: variables.purchase_date, record_type: variables.record_type } });
+      toast({ title: "Success", description: isAdj ? "Label adjustment recorded!" : "Label purchase recorded!" });
       setForm({
         vendor_id: "",
         client_id: "",
@@ -319,7 +316,9 @@ const LabelPurchases = () => {
         cost_per_label: "",
         total_amount: "",
         purchase_date: new Date().toISOString().split('T')[0],
-        description: ""
+        description: "",
+        record_type: "purchase",
+        reason: "",
       });
       queryClient.invalidateQueries({ queryKey: ["label-purchases"] });
       queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
@@ -334,27 +333,19 @@ const LabelPurchases = () => {
 
   const updateMutation = useMutation({
     mutationFn: async (data: LabelPurchaseForm & { id: string }) => {
-      const updateData: {
-        vendor_id: string;
-        client_id: string | null;
-        sku: string | null;
-        quantity: number;
-        cost_per_label: number;
-        total_amount: number;
-        purchase_date: string;
-        description?: string;
-      } = {
-        vendor_id: data.vendor_id,
+      const isAdj = data.record_type === 'adjustment';
+      const updateData = {
+        vendor_id: data.vendor_id || null,
         client_id: data.client_id || null,
         sku: data.sku || null,
         quantity: parseInt(data.quantity),
-        cost_per_label: parseFloat(data.cost_per_label),
-        total_amount: parseFloat(data.total_amount),
-        purchase_date: data.purchase_date
+        cost_per_label: isAdj ? 0 : parseFloat(data.cost_per_label || '0'),
+        total_amount: isAdj ? 0 : parseFloat(data.total_amount || '0'),
+        purchase_date: data.purchase_date,
+        record_type: data.record_type,
+        reason: isAdj ? (data.reason?.trim() || null) : null,
+        description: data.description?.trim() || null,
       };
-      if (data.description && data.description.trim() !== "") {
-        updateData.description = data.description.trim();
-      }
       const { error } = await supabase.from("label_purchases").update(updateData).eq("id", data.id);
       if (error) {
         console.error("Database error:", error);
@@ -365,7 +356,7 @@ const LabelPurchases = () => {
       log({ action: 'UPDATE', entityType: 'label_purchase', entityId: variables.id, description: `Label purchase updated (ID: ${variables.id})`, newValues: { quantity: variables.quantity, cost_per_label: variables.cost_per_label, sku: variables.sku, date: variables.purchase_date } });
       toast({ title: "Success", description: "Label purchase updated!" });
       setEditingPurchase(null);
-      setEditForm({ vendor_id: "", client_id: "", sku: "", quantity: "", cost_per_label: "", total_amount: "", purchase_date: "", description: "" });
+      setEditForm({ vendor_id: "", client_id: "", sku: "", quantity: "", cost_per_label: "", total_amount: "", purchase_date: "", description: "", record_type: "purchase", reason: "" });
       queryClient.invalidateQueries({ queryKey: ["label-purchases"] });
       queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
       queryClient.invalidateQueries({ queryKey: ["customers-for-availability"] });
@@ -398,12 +389,19 @@ const LabelPurchases = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.vendor_id || !form.client_id || !form.quantity || !form.cost_per_label) {
-      toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
-      return;
+    if (form.record_type === 'adjustment') {
+      if (!form.client_id || !form.quantity) {
+        toast({ title: "Error", description: "Client and Quantity are required for adjustments", variant: "destructive" });
+        return;
+      }
+    } else {
+      if (!form.vendor_id || !form.client_id || !form.quantity || !form.cost_per_label) {
+        toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
+        return;
+      }
     }
     if (form.purchase_date < "2024-01-01" || form.purchase_date > today) {
-      toast({ title: "Error", description: "Purchase Date must be between 1 Jan 2024 and today", variant: "destructive" });
+      toast({ title: "Error", description: "Date must be between 1 Jan 2024 and today", variant: "destructive" });
       return;
     }
     mutation.mutate(form);
@@ -480,18 +478,27 @@ const LabelPurchases = () => {
       cost_per_label: purchase.cost_per_label.toString(),
       total_amount: purchase.total_amount.toString(),
       purchase_date: purchase.purchase_date,
-      description: purchase.description || ""
+      description: purchase.description || "",
+      record_type: (purchase.record_type as 'purchase' | 'adjustment') || "purchase",
+      reason: purchase.reason || "",
     });
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editForm.vendor_id || !editForm.client_id || !editForm.quantity || !editForm.cost_per_label) {
-      toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
-      return;
+    if (editForm.record_type === 'adjustment') {
+      if (!editForm.client_id || !editForm.quantity) {
+        toast({ title: "Error", description: "Client and Quantity are required for adjustments", variant: "destructive" });
+        return;
+      }
+    } else {
+      if (!editForm.vendor_id || !editForm.client_id || !editForm.quantity || !editForm.cost_per_label) {
+        toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
+        return;
+      }
     }
     if (editForm.purchase_date < "2024-01-01" || editForm.purchase_date > today) {
-      toast({ title: "Error", description: "Purchase Date must be between 1 Jan 2024 and today", variant: "destructive" });
+      toast({ title: "Error", description: "Date must be between 1 Jan 2024 and today", variant: "destructive" });
       return;
     }
     if (editingPurchase) {
@@ -659,13 +666,15 @@ const LabelPurchases = () => {
     const exportData = filteredAndSortedPurchases.map(purchase => {
       const customer = customersForLookup?.find(c => c.id === purchase.client_id);
       return {
-        'Purchase Date': new Date(purchase.purchase_date).toLocaleDateString(),
+        'Date': new Date(purchase.purchase_date).toLocaleDateString(),
+        'Type': purchase.record_type === 'adjustment' ? 'Adjustment' : 'Purchase',
         'Client': customer?.client_name || 'N/A',
         'SKU': purchase.sku || '',
         'Quantity': purchase.quantity,
         'Cost per Label': purchase.cost_per_label,
         'Total Amount': purchase.total_amount,
         'Vendor': purchase.vendor_id || 'N/A',
+        'Reason': purchase.reason || '',
         'Description': purchase.description || ''
       };
     });
@@ -676,10 +685,31 @@ const LabelPurchases = () => {
     <div className="space-y-6">
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Row 1: Purchase Date, Client, SKU, Vendor */}
+        {/* Record type toggle */}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setForm(prev => ({ ...prev, record_type: 'purchase' }))}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${form.record_type === 'purchase' ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+          >
+            Purchase
+          </button>
+          <button
+            type="button"
+            onClick={() => setForm(prev => ({ ...prev, record_type: 'adjustment', cost_per_label: '', total_amount: '' }))}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${form.record_type === 'adjustment' ? 'bg-orange-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+          >
+            Adjustment
+          </button>
+          {form.record_type === 'adjustment' && (
+            <span className="self-center text-xs text-muted-foreground ml-1">Use negative quantity for count-down corrections</span>
+          )}
+        </div>
+
+        {/* Row 1: Date, Client, SKU, Vendor */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="space-y-2">
-            <Label htmlFor="purchase-date">Purchase Date *</Label>
+            <Label htmlFor="purchase-date">Date *</Label>
             <Input
               id="purchase-date"
               type="date"
@@ -712,7 +742,7 @@ const LabelPurchases = () => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="vendor">Vendor *</Label>
+            <Label htmlFor="vendor">Vendor{form.record_type === 'purchase' ? ' *' : ''}</Label>
             <SearchableSelect
               options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
               value={form.vendor_id}
@@ -722,52 +752,76 @@ const LabelPurchases = () => {
           </div>
         </div>
 
-        {/* Row 2: Quantity, Cost per Label, Total Amount */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-2">
-            <Label htmlFor="quantity">Quantity *</Label>
-            <Input
-              id="quantity"
-              type="number"
-              value={form.quantity}
-              onChange={(e) => handleQuantityOrCostChange("quantity", e.target.value)}
-              placeholder="Number of labels"
-            />
-          </div>
+        {/* Row 2: Quantity + cost fields (purchase) or reason (adjustment) */}
+        {form.record_type === 'purchase' ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="quantity">Quantity *</Label>
+              <Input
+                id="quantity"
+                type="number"
+                value={form.quantity}
+                onChange={(e) => handleQuantityOrCostChange("quantity", e.target.value)}
+                placeholder="Number of labels"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cost-per-label">Cost per Label (₹) *</Label>
-            <Input
-              id="cost-per-label"
-              type="number"
-              step="0.01"
-              value={form.cost_per_label}
-              onChange={(e) => handleQuantityOrCostChange("cost_per_label", e.target.value)}
-              placeholder="Auto-filled from config"
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="cost-per-label">Cost per Label (₹) *</Label>
+              <Input
+                id="cost-per-label"
+                type="number"
+                step="0.01"
+                value={form.cost_per_label}
+                onChange={(e) => handleQuantityOrCostChange("cost_per_label", e.target.value)}
+                placeholder="Auto-filled from config"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="total-amount">Total Amount (₹)</Label>
-            <Input
-              id="total-amount"
-              type="number"
-              step="0.01"
-              value={form.total_amount}
-              onChange={(e) => setForm({ ...form, total_amount: e.target.value })}
-              placeholder="Auto-calculated"
-            />
+            <div className="space-y-2">
+              <Label htmlFor="total-amount">Total Amount (₹)</Label>
+              <Input
+                id="total-amount"
+                type="number"
+                step="0.01"
+                value={form.total_amount}
+                onChange={(e) => setForm({ ...form, total_amount: e.target.value })}
+                placeholder="Auto-calculated"
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="quantity">Quantity * (use negative for deduction)</Label>
+              <Input
+                id="quantity"
+                type="number"
+                value={form.quantity}
+                onChange={(e) => setForm(prev => ({ ...prev, quantity: e.target.value }))}
+                placeholder="e.g. -120 or +50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reason">Reason</Label>
+              <Input
+                id="reason"
+                value={form.reason}
+                onChange={(e) => setForm(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="e.g. count mismatch, label size issue"
+              />
+            </div>
+          </div>
+        )}
 
-        {/* Row 3: Description */}
+        {/* Description */}
         <div className="space-y-2">
           <Label htmlFor="description">Description</Label>
           <Textarea
             id="description"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Purchase details (multiple lines allowed)..."
+            placeholder="Additional details..."
             className="min-h-[4.5rem] resize-y"
             rows={3}
           />
@@ -775,7 +829,7 @@ const LabelPurchases = () => {
 
         <div className="flex justify-end">
           <Button type="submit" disabled={mutation.isPending} className="px-8">
-            {mutation.isPending ? "Recording..." : "Record Purchase"}
+            {mutation.isPending ? "Recording..." : form.record_type === 'adjustment' ? "Record Adjustment" : "Record Purchase"}
           </Button>
         </div>
       </form>
@@ -842,6 +896,8 @@ const LabelPurchases = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                {/* Type */}
+                <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Type</TableHead>
                 {/* Date */}
                 <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">
                   <div className="flex items-center gap-2">
@@ -918,15 +974,20 @@ const LabelPurchases = () => {
             <TableBody>
               {filteredAndSortedPurchases.length > 0 ? (
                 paginatedPurchases.map((purchase) => (
-                  <TableRow key={purchase.id}>
+                  <TableRow key={purchase.id} className={purchase.record_type === 'adjustment' ? 'bg-orange-50/40' : ''}>
+                    <TableCell>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${purchase.record_type === 'adjustment' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {purchase.record_type === 'adjustment' ? 'Adj' : 'Purchase'}
+                      </span>
+                    </TableCell>
                     <TableCell>{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
                     <TableCell>{customersForLookup?.find(c => c.id === purchase.client_id)?.client_name || 'N/A'}</TableCell>
                     <TableCell>{purchase.sku || '—'}</TableCell>
-                    <TableCell className="text-right">{purchase.quantity?.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">₹{purchase.cost_per_label}</TableCell>
-                    <TableCell className="text-right font-medium">₹{purchase.total_amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
-                    <TableCell>{purchase.vendor_id || 'N/A'}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate" title={purchase.description || ''}>{purchase.description || '—'}</TableCell>
+                    <TableCell className={`text-right ${purchase.quantity < 0 ? 'text-orange-600' : ''}`}>{purchase.quantity?.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{purchase.record_type === 'adjustment' ? '—' : `₹${purchase.cost_per_label}`}</TableCell>
+                    <TableCell className="text-right font-medium">{purchase.record_type === 'adjustment' ? '—' : `₹${purchase.total_amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`}</TableCell>
+                    <TableCell>{purchase.vendor_id || '—'}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate" title={purchase.reason || purchase.description || ''}>{purchase.reason || purchase.description || '—'}</TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center gap-2">
                         <Dialog>
@@ -940,9 +1001,14 @@ const LabelPurchases = () => {
                               <DialogTitle>Edit Label Purchase</DialogTitle>
                             </DialogHeader>
                             <form onSubmit={handleEditSubmit} className="space-y-4">
+                              {/* Type toggle */}
+                              <div className="flex gap-2">
+                                <button type="button" onClick={() => setEditForm(prev => ({ ...prev, record_type: 'purchase' }))} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${editForm.record_type === 'purchase' ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Purchase</button>
+                                <button type="button" onClick={() => setEditForm(prev => ({ ...prev, record_type: 'adjustment', cost_per_label: '0', total_amount: '0' }))} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${editForm.record_type === 'adjustment' ? 'bg-orange-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Adjustment</button>
+                              </div>
                               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div className="space-y-2">
-                                  <Label>Purchase Date *</Label>
+                                  <Label>Date *</Label>
                                   <Input
                                     type="date"
                                     value={editForm.purchase_date}
@@ -971,7 +1037,7 @@ const LabelPurchases = () => {
                                   />
                                 </div>
                                 <div className="space-y-2">
-                                  <Label>Vendor *</Label>
+                                  <Label>Vendor{editForm.record_type === 'purchase' ? ' *' : ''}</Label>
                                   <SearchableSelect
                                     options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
                                     value={editForm.vendor_id}
@@ -981,44 +1047,40 @@ const LabelPurchases = () => {
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-2">
-                                  <Label>Quantity *</Label>
-                                  <Input
-                                    type="number"
-                                    value={editForm.quantity}
-                                    onChange={(e) => handleEditQuantityOrCostChange("quantity", e.target.value)}
-                                    placeholder="Number of labels"
-                                  />
+                              {editForm.record_type === 'purchase' ? (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div className="space-y-2">
+                                    <Label>Quantity *</Label>
+                                    <Input type="number" value={editForm.quantity} onChange={(e) => handleEditQuantityOrCostChange("quantity", e.target.value)} placeholder="Number of labels" />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Cost per Label (₹) *</Label>
+                                    <Input type="number" step="0.01" value={editForm.cost_per_label} onChange={(e) => handleEditQuantityOrCostChange("cost_per_label", e.target.value)} placeholder="0.0000" />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Total Amount (₹)</Label>
+                                    <Input type="number" step="0.01" value={editForm.total_amount} onChange={(e) => setEditForm({ ...editForm, total_amount: e.target.value })} placeholder="Auto-calculated" />
+                                  </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <Label>Cost per Label (₹) *</Label>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={editForm.cost_per_label}
-                                    onChange={(e) => handleEditQuantityOrCostChange("cost_per_label", e.target.value)}
-                                    placeholder="0.0000"
-                                  />
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label>Quantity * (negative = deduction)</Label>
+                                    <Input type="number" value={editForm.quantity} onChange={(e) => setEditForm(prev => ({ ...prev, quantity: e.target.value }))} placeholder="e.g. -120 or +50" />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Reason</Label>
+                                    <Input value={editForm.reason} onChange={(e) => setEditForm(prev => ({ ...prev, reason: e.target.value }))} placeholder="e.g. count mismatch" />
+                                  </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <Label>Total Amount (₹)</Label>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={editForm.total_amount}
-                                    onChange={(e) => setEditForm({ ...editForm, total_amount: e.target.value })}
-                                    placeholder="Auto-calculated"
-                                  />
-                                </div>
-                              </div>
+                              )}
 
                               <div className="space-y-2">
                                 <Label>Description</Label>
                                 <Textarea
                                   value={editForm.description}
                                   onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                                  placeholder="Purchase details..."
+                                  placeholder="Additional details..."
                                   className="min-h-[4.5rem] resize-y"
                                   rows={3}
                                 />
@@ -1060,7 +1122,7 @@ const LabelPurchases = () => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center text-muted-foreground">
                     No label purchases found
                   </TableCell>
                 </TableRow>
