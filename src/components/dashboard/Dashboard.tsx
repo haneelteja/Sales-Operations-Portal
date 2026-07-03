@@ -22,6 +22,8 @@ import {
   Eye,
   Phone,
   Download,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { exportJsonToExcel } from "@/services/export/excelExport";
@@ -55,6 +57,15 @@ const Dashboard = memo(() => {
   const [inventorySearch, setInventorySearch] = useState("");
   const debouncedInventorySearch = useDebouncedValue(inventorySearch, 200);
   const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
+
+  // Plant Stock table state
+  const [plantSearch, setPlantSearch] = useState("");
+  const debouncedPlantSearch = useDebouncedValue(plantSearch, 200);
+  const [plantClientFilter, setPlantClientFilter] = useState<string[]>([]);
+  const [plantSort, setPlantSort] = useState<{ col: 'clientName' | 'sku' | 'quantity' | 'transaction_date'; dir: 'asc' | 'desc' } | null>(null);
+  const [plantPage, setPlantPage] = useState(1);
+  const plantPageSize = 10;
+  const [plantExpandedKeys, setPlantExpandedKeys] = useState<Set<string>>(new Set());
 
   // Single RPC replacing 8 separate Supabase calls (profit, monthly-sales, metrics counts)
   const { data: aggregates } = useQuery({
@@ -97,8 +108,8 @@ const Dashboard = memo(() => {
     };
   }, [aggregates]);
 
-  // Fetch latest plant stock per (client, SKU) from factory_payables
-  const { data: plantStockRows } = useQuery({
+  // Fetch all plant stock entries (full history) per (client, SKU)
+  const { data: plantStockAllRows } = useQuery({
     queryKey: ["plant-stock-dashboard"],
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -111,19 +122,68 @@ const Dashboard = memo(() => {
         .order("created_at", { ascending: false });
 
       if (!data) return [];
-      const latestByKey = new Map<string, { clientName: string; sku: string; quantity: number; transaction_date: string }>();
-      data.forEach(row => {
-        const clientName = (row.customers as { client_name?: string } | null)?.client_name ?? "";
-        const key = `${row.customer_id}|||${row.sku}`;
-        if (row.sku && !latestByKey.has(key)) {
-          latestByKey.set(key, { clientName, sku: row.sku!, quantity: row.quantity ?? 0, transaction_date: row.transaction_date });
-        }
-      });
-      return Array.from(latestByKey.values()).sort((a, b) =>
-        a.clientName.localeCompare(b.clientName) || a.sku.localeCompare(b.sku)
-      );
+      return data.map(row => ({
+        customer_id: row.customer_id,
+        sku: row.sku!,
+        quantity: row.quantity ?? 0,
+        transaction_date: row.transaction_date,
+        clientName: (row.customers as { client_name?: string } | null)?.client_name ?? "",
+      }));
     },
   });
+
+  // Derive current (latest per key) and full history from all plant stock rows
+  const { plantStockCurrent, plantStockHistory } = useMemo(() => {
+    if (!plantStockAllRows?.length) return { plantStockCurrent: [] as { key: string; clientName: string; sku: string; quantity: number; transaction_date: string }[], plantStockHistory: {} as Record<string, { quantity: number; transaction_date: string }[]> };
+    const seenKeys = new Set<string>();
+    const current: { key: string; clientName: string; sku: string; quantity: number; transaction_date: string }[] = [];
+    const history: Record<string, { quantity: number; transaction_date: string }[]> = {};
+    for (const row of plantStockAllRows) {
+      const key = `${row.customer_id}|||${row.sku}`;
+      if (!history[key]) history[key] = [];
+      history[key].push({ quantity: row.quantity, transaction_date: row.transaction_date });
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        current.push({ key, clientName: row.clientName, sku: row.sku, quantity: row.quantity, transaction_date: row.transaction_date });
+      }
+    }
+    return {
+      plantStockCurrent: current.sort((a, b) => a.clientName.localeCompare(b.clientName) || a.sku.localeCompare(b.sku)),
+      plantStockHistory: history,
+    };
+  }, [plantStockAllRows]);
+
+  const plantClientOptions = useMemo(() =>
+    Array.from(new Set(plantStockCurrent.map(r => r.clientName))).sort()
+  , [plantStockCurrent]);
+
+  const filteredPlantStock = useMemo(() => {
+    let rows = plantStockCurrent;
+    const q = debouncedPlantSearch.toLowerCase();
+    if (q) rows = rows.filter(r => r.clientName.toLowerCase().includes(q) || r.sku.toLowerCase().includes(q) || r.quantity.toString().includes(q));
+    if (plantClientFilter.length > 0) rows = rows.filter(r => plantClientFilter.includes(r.clientName));
+    if (plantSort) {
+      rows = [...rows].sort((a, b) => {
+        let av: string | number, bv: string | number;
+        switch (plantSort.col) {
+          case 'quantity': av = a.quantity; bv = b.quantity; break;
+          case 'transaction_date': av = a.transaction_date; bv = b.transaction_date; break;
+          case 'sku': av = a.sku; bv = b.sku; break;
+          default: av = a.clientName; bv = b.clientName;
+        }
+        const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+        return plantSort.dir === 'asc' ? cmp : -cmp;
+      });
+    }
+    return rows;
+  }, [plantStockCurrent, debouncedPlantSearch, plantClientFilter, plantSort]);
+
+  const plantTotalPages = Math.max(1, Math.ceil(filteredPlantStock.length / plantPageSize));
+
+  const paginatedPlantStock = useMemo(() => {
+    const start = (plantPage - 1) * plantPageSize;
+    return filteredPlantStock.slice(start, start + plantPageSize);
+  }, [filteredPlantStock, plantPage, plantPageSize]);
 
   // Fetch inventory: factory production minus net sales per client+branch.
   // Grouped by client+branch only (no per-SKU breakdown).
@@ -357,6 +417,11 @@ const Dashboard = memo(() => {
       newSorts[columnKey] = direction;
       return newSorts;
     });
+  }, []);
+
+  const togglePlantSort = useCallback((col: 'clientName' | 'sku' | 'quantity' | 'transaction_date') => {
+    setPlantSort(prev => prev?.col === col ? (prev.dir === 'asc' ? { col, dir: 'desc' as const } : null) : { col, dir: 'asc' as const });
+    setPlantPage(1);
   }, []);
 
   const clearAllReceivablesFilters = useCallback(() => {
@@ -655,37 +720,120 @@ const Dashboard = memo(() => {
       </div>
 
       {/* Stock at Plant */}
-      {plantStockRows && plantStockRows.length > 0 && (
+      {plantStockCurrent.length > 0 && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Stock at Plant</CardTitle>
-            <CardDescription>Current cases held at the factory, per client and SKU</CardDescription>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <CardTitle className="text-base">Stock at Plant</CardTitle>
+                <CardDescription>Current cases held at the factory, per client and SKU</CardDescription>
+              </div>
+              <Input
+                placeholder="Search..."
+                value={plantSearch}
+                onChange={e => { setPlantSearch(e.target.value); setPlantPage(1); }}
+                className="w-44 h-8 text-sm"
+              />
+            </div>
+            {plantClientOptions.length > 1 && (
+              <div className="flex flex-wrap gap-1 pt-2">
+                {plantClientOptions.map(name => (
+                  <Badge
+                    key={name}
+                    variant={plantClientFilter.includes(name) ? "default" : "outline"}
+                    className="cursor-pointer text-xs select-none"
+                    onClick={() => {
+                      setPlantClientFilter(prev =>
+                        prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+                      );
+                      setPlantPage(1);
+                    }}
+                  >
+                    {name}
+                  </Badge>
+                ))}
+                {plantClientFilter.length > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="cursor-pointer text-xs select-none"
+                    onClick={() => { setPlantClientFilter([]); setPlantPage(1); }}
+                  >
+                    Clear
+                  </Badge>
+                )}
+              </div>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Cases</TableHead>
-                  <TableHead className="text-right">Last Updated</TableHead>
+                  <TableHead className="w-8" />
+                  <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => togglePlantSort('clientName')}>
+                    Client <span className="ml-1 text-gray-400">{plantSort?.col === 'clientName' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => togglePlantSort('sku')}>
+                    SKU <span className="ml-1 text-gray-400">{plantSort?.col === 'sku' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => togglePlantSort('quantity')}>
+                    Cases <span className="ml-1 text-gray-400">{plantSort?.col === 'quantity' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => togglePlantSort('transaction_date')}>
+                    Last Updated <span className="ml-1 text-gray-400">{plantSort?.col === 'transaction_date' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {plantStockRows.map((row, i) => (
-                  <TableRow key={i} className="hover:bg-muted/50">
-                    <TableCell className="font-medium">{row.clientName}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">{row.sku}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-bold text-blue-700 tabular-nums">{row.quantity}</TableCell>
-                    <TableCell className="text-right text-muted-foreground text-sm">
-                      {new Date(row.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </TableCell>
+                {paginatedPlantStock.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-4">No results</TableCell>
                   </TableRow>
-                ))}
+                ) : paginatedPlantStock.flatMap(row => {
+                  const isExpanded = plantExpandedKeys.has(row.key);
+                  const history = plantStockHistory[row.key] ?? [];
+                  const hasHistory = history.length > 1;
+                  const result = [
+                    <TableRow
+                      key={row.key}
+                      className={`hover:bg-muted/50 ${hasHistory ? 'cursor-pointer' : ''}`}
+                      onClick={hasHistory ? () => setPlantExpandedKeys(prev => {
+                        const next = new Set(prev);
+                        next.has(row.key) ? next.delete(row.key) : next.add(row.key);
+                        return next;
+                      }) : undefined}
+                    >
+                      <TableCell className="text-muted-foreground w-8">
+                        {hasHistory ? (isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : null}
+                      </TableCell>
+                      <TableCell className="font-medium">{row.clientName}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs">{row.sku}</Badge></TableCell>
+                      <TableCell className="text-right font-bold text-blue-700 tabular-nums">{row.quantity}</TableCell>
+                      <TableCell className="text-right text-muted-foreground text-sm">
+                        {new Date(row.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </TableCell>
+                    </TableRow>,
+                  ];
+                  if (isExpanded) {
+                    history.slice(1).forEach((h, i) => result.push(
+                      <TableRow key={`${row.key}-h-${i}`} className="bg-muted/30">
+                        <TableCell />
+                        <TableCell colSpan={2} className="pl-10 text-xs text-muted-foreground italic">Previous entry</TableCell>
+                        <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{h.quantity} cases</TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {new Date(h.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </TableCell>
+                      </TableRow>
+                    ));
+                  }
+                  return result;
+                })}
               </TableBody>
             </Table>
+            {plantTotalPages > 1 && (
+              <div className="border-t p-3">
+                <Pagination currentPage={plantPage} totalPages={plantTotalPages} onPageChange={setPlantPage} />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
