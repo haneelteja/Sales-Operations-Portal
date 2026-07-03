@@ -346,6 +346,7 @@ const FactoryPayables = () => {
       : byMonth;
 
     return baseList.filter((transaction) => {
+    if (transaction.transaction_type === 'plant_stock') return false;
     const sku = transaction.sku || '';
     const amount = transaction.amount?.toString() || '';
     const date = new Date(transaction.transaction_date).toLocaleDateString();
