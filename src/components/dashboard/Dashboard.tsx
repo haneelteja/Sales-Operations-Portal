@@ -693,9 +693,10 @@ const Dashboard = memo(() => {
       )}
 
       {/* Inventory Table — grouped by client+branch (no SKU breakdown) */}
-      {inventoryRows && inventoryRows.length > 0 && (() => {
+      {(() => {
+        const allRows = inventoryRows ?? [];
         const q = debouncedInventorySearch.toLowerCase();
-        let rows = inventoryRows.filter(r =>
+        let rows = allRows.filter(r =>
           !q ||
           r.clientName.toLowerCase().includes(q) ||
           r.branch.toLowerCase().includes(q) ||
@@ -762,7 +763,9 @@ const Dashboard = memo(() => {
                 <TableBody>
                   {rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-4">No results</TableCell>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-4">
+                        {q ? "No results" : "All inventory balanced — no pending stock"}
+                      </TableCell>
                     </TableRow>
                   ) : rows.map((row, i) => (
                     <TableRow key={i} className="hover:bg-muted/50">
