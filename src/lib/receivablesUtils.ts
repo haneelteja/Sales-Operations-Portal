@@ -245,6 +245,7 @@ export async function fetchLedgerRows(
     .from('sales_transactions')
     .select('transaction_date, transaction_type, sku, quantity, amount, description')
     .eq('customer_id', customerId)
+    .in('transaction_type', ['sale', 'payment'])
     .lte('transaction_date', to)
     .order('transaction_date', { ascending: true });
   if (error) throw error;
