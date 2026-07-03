@@ -389,16 +389,9 @@ const LabelPurchases = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.record_type === 'adjustment') {
-      if (!form.client_id || !form.quantity) {
-        toast({ title: "Error", description: "Client and Quantity are required for adjustments", variant: "destructive" });
-        return;
-      }
-    } else {
-      if (!form.vendor_id || !form.client_id || !form.quantity || !form.cost_per_label) {
-        toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
-        return;
-      }
+    if (!form.vendor_id || !form.client_id || !form.quantity || !form.cost_per_label) {
+      toast({ title: "Error", description: "Vendor, Client, Quantity, and Cost per Label are required", variant: "destructive" });
+      return;
     }
     if (form.purchase_date < "2024-01-01" || form.purchase_date > today) {
       toast({ title: "Error", description: "Date must be between 1 Jan 2024 and today", variant: "destructive" });
@@ -685,27 +678,6 @@ const LabelPurchases = () => {
     <div className="space-y-6">
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Record type toggle */}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setForm(prev => ({ ...prev, record_type: 'purchase' }))}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${form.record_type === 'purchase' ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-          >
-            Purchase
-          </button>
-          <button
-            type="button"
-            onClick={() => setForm(prev => ({ ...prev, record_type: 'adjustment', cost_per_label: '', total_amount: '' }))}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${form.record_type === 'adjustment' ? 'bg-orange-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-          >
-            Adjustment
-          </button>
-          {form.record_type === 'adjustment' && (
-            <span className="self-center text-xs text-muted-foreground ml-1">Use negative quantity for count-down corrections</span>
-          )}
-        </div>
-
         {/* Row 1: Date, Client, SKU, Vendor */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="space-y-2">
@@ -752,67 +724,43 @@ const LabelPurchases = () => {
           </div>
         </div>
 
-        {/* Row 2: Quantity + cost fields (purchase) or reason (adjustment) */}
-        {form.record_type === 'purchase' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="quantity">Quantity *</Label>
-              <Input
-                id="quantity"
-                type="number"
-                value={form.quantity}
-                onChange={(e) => handleQuantityOrCostChange("quantity", e.target.value)}
-                placeholder="Number of labels"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cost-per-label">Cost per Label (₹) *</Label>
-              <Input
-                id="cost-per-label"
-                type="number"
-                step="0.01"
-                value={form.cost_per_label}
-                onChange={(e) => handleQuantityOrCostChange("cost_per_label", e.target.value)}
-                placeholder="Auto-filled from config"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="total-amount">Total Amount (₹)</Label>
-              <Input
-                id="total-amount"
-                type="number"
-                step="0.01"
-                value={form.total_amount}
-                onChange={(e) => setForm({ ...form, total_amount: e.target.value })}
-                placeholder="Auto-calculated"
-              />
-            </div>
+        {/* Row 2: Quantity, Cost per Label, Total Amount */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <Label htmlFor="quantity">Quantity *</Label>
+            <Input
+              id="quantity"
+              type="number"
+              value={form.quantity}
+              onChange={(e) => handleQuantityOrCostChange("quantity", e.target.value)}
+              placeholder="Number of labels"
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="quantity">Quantity * (use negative for deduction)</Label>
-              <Input
-                id="quantity"
-                type="number"
-                value={form.quantity}
-                onChange={(e) => setForm(prev => ({ ...prev, quantity: e.target.value }))}
-                placeholder="e.g. -120 or +50"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="reason">Reason</Label>
-              <Input
-                id="reason"
-                value={form.reason}
-                onChange={(e) => setForm(prev => ({ ...prev, reason: e.target.value }))}
-                placeholder="e.g. count mismatch, label size issue"
-              />
-            </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cost-per-label">Cost per Label (₹) *</Label>
+            <Input
+              id="cost-per-label"
+              type="number"
+              step="0.01"
+              value={form.cost_per_label}
+              onChange={(e) => handleQuantityOrCostChange("cost_per_label", e.target.value)}
+              placeholder="Auto-filled from config"
+            />
           </div>
-        )}
+
+          <div className="space-y-2">
+            <Label htmlFor="total-amount">Total Amount (₹)</Label>
+            <Input
+              id="total-amount"
+              type="number"
+              step="0.01"
+              value={form.total_amount}
+              onChange={(e) => setForm({ ...form, total_amount: e.target.value })}
+              placeholder="Auto-calculated"
+            />
+          </div>
+        </div>
 
         {/* Description */}
         <div className="space-y-2">
@@ -829,7 +777,7 @@ const LabelPurchases = () => {
 
         <div className="flex justify-end">
           <Button type="submit" disabled={mutation.isPending} className="px-8">
-            {mutation.isPending ? "Recording..." : form.record_type === 'adjustment' ? "Record Adjustment" : "Record Purchase"}
+            {mutation.isPending ? "Recording..." : "Record Purchase"}
           </Button>
         </div>
       </form>

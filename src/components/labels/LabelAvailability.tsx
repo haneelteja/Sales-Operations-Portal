@@ -1,13 +1,15 @@
 import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, Search, Filter, Maximize2, Minimize2, ChevronDown, ChevronUp } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Download, Search, Filter, Maximize2, Minimize2, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
+import { useToast } from "@/hooks/use-toast";
 
 const DEFAULT_ROWS = 10;
 
@@ -36,6 +38,19 @@ const LabelAvailability = () => {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
 
+  // Adjustment dialog state
+  const [adjusting, setAdjusting] = React.useState<ClientSkuLabelSummary | null>(null);
+  const [adjForm, setAdjForm] = React.useState({
+    quantity: "",
+    reason: "",
+    vendor_id: "",
+    date: new Date().toISOString().split('T')[0],
+  });
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const today = new Date().toISOString().split('T')[0];
+
   // 1. Label purchases + adjustments
   const { data: labelPurchases, isLoading: isLoadingPurchases } = useQuery({
     queryKey: ["label-purchases-summary"],
@@ -49,7 +64,7 @@ const LabelAvailability = () => {
     },
   });
 
-  // 2. Active customers (for name resolution)
+  // 2. Active customers
   const { data: customers, isLoading: isLoadingCustomers } = useQuery({
     queryKey: ["customers-for-availability"],
     queryFn: async () => {
@@ -64,7 +79,7 @@ const LabelAvailability = () => {
     },
   });
 
-  // 3. Sales transactions (labels consumed via sales)
+  // 3. Sales transactions
   const { data: salesTransactions, isLoading: isLoadingSales } = useQuery({
     queryKey: ["sales-transactions-for-availability"],
     queryFn: async () => {
@@ -80,7 +95,7 @@ const LabelAvailability = () => {
     },
   });
 
-  // 4. Factory production data (labels consumed via production)
+  // 4. Factory production data
   const { data: productionData, isLoading: isLoadingProduction } = useQuery({
     queryKey: ["factory-production-for-labels"],
     queryFn: async () => {
@@ -109,6 +124,59 @@ const LabelAvailability = () => {
     },
   });
 
+  // 6. Label vendors for adjustment source dropdown
+  const { data: labelVendors } = useQuery({
+    queryKey: ["label-vendors-config"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("invoice_configurations")
+        .select("config_value")
+        .eq("config_key", "label_vendors")
+        .maybeSingle();
+      if (!data) return [] as string[];
+      try {
+        const parsed = JSON.parse(data.config_value || "[]");
+        if (!Array.isArray(parsed)) return [] as string[];
+        const vendors = parsed.map((e: unknown) =>
+          typeof e === 'string' ? e : (e as { vendor?: string })?.vendor
+        ).filter((v): v is string => !!v);
+        return [...new Set(vendors)].sort() as string[];
+      } catch { return [] as string[]; }
+    },
+  });
+
+  // Adjustment mutation
+  const adjustMutation = useMutation({
+    mutationFn: async () => {
+      if (!adjusting) throw new Error("No row selected");
+      const qty = parseInt(adjForm.quantity);
+      if (isNaN(qty) || qty === 0) throw new Error("Quantity must be a non-zero number");
+      const { error } = await supabase.from("label_purchases").insert({
+        client_id: adjusting.client_id,
+        sku: adjusting.sku,
+        quantity: qty,
+        cost_per_label: 0,
+        total_amount: 0,
+        purchase_date: adjForm.date,
+        vendor_id: adjForm.vendor_id || null,
+        record_type: 'adjustment',
+        reason: adjForm.reason?.trim() || null,
+        description: null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Adjustment recorded", description: `${adjForm.quantity > '0' ? '+' : ''}${adjForm.quantity} labels for ${adjusting?.client_name} / ${adjusting?.sku}` });
+      setAdjusting(null);
+      setAdjForm({ quantity: "", reason: "", vendor_id: "", date: today });
+      queryClient.invalidateQueries({ queryKey: ["label-purchases-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["label-purchases"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const isLoading = isLoadingPurchases || isLoadingCustomers || isLoadingSales || isLoadingProduction;
 
   // Build per-client+SKU summaries
@@ -120,7 +188,6 @@ const LabelAvailability = () => {
 
     const summaryMap = new Map<string, ClientSkuLabelSummary>();
 
-    // Process purchases and adjustments
     labelPurchases.forEach(p => {
       if (!p.client_id || !p.sku) return;
       const clientName = customerMap.get(p.client_id);
@@ -159,25 +226,18 @@ const LabelAvailability = () => {
       }
     });
 
-    // Accumulate production labels (cases × bottles_per_case)
     productionData?.forEach(prod => {
       if (!prod.customer_id || !prod.sku) return;
       const entry = summaryMap.get(`${prod.customer_id}__${prod.sku}`);
-      if (entry) {
-        entry.production_labels += (prod.quantity || 0) * bottlesPerCase(prod.sku);
-      }
+      if (entry) entry.production_labels += (prod.quantity || 0) * bottlesPerCase(prod.sku);
     });
 
-    // Accumulate sales labels (cases × bottles_per_case)
     salesTransactions?.forEach(sale => {
       if (!sale.customer_id || !sale.sku) return;
       const entry = summaryMap.get(`${sale.customer_id}__${sale.sku}`);
-      if (entry) {
-        entry.sales_labels += (sale.quantity || 0) * bottlesPerCase(sale.sku);
-      }
+      if (entry) entry.sales_labels += (sale.quantity || 0) * bottlesPerCase(sale.sku);
     });
 
-    // labels_used = max(production, sales); available = purchased + adjustments - used
     return Array.from(summaryMap.values())
       .map(s => ({
         ...s,
@@ -190,7 +250,6 @@ const LabelAvailability = () => {
       .sort((a, b) => a.client_name.localeCompare(b.client_name) || a.sku.localeCompare(b.sku));
   }, [labelPurchases, customers, salesTransactions, productionData, skuConfigs]);
 
-  // Filter and sort
   const filteredAndSortedData = React.useMemo(() => {
     const filtered = clientSkuSummaries.filter(s => {
       const matchesSearch =
@@ -226,6 +285,21 @@ const LabelAvailability = () => {
     else { setSortField(field); setSortDirection('asc'); }
   };
 
+  const openAdjustDialog = (row: ClientSkuLabelSummary) => {
+    setAdjusting(row);
+    setAdjForm({ quantity: "", reason: "", vendor_id: "", date: today });
+  };
+
+  const handleAdjustSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const qty = parseInt(adjForm.quantity);
+    if (isNaN(qty) || qty === 0) {
+      toast({ title: "Error", description: "Enter a non-zero quantity (negative to deduct)", variant: "destructive" });
+      return;
+    }
+    adjustMutation.mutate();
+  };
+
   const handleExport = async () => {
     const exportData = filteredAndSortedData.map(s => ({
       'Client': s.client_name,
@@ -253,12 +327,27 @@ const LabelAvailability = () => {
     </TableHead>
   );
 
+  const availableColor = (n: number) =>
+    n > 2500 ? 'text-green-600' : n > 0 ? 'text-yellow-600' : 'text-red-600';
+
+  const availableBadge = (n: number) =>
+    n > 2500
+      ? 'bg-green-100 text-green-800'
+      : n > 0
+      ? 'bg-yellow-100 text-yellow-800'
+      : 'bg-red-100 text-red-800';
+
+  const availableLabel = (n: number) =>
+    n > 2500 ? 'Available' : n > 0 ? 'Low Stock' : 'Shortage';
+
   const tableContent = (
     <div className="space-y-4 flex flex-col flex-1 min-h-0">
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-lg font-semibold">Label Availability</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Labels used = max(production, sales) per client + SKU</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Used = max(production, sales) · Click <span className="font-medium">Adjust</span> on any row to record a count correction
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {filteredAndSortedData.length > 0 && (
@@ -324,6 +413,7 @@ const LabelAvailability = () => {
                   <SortTh field="labels_used" align="right">Used (max)</SortTh>
                   <SortTh field="labels_available" align="right">Available</SortTh>
                   <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Status</TableHead>
+                  <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-center">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -334,30 +424,35 @@ const LabelAvailability = () => {
                       <TableCell className="text-muted-foreground text-sm">{s.sku}</TableCell>
                       <TableCell className="text-right">{s.total_labels_purchased.toLocaleString()}</TableCell>
                       <TableCell className={`text-right ${s.total_adjustments > 0 ? 'text-green-600' : s.total_adjustments < 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                        {s.total_adjustments !== 0 && s.total_adjustments > 0 ? '+' : ''}{s.total_adjustments.toLocaleString()}
+                        {s.total_adjustments > 0 ? '+' : ''}{s.total_adjustments.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{s.production_labels.toLocaleString()}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{s.sales_labels.toLocaleString()}</TableCell>
                       <TableCell className="text-right font-medium">{s.labels_used.toLocaleString()}</TableCell>
-                      <TableCell className={`text-right font-semibold ${s.labels_available > 2500 ? 'text-green-600' : s.labels_available > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                      <TableCell className={`text-right font-semibold ${availableColor(s.labels_available)}`}>
                         {s.labels_available.toLocaleString()}
                       </TableCell>
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          s.labels_available > 2500
-                            ? 'bg-green-100 text-green-800'
-                            : s.labels_available > 0
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {s.labels_available > 2500 ? 'Available' : s.labels_available > 0 ? 'Low Stock' : 'Shortage'}
+                        <span className={`px-2 py-1 rounded-full text-xs ${availableBadge(s.labels_available)}`}>
+                          {availableLabel(s.labels_available)}
                         </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openAdjustDialog(s)}
+                          className="gap-1.5 text-xs"
+                        >
+                          <SlidersHorizontal className="h-3.5 w-3.5" />
+                          Adjust
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       {clientSkuSummaries.length === 0
                         ? "No label data found. Record label purchases to get started."
                         : "No results match your filters."}
@@ -383,6 +478,106 @@ const LabelAvailability = () => {
           )}
         </div>
       )}
+
+      {/* Adjustment dialog */}
+      <Dialog open={!!adjusting} onOpenChange={open => { if (!open) setAdjusting(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record Label Adjustment</DialogTitle>
+          </DialogHeader>
+
+          {adjusting && (
+            <form onSubmit={handleAdjustSubmit} className="space-y-5">
+              {/* Client + SKU (read-only) */}
+              <div className="rounded-lg bg-muted/50 px-4 py-3 space-y-1">
+                <div className="text-sm font-medium">{adjusting.client_name}</div>
+                <div className="text-xs text-muted-foreground">{adjusting.sku}</div>
+              </div>
+
+              {/* Current balance */}
+              <div className="rounded-lg border px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Current available</span>
+                <span className={`text-xl font-bold ${availableColor(adjusting.labels_available)}`}>
+                  {adjusting.labels_available.toLocaleString()} labels
+                </span>
+              </div>
+
+              {adjusting.labels_available < 0 && (
+                <p className="text-xs text-red-600 -mt-2">
+                  Balance is negative — labels were used before the purchase was recorded, or a count mismatch exists.
+                </p>
+              )}
+
+              {/* Date */}
+              <div className="space-y-1.5">
+                <Label htmlFor="adj-date">Date *</Label>
+                <Input
+                  id="adj-date"
+                  type="date"
+                  value={adjForm.date}
+                  min="2024-01-01"
+                  max={today}
+                  onChange={e => setAdjForm(f => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+
+              {/* Quantity */}
+              <div className="space-y-1.5">
+                <Label htmlFor="adj-qty">Quantity * <span className="font-normal text-muted-foreground">(use negative to deduct)</span></Label>
+                <Input
+                  id="adj-qty"
+                  type="number"
+                  value={adjForm.quantity}
+                  onChange={e => setAdjForm(f => ({ ...f, quantity: e.target.value }))}
+                  placeholder="e.g. -120 or +50"
+                  autoFocus
+                />
+                {adjForm.quantity && !isNaN(parseInt(adjForm.quantity)) && (
+                  <p className="text-xs text-muted-foreground">
+                    New balance after adjustment:{' '}
+                    <span className={`font-semibold ${availableColor(adjusting.labels_available + parseInt(adjForm.quantity))}`}>
+                      {(adjusting.labels_available + parseInt(adjForm.quantity)).toLocaleString()} labels
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {/* Reason */}
+              <div className="space-y-1.5">
+                <Label htmlFor="adj-reason">Reason</Label>
+                <Input
+                  id="adj-reason"
+                  value={adjForm.reason}
+                  onChange={e => setAdjForm(f => ({ ...f, reason: e.target.value }))}
+                  placeholder="e.g. count mismatch, label size issue"
+                />
+              </div>
+
+              {/* Source (optional) */}
+              <div className="space-y-1.5">
+                <Label htmlFor="adj-vendor">Source / Vendor <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <select
+                  id="adj-vendor"
+                  title="Source / Vendor"
+                  value={adjForm.vendor_id}
+                  onChange={e => setAdjForm(f => ({ ...f, vendor_id: e.target.value }))}
+                  className="w-full text-sm bg-background border border-input rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">— none —</option>
+                  {(labelVendors || []).map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAdjusting(null)}>Cancel</Button>
+                <Button type="submit" disabled={adjustMutation.isPending}>
+                  {adjustMutation.isPending ? "Saving..." : "Record Adjustment"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
