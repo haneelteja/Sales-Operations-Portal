@@ -94,6 +94,7 @@ export function useTransactionMutations({
       log({ action: 'CREATE', entityType: 'client_payment', entityId: result?.id, description: `Payment recorded: ₹${variables.amount} on ${variables.transaction_date}`, newValues: { amount: variables.amount, date: variables.transaction_date, description: variables.description } });
       toast({ title: 'Success', description: 'Payment recorded successfully!' });
       onPaymentSuccess();
+      invalidateRelated('sales_transactions');
       queryClient.invalidateQueries({ queryKey: ['sales-summary'] });
       queryClient.invalidateQueries({ queryKey: ['recent-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['transport-expenses'] });
