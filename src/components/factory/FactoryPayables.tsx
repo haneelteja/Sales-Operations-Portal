@@ -49,6 +49,7 @@ const FactoryPayables = () => {
   });
 
   const [plantStockForm, setPlantStockForm] = useState({
+    customer_id: "",
     sku: "",
     quantity: "",
     description: "",
@@ -174,6 +175,41 @@ const FactoryPayables = () => {
     )].sort();
     return skus.length > 0 ? skus : (availableSKUs ?? []);
   }, [customers, productionForm.customer_id, productionForm.area, availableSKUs]);
+
+  // Unique client options for plant stock (one entry per client_name, value = first customer_id)
+  const plantStockClientOptions = useMemo(() => {
+    if (!customers) return [];
+    const seen = new Set<string>();
+    const result: { value: string; label: string }[] = [];
+    for (const c of customers) {
+      if (!seen.has(c.client_name)) {
+        seen.add(c.client_name);
+        result.push({ value: c.id, label: c.client_name });
+      }
+    }
+    return result.sort((a, b) => a.label.localeCompare(b.label));
+  }, [customers]);
+
+  // SKUs for the selected plant-stock client (across all branches — not branch-specific)
+  const plantStockSKUs = useMemo(() => {
+    if (!customers || !plantStockForm.customer_id) return availableSKUs ?? [];
+    const selected = customers.find(c => c.id === plantStockForm.customer_id);
+    if (!selected) return availableSKUs ?? [];
+    const skus = [...new Set(
+      customers.filter(c => c.client_name === selected.client_name && c.sku).map(c => c.sku as string)
+    )].sort();
+    return skus.length > 0 ? skus : (availableSKUs ?? []);
+  }, [customers, plantStockForm.customer_id, availableSKUs]);
+
+  const handlePlantStockClientChange = (clientId: string) => {
+    const selected = customers?.find(c => c.id === clientId);
+    if (!selected) { setPlantStockForm(f => ({ ...f, customer_id: "", sku: "" })); return; }
+    const skus = [...new Set(
+      customers!.filter(c => c.client_name === selected.client_name && c.sku).map(c => c.sku as string)
+    )];
+    const autoSku = skus.length === 1 ? skus[0] : "";
+    setPlantStockForm(f => ({ ...f, customer_id: clientId, sku: autoSku }));
+  };
 
   // Handle production client change — auto-select branch and SKU when only one option
   const handleProductionClientChange = (clientId: string) => {
@@ -454,19 +490,23 @@ const FactoryPayables = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, debouncedSearchTerm, columnFilters, columnSorts, factoryPricing, monthFilter, clientFilter, customerById]);
 
-  // Latest plant stock per SKU (for display in Plant Stock tab)
+  // Latest plant stock per client+SKU (for display in Plant Stock tab)
   const currentPlantStock = useMemo(() => {
     if (!transactions) return [];
-    const latestBySku = new Map<string, { sku: string; quantity: number; transaction_date: string }>();
+    const latestByKey = new Map<string, { sku: string; quantity: number; transaction_date: string; clientName: string }>();
     transactions
       .filter(t => t.transaction_type === 'plant_stock' && t.sku)
       .forEach(t => {
-        if (!latestBySku.has(t.sku!)) {
-          latestBySku.set(t.sku!, { sku: t.sku!, quantity: t.quantity || 0, transaction_date: t.transaction_date });
+        const key = `${t.customer_id ?? ''}|||${t.sku!}`;
+        if (!latestByKey.has(key)) {
+          const clientName = t.customer_id ? (customerById[t.customer_id]?.client_name ?? '') : '';
+          latestByKey.set(key, { sku: t.sku!, quantity: t.quantity || 0, transaction_date: t.transaction_date, clientName });
         }
       });
-    return Array.from(latestBySku.values()).sort((a, b) => a.sku.localeCompare(b.sku));
-  }, [transactions]);
+    return Array.from(latestByKey.values()).sort((a, b) =>
+      a.clientName.localeCompare(b.clientName) || a.sku.localeCompare(b.sku)
+    );
+  }, [transactions, customerById]);
 
   // Paginated slice of filtered+sorted transactions
   const paginatedTransactions = useMemo(() => {
@@ -742,14 +782,14 @@ const FactoryPayables = () => {
           transaction_date: data.transaction_date,
           transaction_type: "plant_stock",
           amount: 0,
-          customer_id: null,
+          customer_id: data.customer_id || null,
         });
       if (error) throw error;
     },
     onSuccess: () => {
       log({ action: 'CREATE', entityType: 'plant_stock', description: `Plant stock recorded: ${plantStockForm.quantity} cases of ${plantStockForm.sku}`, newValues: { sku: plantStockForm.sku, quantity: plantStockForm.quantity } });
       toast({ title: "Success", description: "Plant stock recorded!" });
-      setPlantStockForm({ sku: "", quantity: "", description: "", transaction_date: new Date().toISOString().split('T')[0] });
+      setPlantStockForm({ customer_id: "", sku: "", quantity: "", description: "", transaction_date: new Date().toISOString().split('T')[0] });
       invalidateRelated('factory_payables');
     },
     onError: (error: unknown) => {
@@ -847,8 +887,8 @@ const FactoryPayables = () => {
 
   const handlePlantStockSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!plantStockForm.sku || !plantStockForm.quantity) {
-      toast({ title: "Error", description: "Please fill in SKU and quantity", variant: "destructive" });
+    if (!plantStockForm.customer_id || !plantStockForm.sku || !plantStockForm.quantity) {
+      toast({ title: "Error", description: "Please select a client, SKU and quantity", variant: "destructive" });
       return;
     }
     plantStockMutation.mutate(plantStockForm);
@@ -1083,7 +1123,7 @@ const FactoryPayables = () => {
             <div>
               <h3 className="text-lg font-semibold mb-4">Record Plant Stock (Fresh Count)</h3>
               <form onSubmit={handlePlantStockSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="plant-stock-date">Date</Label>
                     <Input
@@ -1095,12 +1135,21 @@ const FactoryPayables = () => {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label>Client *</Label>
+                    <SearchableSelect
+                      options={plantStockClientOptions}
+                      value={plantStockForm.customer_id}
+                      onValueChange={handlePlantStockClientChange}
+                      placeholder="Select Client"
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="plant-stock-sku">SKU *</Label>
                     <SearchableSelect
-                      options={(availableSKUs ?? []).map(sku => ({ value: sku, label: sku }))}
+                      options={plantStockSKUs.map(sku => ({ value: sku, label: sku }))}
                       value={plantStockForm.sku}
                       onValueChange={(value) => setPlantStockForm({ ...plantStockForm, sku: value })}
-                      placeholder="Select SKU"
+                      placeholder={plantStockForm.customer_id ? "Select SKU" : "Select client first"}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1139,15 +1188,17 @@ const FactoryPayables = () => {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-slate-50">
+                        <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">Client</TableHead>
                         <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">SKU</TableHead>
                         <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-center">Current Qty (Cases)</TableHead>
                         <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">Last Updated</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {currentPlantStock.map((stock) => (
-                        <TableRow key={stock.sku}>
-                          <TableCell className="font-medium">{stock.sku}</TableCell>
+                      {currentPlantStock.map((stock, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium">{stock.clientName || '—'}</TableCell>
+                          <TableCell>{stock.sku}</TableCell>
                           <TableCell className="text-center">
                             <span className={`font-semibold ${stock.quantity === 0 ? 'text-muted-foreground' : 'text-blue-700'}`}>
                               {stock.quantity}
