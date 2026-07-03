@@ -65,7 +65,7 @@ const FactoryPayables = () => {
     description: "",
     transaction_date: ""
   });
-  const [activeTab, setActiveTab] = useState("payment");
+  const [activeTab, setActiveTab] = useState("plant-stock");
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [columnFilters, setColumnFilters] = useState<{
@@ -962,11 +962,11 @@ const FactoryPayables = () => {
       </div>
 
       {/* Tabs for Production and Payment Forms */}
-      <Tabs defaultValue="payment" value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs defaultValue="plant-stock" value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="plant-stock">Plant Stock</TabsTrigger>
           <TabsTrigger value="payment">Record Payment to Elma Industries</TabsTrigger>
           <TabsTrigger value="production">Record Production Transaction</TabsTrigger>
-          <TabsTrigger value="plant-stock">Plant Stock</TabsTrigger>
           <TabsTrigger value="pricing">Factory Pricing</TabsTrigger>
         </TabsList>
 
