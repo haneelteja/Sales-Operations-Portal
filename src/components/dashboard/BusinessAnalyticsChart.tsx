@@ -3,6 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
+import { ChevronDown } from 'lucide-react';
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
@@ -134,7 +137,7 @@ const TotalsRow = ({ totals }: { totals: { cases: number; revenue: number; profi
 
 const BusinessAnalyticsChart: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<string>(CURRENT_YEAR);
-  const [selectedOverallMonth, setSelectedOverallMonth] = useState<string>('all');
+  const [selectedMonths, setSelectedMonths] = useState<Set<string> | null>(null); // null = all months
   const [activeMetrics, setActiveMetrics] = useState<Set<string>>(new Set(['cases', 'revenue', 'profit', 'collections']));
 
   const { data: salesTxs = [] } = useQuery({
@@ -281,10 +284,10 @@ const BusinessAnalyticsChart: React.FC = () => {
       ? [...availableMonths].reverse()
       : [...availableMonths].filter(m => m.startsWith(selectedYear)).reverse();
 
-    if (selectedOverallMonth !== 'all') months = months.filter(m => m === selectedOverallMonth);
+    if (selectedMonths !== null) months = months.filter(m => selectedMonths.has(m));
 
     return months.map(getAggForMonth).filter(p => p.cases > 0 || p.revenue > 0);
-  }, [computedData, availableMonths, selectedYear, selectedOverallMonth]);
+  }, [computedData, availableMonths, selectedYear, selectedMonths]);
 
   const totals = useMemo(() => ({
     cases: chartData.reduce((s, p) => s + p.cases, 0),
@@ -298,8 +301,10 @@ const BusinessAnalyticsChart: React.FC = () => {
     return availableMonths.filter(m => m.startsWith(selectedYear));
   }, [availableMonths, selectedYear]);
 
-  const subtitle = selectedOverallMonth !== 'all'
-    ? `${monthLabel(selectedOverallMonth)} — overall`
+  const subtitle = selectedMonths !== null
+    ? selectedMonths.size === 0
+      ? 'No months selected'
+      : `${selectedMonths.size} month${selectedMonths.size > 1 ? 's' : ''} selected`
     : selectedYear === 'all' ? 'All time monthly trend' : `${selectedYear} monthly trend`;
 
   const chartWidth = Math.max(560, chartData.length * 80);
@@ -344,7 +349,7 @@ const BusinessAnalyticsChart: React.FC = () => {
           </div>
 
           {/* Year selector */}
-          <Select value={selectedYear} onValueChange={v => { setSelectedYear(v); setSelectedOverallMonth('all'); }}>
+          <Select value={selectedYear} onValueChange={v => { setSelectedYear(v); setSelectedMonths(null); }}>
             <SelectTrigger className="w-36 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
@@ -356,18 +361,56 @@ const BusinessAnalyticsChart: React.FC = () => {
             </SelectContent>
           </Select>
 
-          {/* Month selector */}
-          <Select value={selectedOverallMonth} onValueChange={setSelectedOverallMonth}>
-            <SelectTrigger className="w-44 h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Months</SelectItem>
+          {/* Month multi-select */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="h-8 text-sm px-3 gap-1.5 font-normal">
+                {selectedMonths === null
+                  ? 'All Months'
+                  : selectedMonths.size === 0
+                  ? 'No Months'
+                  : `${selectedMonths.size} Month${selectedMonths.size > 1 ? 's' : ''}`}
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48 max-h-80 overflow-y-auto">
+              <div className="flex items-center gap-3 px-2 py-1.5">
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={() => setSelectedMonths(null)}
+                >
+                  Select All
+                </button>
+                <span className="text-gray-300 text-xs">·</span>
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={() => setSelectedMonths(new Set())}
+                >
+                  Deselect All
+                </button>
+              </div>
+              <DropdownMenuSeparator />
               {monthOptions.map(m => (
-                <SelectItem key={m} value={m}>{m === CURRENT_MONTH ? `${monthLabel(m)} (Current)` : monthLabel(m)}</SelectItem>
+                <DropdownMenuCheckboxItem
+                  key={m}
+                  checked={selectedMonths === null || selectedMonths.has(m)}
+                  onSelect={e => e.preventDefault()}
+                  onCheckedChange={checked => {
+                    setSelectedMonths(prev => {
+                      const base = prev === null ? new Set(monthOptions) : new Set(prev);
+                      if (checked) base.add(m); else base.delete(m);
+                      return base.size === monthOptions.length ? null : base;
+                    });
+                  }}
+                  className="text-xs"
+                >
+                  {m === CURRENT_MONTH ? `${monthLabel(m)} (Current)` : monthLabel(m)}
+                </DropdownMenuCheckboxItem>
               ))}
-            </SelectContent>
-          </Select>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </CardHeader>
 
