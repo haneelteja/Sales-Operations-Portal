@@ -156,35 +156,25 @@ const Dashboard = memo(() => {
         }
       }
 
-      // Separate positive sales (delivered) from negative adjustments (returns/cancellations).
-      // Returns are subtracted from production rather than added to sales so that
-      // fully-returned production correctly shows 0 inventory (not negative).
-      // stock_adjustment rows are signed offsets: positive = add stock, negative = remove stock.
-      const salesMap = new Map<string, number>();
-      const adjMap = new Map<string, number>();
-      const stockAdjMap = new Map<string, number>();
+      // inventory = factory_net - client_net
+      // factory_net: signed sum of all production entries (negative = returned to factory)
+      // client_net: signed sum of all sale entries (negative = damaged/transferred out)
+      //             + signed sum of stock_adjustment entries (invoice quantity differences)
+      // Negative client entries reduce client_net, which correctly increases inventory for that key.
+      const clientNetMap = new Map<string, number>();
       for (const r of salesRows ?? []) {
         const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
         const area = (r.customers as { branch?: string } | null)?.branch ?? "";
         const sku = r.sku ?? "";
         const key = `${clientName}|||${area}|||${sku}`;
         const qty = r.quantity ?? 0;
-        if ((r as { transaction_type?: string }).transaction_type === "stock_adjustment") {
-          stockAdjMap.set(key, (stockAdjMap.get(key) ?? 0) + qty);
-        } else if (qty >= 0) {
-          salesMap.set(key, (salesMap.get(key) ?? 0) + qty);
-        } else {
-          adjMap.set(key, (adjMap.get(key) ?? 0) + Math.abs(qty));
-        }
+        clientNetMap.set(key, (clientNetMap.get(key) ?? 0) + qty);
       }
 
-      // inventory = production - returns - deliveries + stockAdj; only show rows where stock > 0
       const result: { clientName: string; branch: string; sku: string; stock: number }[] = [];
       for (const [key, prod] of prodMap.entries()) {
-        const sold = salesMap.get(key) ?? 0;
-        const returned = adjMap.get(key) ?? 0;
-        const stockAdj = stockAdjMap.get(key) ?? 0;
-        const stock = prod.qty - returned - sold + stockAdj;
+        const clientNet = clientNetMap.get(key) ?? 0;
+        const stock = prod.qty - clientNet;
         if (stock > 0) {
           result.push({ clientName: prod.clientName, branch: prod.branch, sku: prod.sku, stock });
         }
