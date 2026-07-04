@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from "react";
 const ConfigurationManagement = lazy(() => import("@/components/configurations/ConfigurationManagement"));
+const CommissionConfig = lazy(() => import("@/components/configurations/CommissionConfig"));
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -1844,9 +1845,22 @@ const SalesEntry = () => {
         </TabsContent>
 
         <TabsContent value="configurations">
-          <Suspense fallback={<div className="flex justify-center py-12"><span className="text-muted-foreground text-sm">Loading...</span></div>}>
-            <ConfigurationManagement />
-          </Suspense>
+          <Tabs defaultValue="clients" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="clients">Clients</TabsTrigger>
+              <TabsTrigger value="commissions">Commissions</TabsTrigger>
+            </TabsList>
+            <TabsContent value="clients">
+              <Suspense fallback={<div className="flex justify-center py-12"><span className="text-muted-foreground text-sm">Loading...</span></div>}>
+                <ConfigurationManagement />
+              </Suspense>
+            </TabsContent>
+            <TabsContent value="commissions">
+              <Suspense fallback={<div className="flex justify-center py-12"><span className="text-muted-foreground text-sm">Loading...</span></div>}>
+                <CommissionConfig />
+              </Suspense>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
 
