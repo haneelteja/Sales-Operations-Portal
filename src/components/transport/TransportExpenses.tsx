@@ -47,10 +47,17 @@ const TransportExpenses = () => {
   const [clientFilter, setClientFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
-  const [columnFilters, setColumnFilters] = useState({
+  const [columnFilters, setColumnFilters] = useState<{
+    date: string;
+    description: string;
+    group: string[];
+    amount: string;
+    client: string;
+    branch: string;
+  }>({
     date: "",
     description: "",
-    group: "",
+    group: [],
     amount: "",
     client: "",
     branch: ""
@@ -436,7 +443,7 @@ const TransportExpenses = () => {
 
   // Handle clear column filter (memoized)
   const handleClearColumnFilter = useCallback((column: string) => {
-    setColumnFilters(prev => ({ ...prev, [column]: "" }));
+    setColumnFilters(prev => ({ ...prev, [column]: column === "group" ? [] : "" }));
   }, []);
 
   // Enrich expenses with client_name from customers (use customersForLookup to include inactive/historical)
@@ -520,7 +527,7 @@ const TransportExpenses = () => {
     // Column-specific filters
     if (columnFilters.date && dateISO !== columnFilters.date) return false;
     if (columnFilters.description && !description.toLowerCase().includes(columnFilters.description.toLowerCase())) return false;
-    if (columnFilters.group && !expenseGroup.toLowerCase().includes(columnFilters.group.toLowerCase())) return false;
+    if (columnFilters.group.length > 0 && !columnFilters.group.includes(expenseGroup)) return false;
     if (columnFilters.amount && !amount.includes(columnFilters.amount)) return false;
     if (columnFilters.client && !clientName.includes(columnFilters.client.toLowerCase())) return false;
     if (columnFilters.branch && !areaName.includes(columnFilters.branch.toLowerCase())) return false;
@@ -757,7 +764,7 @@ const TransportExpenses = () => {
               ))}
             </select>
           )}
-          {(searchTerm || monthFilter || clientFilter || Object.values(columnFilters).some(filter => filter) || Object.values(columnSorts).some(sort => sort !== null)) && (
+          {(searchTerm || monthFilter || clientFilter || Object.entries(columnFilters).some(([, v]) => Array.isArray(v) ? v.length > 0 : !!v) || Object.values(columnSorts).some(sort => sort !== null)) && (
             <Button
               variant="outline"
               size="sm"
@@ -770,7 +777,7 @@ const TransportExpenses = () => {
                   date: "",
                   client: "",
                   branch: "",
-                  group: "",
+                  group: [],
                   amount: "",
                   description: "",
                   transport_vendor: ""
@@ -863,11 +870,11 @@ const TransportExpenses = () => {
                   columnKey="group"
                   columnName="Group"
                   filterValue={columnFilters.group}
-                  onFilterChange={(value) => handleColumnFilterChange('group', value)}
+                  onFilterChange={(value) => setColumnFilters(prev => ({ ...prev, group: value as string[] }))}
                   onClearFilter={() => handleClearColumnFilter('group')}
                   sortDirection={columnSorts.group}
                   onSortChange={(direction) => handleColumnSortChange('group', direction)}
-                  dataType="text"
+                  dataType="multiselect"
                   options={uniqueGroups}
                 />
               </div>

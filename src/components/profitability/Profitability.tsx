@@ -28,7 +28,7 @@ interface ProfitRow {
   invoiceValue: number;
   factoryCost: number;
   labelsCost: number;
-  labelsTransportCost: number;
+  overheadTransportCost: number;
   transportCost: number;
   totalExpense: number;
   profit: number;
@@ -42,7 +42,7 @@ interface ColFilters {
   invoiceValue: string;
   factoryCost: string;
   labelsCost: string;
-  labelsTransportCost: string;
+  overheadTransportCost: string;
   transportCost: string;
   totalExpense: string;
   profit: string;
@@ -56,7 +56,7 @@ const EMPTY_FILTERS: ColFilters = {
   invoiceValue: "",
   factoryCost: "",
   labelsCost: "",
-  labelsTransportCost: "",
+  overheadTransportCost: "",
   transportCost: "",
   totalExpense: "",
   profit: "",
@@ -70,7 +70,7 @@ const SORT_COLS = [
   "invoiceValue",
   "factoryCost",
   "labelsCost",
-  "labelsTransportCost",
+  "overheadTransportCost",
   "transportCost",
   "totalExpense",
   "profit",
@@ -86,7 +86,7 @@ const EMPTY_SORTS: Record<SortCol, "asc" | "desc" | null> = {
   invoiceValue: null,
   factoryCost: null,
   labelsCost: null,
-  labelsTransportCost: null,
+  overheadTransportCost: null,
   transportCost: null,
   totalExpense: null,
   profit: null,
@@ -334,17 +334,18 @@ const Profitability: React.FC = () => {
       }
     }
 
-    // Transport: split into label transport (global pool) vs client transport (direct).
-    // expense_group = 'labels' entries have no client and are allocated proportionally by cases.
-    let totalLabelsTransport = 0;
+    // Transport: entries with no client go into a global overhead pool (all groups:
+    // labels, general, labor, etc.) allocated proportionally by cases.
+    // Entries linked to a specific client are attributed directly to that client.
+    let totalOverheadTransport = 0;
     const directTransportMap = new Map<string, number>();
     for (const t of transport) {
-      if (t.expense_group === "labels") {
-        totalLabelsTransport += t.amount ?? 0;
+      if (!t.client_id) {
+        totalOverheadTransport += t.amount ?? 0;
       } else if (t.customers?.client_name) {
         const mapKey = `${t.customers.client_name}|||${t.customers.branch ?? ""}`;
         directTransportMap.set(mapKey, (directTransportMap.get(mapKey) ?? 0) + (t.amount ?? 0));
-      } else if (t.client_id) {
+      } else {
         const mapKey = custKeyMap.get(t.client_id) ?? t.client_id;
         directTransportMap.set(mapKey, (directTransportMap.get(mapKey) ?? 0) + (t.amount ?? 0));
       }
@@ -361,15 +362,15 @@ const Profitability: React.FC = () => {
         (directFactoryMap.get(clientBranchKey) ?? 0) +
         unlinkedFactory * caseFraction;
       const labelsCost = totalLabelsCost * caseFraction;
-      const labelsTransportCost = totalLabelsTransport * caseFraction;
+      const overheadTransportCost = totalOverheadTransport * caseFraction;
 
       const transportCost = directTransportMap.get(clientBranchKey) ?? 0;
 
-      const totalExpense = factoryCost + labelsCost + labelsTransportCost + transportCost;
+      const totalExpense = factoryCost + labelsCost + overheadTransportCost + transportCost;
       const profit = invoiceValue - totalExpense;
       const margin = invoiceValue !== 0 ? (profit / invoiceValue) * 100 : 0;
 
-      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, labelsTransportCost, transportCost, totalExpense, profit, margin });
+      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, overheadTransportCost, transportCost, totalExpense, profit, margin });
     }
 
     const summary = {
@@ -378,7 +379,7 @@ const Profitability: React.FC = () => {
       invoiceValue: result.reduce((s, r) => s + r.invoiceValue, 0),
       factoryCost: result.reduce((s, r) => s + r.factoryCost, 0),
       labelsCost: totalLabelsCost,
-      labelsTransportCost: totalLabelsTransport,
+      overheadTransportCost: totalOverheadTransport,
       transportCost: result.reduce((s, r) => s + r.transportCost, 0),
       totalExpense: result.reduce((s, r) => s + r.totalExpense, 0),
       profit: result.reduce((s, r) => s + r.profit, 0),
@@ -427,7 +428,7 @@ const Profitability: React.FC = () => {
       { key: "invoiceValue",         field: "invoiceValue" },
       { key: "factoryCost",          field: "factoryCost" },
       { key: "labelsCost",           field: "labelsCost" },
-      { key: "labelsTransportCost",  field: "labelsTransportCost" },
+      { key: "overheadTransportCost",  field: "overheadTransportCost" },
       { key: "transportCost",        field: "transportCost" },
       { key: "totalExpense",         field: "totalExpense" },
       { key: "profit",               field: "profit" },
@@ -512,7 +513,7 @@ const Profitability: React.FC = () => {
       "Invoice Value (₹)": Math.round(r.invoiceValue),
       "Factory Cost (₹)": Math.round(r.factoryCost),
       "Labels Cost (₹)": Math.round(r.labelsCost),
-      "Labels Transport (₹)": Math.round(r.labelsTransportCost),
+      "Overhead Transport (₹)": Math.round(r.overheadTransportCost),
       "Transport Cost (₹)": Math.round(r.transportCost),
       "Total Expense (₹)": Math.round(r.totalExpense),
       "Profit / Loss (₹)": Math.round(r.profit),
@@ -642,7 +643,7 @@ const Profitability: React.FC = () => {
         </Card>
         <SummaryCard title="Factory Cost" value={fmtINR(summary.factoryCost)} />
         <SummaryCard title="Labels Cost" value={fmtINR(summary.labelsCost)} />
-        <SummaryCard title="Labels Transport" value={fmtINR(summary.labelsTransportCost)} />
+        <SummaryCard title="Overhead Transport" value={fmtINR(summary.overheadTransportCost)} />
         <SummaryCard title="Transport Cost" value={fmtINR(summary.transportCost)} />
         <SummaryCard title="Total Expense" value={fmtINR(summary.totalExpense)} accent="red" />
       </div>
@@ -651,7 +652,7 @@ const Profitability: React.FC = () => {
       <div className="flex items-start gap-2 text-xs text-muted-foreground bg-slate-50 border rounded-md px-3 py-2">
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
-          Factory cost, labels cost, and labels transport cost are global and allocated to each client proportionally by their share of total dispatched cases.
+          Factory cost, labels cost, and overhead transport (all transport with no specific client) are global and allocated to each client proportionally by their share of total dispatched cases.
           Transport cost shows only direct entries linked to each client.
           Numeric column filters show rows where the value is ≥ the entered threshold.
         </span>
@@ -789,18 +790,18 @@ const Profitability: React.FC = () => {
                     </div>
                   </TableHead>
 
-                  {/* Labels Transport */}
+                  {/* Overhead Transport */}
                   <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-0.5">
-                      Labels Transport
+                      Overhead Transport
                       <ColumnFilter
-                        columnKey="labelsTransportCost"
-                        columnName="Labels Transport"
-                        filterValue={colFilters.labelsTransportCost}
-                        onFilterChange={(v) => handleFilterChange("labelsTransportCost", v as string)}
-                        onClearFilter={() => handleClearFilter("labelsTransportCost")}
-                        sortDirection={colSorts.labelsTransportCost}
-                        onSortChange={(d) => handleSortChange("labelsTransportCost", d)}
+                        columnKey="overheadTransportCost"
+                        columnName="Overhead Transport"
+                        filterValue={colFilters.overheadTransportCost}
+                        onFilterChange={(v) => handleFilterChange("overheadTransportCost", v as string)}
+                        onClearFilter={() => handleClearFilter("overheadTransportCost")}
+                        sortDirection={colSorts.overheadTransportCost}
+                        onSortChange={(d) => handleSortChange("overheadTransportCost", d)}
                         dataType="number"
                       />
                     </div>
@@ -926,7 +927,7 @@ const Profitability: React.FC = () => {
                         {fmtINR(r.labelsCost)}
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
-                        {r.labelsTransportCost > 0 ? fmtINR(r.labelsTransportCost) : "—"}
+                        {r.overheadTransportCost > 0 ? fmtINR(r.overheadTransportCost) : "—"}
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {r.transportCost > 0 ? fmtINR(r.transportCost) : "—"}
