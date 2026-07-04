@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ColumnFilter } from "@/components/ui/column-filter";
-import { Download, TrendingUp, TrendingDown, Info, Search } from "lucide-react";
+import { Download, TrendingUp, TrendingDown, Info, Search, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ interface ProfitRow {
   factoryCost: number;
   labelsCost: number;
   overheadTransportCost: number;
+  miscExpensesCost: number;
   transportCost: number;
   totalExpense: number;
   profit: number;
@@ -43,6 +45,7 @@ interface ColFilters {
   factoryCost: string;
   labelsCost: string;
   overheadTransportCost: string;
+  miscExpensesCost: string;
   transportCost: string;
   totalExpense: string;
   profit: string;
@@ -57,6 +60,7 @@ const EMPTY_FILTERS: ColFilters = {
   factoryCost: "",
   labelsCost: "",
   overheadTransportCost: "",
+  miscExpensesCost: "",
   transportCost: "",
   totalExpense: "",
   profit: "",
@@ -71,6 +75,7 @@ const SORT_COLS = [
   "factoryCost",
   "labelsCost",
   "overheadTransportCost",
+  "miscExpensesCost",
   "transportCost",
   "totalExpense",
   "profit",
@@ -87,11 +92,29 @@ const EMPTY_SORTS: Record<SortCol, "asc" | "desc" | null> = {
   factoryCost: null,
   labelsCost: null,
   overheadTransportCost: null,
+  miscExpensesCost: null,
   transportCost: null,
   totalExpense: null,
   profit: null,
   margin: null,
 };
+
+interface MiscExpense {
+  id: string;
+  expense_date: string;
+  category: string;
+  amount: number;
+  description: string | null;
+}
+
+const MISC_CATEGORIES = [
+  "Admin Salary",
+  "GST Filing",
+  "Label Designing",
+  "Miscellaneous",
+  "Transportation",
+  "WhatsApp Subscription",
+];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -172,9 +195,15 @@ function SummaryCard({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const Profitability: React.FC = () => {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
   // Date period state
   const [year, setYear] = useState(CURRENT_YEAR);
   const [months, setMonths] = useState<number[]>([CURRENT_MONTH]);
+
+  // Misc expense form state
+  const [miscForm, setMiscForm] = useState({ category: MISC_CATEGORIES[0], amount: "", description: "" });
 
   // Table interaction state
   const [searchTerm, setSearchTerm] = useState("");
@@ -268,8 +297,50 @@ const Profitability: React.FC = () => {
     },
   });
 
+  const { data: miscRaw = [], isLoading: loadingMisc } = useQuery({
+    queryKey: ["prof-misc", startDate, endDate],
+    queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from("misc_expenses")
+        .select("id, expense_date, category, amount, description")
+        .gte("expense_date", startDate)
+        .lte("expense_date", endDate);
+      return (data ?? []) as MiscExpense[];
+    },
+  });
+
   const isLoading =
-    loadingSales || loadingFactory || loadingLabels || loadingBackLabels || loadingTransport;
+    loadingSales || loadingFactory || loadingLabels || loadingBackLabels || loadingTransport || loadingMisc;
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
+
+  const addMiscMutation = useMutation({
+    mutationFn: async (payload: { category: string; amount: number; description: string; expense_date: string }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from("misc_expenses").insert([payload]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prof-misc"] });
+      setMiscForm({ category: MISC_CATEGORIES[0], amount: "", description: "" });
+      toast({ title: "Expense added" });
+    },
+    onError: () => toast({ title: "Failed to add expense", variant: "destructive" }),
+  });
+
+  const deleteMiscMutation = useMutation({
+    mutationFn: async (id: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from("misc_expenses").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prof-misc"] });
+      toast({ title: "Expense removed" });
+    },
+    onError: () => toast({ title: "Failed to remove expense", variant: "destructive" }),
+  });
 
   // ── Core computation (period rows, unfiltered) ────────────────────────────
 
@@ -279,6 +350,8 @@ const Profitability: React.FC = () => {
     const labels = labelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const backLabels = backLabelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
+    const miscExpenses = miscRaw.filter((r) => inPeriod(r.expense_date, year, months));
+    const totalMiscExpenses = miscExpenses.reduce((s, r) => s + (r.amount ?? 0), 0);
 
     const totalLabelsCost =
       labels.reduce((s, l) => s + (l.total_amount ?? 0), 0) +
@@ -363,14 +436,15 @@ const Profitability: React.FC = () => {
         unlinkedFactory * caseFraction;
       const labelsCost = totalLabelsCost * caseFraction;
       const overheadTransportCost = totalOverheadTransport * caseFraction;
+      const miscExpensesCost = totalMiscExpenses * caseFraction;
 
       const transportCost = directTransportMap.get(clientBranchKey) ?? 0;
 
-      const totalExpense = factoryCost + labelsCost + overheadTransportCost + transportCost;
+      const totalExpense = factoryCost + labelsCost + overheadTransportCost + miscExpensesCost + transportCost;
       const profit = invoiceValue - totalExpense;
       const margin = invoiceValue !== 0 ? (profit / invoiceValue) * 100 : 0;
 
-      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, overheadTransportCost, transportCost, totalExpense, profit, margin });
+      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, overheadTransportCost, miscExpensesCost, transportCost, totalExpense, profit, margin });
     }
 
     const summary = {
@@ -380,13 +454,14 @@ const Profitability: React.FC = () => {
       factoryCost: result.reduce((s, r) => s + r.factoryCost, 0),
       labelsCost: totalLabelsCost,
       overheadTransportCost: totalOverheadTransport,
+      miscExpensesCost: totalMiscExpenses,
       transportCost: result.reduce((s, r) => s + r.transportCost, 0),
       totalExpense: result.reduce((s, r) => s + r.totalExpense, 0),
       profit: result.reduce((s, r) => s + r.profit, 0),
     };
 
     return { rows: result, summary };
-  }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, transportRaw, year, months]);
+  }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, transportRaw, miscRaw, year, months]);
 
   // ── Filter option lists (derived from unfiltered rows) ────────────────────
 
@@ -424,15 +499,16 @@ const Profitability: React.FC = () => {
 
     // Numeric minimum-threshold filters
     const numericCols: Array<{ key: keyof ColFilters; field: keyof ProfitRow }> = [
-      { key: "cases",                field: "cases" },
-      { key: "invoiceValue",         field: "invoiceValue" },
-      { key: "factoryCost",          field: "factoryCost" },
-      { key: "labelsCost",           field: "labelsCost" },
+      { key: "cases",                  field: "cases" },
+      { key: "invoiceValue",           field: "invoiceValue" },
+      { key: "factoryCost",            field: "factoryCost" },
+      { key: "labelsCost",             field: "labelsCost" },
       { key: "overheadTransportCost",  field: "overheadTransportCost" },
-      { key: "transportCost",        field: "transportCost" },
-      { key: "totalExpense",         field: "totalExpense" },
-      { key: "profit",               field: "profit" },
-      { key: "margin",               field: "margin" },
+      { key: "miscExpensesCost",       field: "miscExpensesCost" },
+      { key: "transportCost",          field: "transportCost" },
+      { key: "totalExpense",           field: "totalExpense" },
+      { key: "profit",                 field: "profit" },
+      { key: "margin",                 field: "margin" },
     ];
     for (const { key, field } of numericCols) {
       const raw = colFilters[key];
@@ -514,6 +590,7 @@ const Profitability: React.FC = () => {
       "Factory Cost (₹)": Math.round(r.factoryCost),
       "Labels Cost (₹)": Math.round(r.labelsCost),
       "Overhead Transport (₹)": Math.round(r.overheadTransportCost),
+      "Misc Expenses (₹)": Math.round(r.miscExpensesCost),
       "Transport Cost (₹)": Math.round(r.transportCost),
       "Total Expense (₹)": Math.round(r.totalExpense),
       "Profit / Loss (₹)": Math.round(r.profit),
@@ -644,15 +721,117 @@ const Profitability: React.FC = () => {
         <SummaryCard title="Factory Cost" value={fmtINR(summary.factoryCost)} />
         <SummaryCard title="Labels Cost" value={fmtINR(summary.labelsCost)} />
         <SummaryCard title="Overhead Transport" value={fmtINR(summary.overheadTransportCost)} />
+        <SummaryCard title="Misc Expenses" value={fmtINR(summary.miscExpensesCost)} />
         <SummaryCard title="Transport Cost" value={fmtINR(summary.transportCost)} />
         <SummaryCard title="Total Expense" value={fmtINR(summary.totalExpense)} accent="red" />
       </div>
+
+      {/* Misc / Overhead Expenses CRUD */}
+      <Card>
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Misc / Overhead Expenses — {periodLabel}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Category</label>
+              <select
+                value={miscForm.category}
+                onChange={(e) => setMiscForm((p) => ({ ...p, category: e.target.value }))}
+                aria-label="Expense category"
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {MISC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Amount (₹)</label>
+              <Input
+                type="number"
+                placeholder="0"
+                value={miscForm.amount}
+                onChange={(e) => setMiscForm((p) => ({ ...p, amount: e.target.value }))}
+                className="h-8 w-28 text-sm"
+              />
+            </div>
+            <div className="space-y-1 flex-1 min-w-[160px]">
+              <label className="text-xs text-muted-foreground">Description (optional)</label>
+              <Input
+                placeholder="e.g. Jul filing"
+                value={miscForm.description}
+                onChange={(e) => setMiscForm((p) => ({ ...p, description: e.target.value }))}
+                className="h-8 text-sm"
+              />
+            </div>
+            <Button
+              size="sm"
+              className="h-8"
+              disabled={!miscForm.amount || addMiscMutation.isPending}
+              onClick={() => {
+                const amt = parseFloat(miscForm.amount);
+                if (isNaN(amt) || amt <= 0) return;
+                const lastMonth = months.length > 0 ? Math.max(...months) : 12;
+                const lastDay = new Date(year, lastMonth, 0).getDate();
+                const expenseDate = `${year}-${String(lastMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+                addMiscMutation.mutate({
+                  category: miscForm.category,
+                  amount: amt,
+                  description: miscForm.description,
+                  expense_date: expenseDate,
+                });
+              }}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add
+            </Button>
+          </div>
+
+          {miscRaw.length > 0 ? (
+            <div className="rounded-md border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Category</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Description</th>
+                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Amount</th>
+                    <th className="w-8" aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {miscRaw.map((e) => (
+                    <tr key={e.id} className="border-t">
+                      <td className="px-3 py-2">{e.category}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{e.description || "—"}</td>
+                      <td className="px-3 py-2 text-right font-mono">{fmtINR(e.amount)}</td>
+                      <td className="px-2 py-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
+                          disabled={deleteMiscMutation.isPending}
+                          onClick={() => deleteMiscMutation.mutate(e.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No misc expenses recorded for this period.</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Allocation note */}
       <div className="flex items-start gap-2 text-xs text-muted-foreground bg-slate-50 border rounded-md px-3 py-2">
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
-          Factory cost, labels cost, and overhead transport (all transport with no specific client) are global and allocated to each client proportionally by their share of total dispatched cases.
+          Factory cost, labels cost, overhead transport (all transport with no specific client), and misc expenses are global and allocated to each client proportionally by their share of total dispatched cases.
           Transport cost shows only direct entries linked to each client.
           Numeric column filters show rows where the value is ≥ the entered threshold.
         </span>
@@ -807,6 +986,23 @@ const Profitability: React.FC = () => {
                     </div>
                   </TableHead>
 
+                  {/* Misc Expenses */}
+                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      Misc Expenses
+                      <ColumnFilter
+                        columnKey="miscExpensesCost"
+                        columnName="Misc Expenses"
+                        filterValue={colFilters.miscExpensesCost}
+                        onFilterChange={(v) => handleFilterChange("miscExpensesCost", v as string)}
+                        onClearFilter={() => handleClearFilter("miscExpensesCost")}
+                        sortDirection={colSorts.miscExpensesCost}
+                        onSortChange={(d) => handleSortChange("miscExpensesCost", d)}
+                        dataType="number"
+                      />
+                    </div>
+                  </TableHead>
+
                   {/* Transport */}
                   <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-0.5">
@@ -897,13 +1093,13 @@ const Profitability: React.FC = () => {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-muted-foreground py-12">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-12">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : displayRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-muted-foreground py-12">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-12">
                       {hasActiveFilters ? "No clients match the current filters" : "No data for the selected period"}
                     </TableCell>
                   </TableRow>
@@ -928,6 +1124,9 @@ const Profitability: React.FC = () => {
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {r.overheadTransportCost > 0 ? fmtINR(r.overheadTransportCost) : "—"}
+                      </TableCell>
+                      <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
+                        {r.miscExpensesCost > 0 ? fmtINR(r.miscExpensesCost) : "—"}
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {r.transportCost > 0 ? fmtINR(r.transportCost) : "—"}
