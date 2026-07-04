@@ -226,7 +226,7 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("customer_id, amount, quantity, transaction_date, customers(client_name, branch)")
+        .select("customer_id, amount, quantity, transaction_date, customers(client_name, branch, sku)")
         .eq("transaction_type", "sale")
         .gte("transaction_date", startDate)
         .lte("transaction_date", endDate);
@@ -235,7 +235,7 @@ const Profitability: React.FC = () => {
         amount: number;
         quantity: number | null;
         transaction_date: string;
-        customers: { client_name: string; branch: string | null } | null;
+        customers: { client_name: string; branch: string | null; sku: string | null } | null;
       }>;
     },
   });
@@ -279,14 +279,48 @@ const Profitability: React.FC = () => {
   const { data: backLabelsRaw = [], isLoading: loadingBackLabels } = useQuery({
     queryKey: ["prof-back-labels", startDate, endDate],
     queryFn: async () => {
-      // back_label_purchases is not in generated types
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase as any)
         .from("back_label_purchases")
-        .select("total_amount, purchase_date")
+        .select("quantity, cost_per_label, total_amount, purchase_date")
         .gte("purchase_date", startDate)
         .lte("purchase_date", endDate);
-      return (data ?? []) as Array<{ total_amount: number; purchase_date: string }>;
+      return (data ?? []) as Array<{
+        quantity: number;
+        cost_per_label: number;
+        total_amount: number;
+        purchase_date: string;
+      }>;
+    },
+  });
+
+  // Back label configuration — which clients require back labels and from when.
+  // No date filter: config history is applied based on effective_from vs period.
+  const { data: backLabelConfigRaw = [] } = useQuery({
+    queryKey: ["prof-back-label-config"],
+    staleTime: 60_000,
+    queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from("customer_back_label_history")
+        .select("client_name, requires_back_label, effective_from");
+      return (data ?? []) as Array<{
+        client_name: string;
+        requires_back_label: boolean;
+        effective_from: string;
+      }>;
+    },
+  });
+
+  // SKU → bottles per case (config table, rarely changes)
+  const { data: skuConfigRaw = [] } = useQuery({
+    queryKey: ["prof-sku-config"],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("sku_configurations")
+        .select("sku, bottles_per_case");
+      return (data ?? []) as Array<{ sku: string; bottles_per_case: number }>;
     },
   });
 
@@ -364,8 +398,31 @@ const Profitability: React.FC = () => {
     const miscExpenses = miscRaw.filter((r) => inPeriod(r.expense_date, year, months));
     const totalMiscExpenses = miscExpenses.reduce((s, r) => s + (r.amount ?? 0), 0);
 
-    // Back labels: no client_id in back_label_purchases → pool allocated proportionally by cases
-    const totalBackLabelsCost = backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
+    // Back labels: compute average cost per label for this period
+    const totalBackLabelQty = backLabels.reduce((s, l) => s + (l.quantity ?? 0), 0);
+    const totalBackLabelAmt = backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
+    const avgBackLabelPrice = totalBackLabelQty > 0 ? totalBackLabelAmt / totalBackLabelQty : 0;
+
+    // Back label config: for each client_name, find the most recent record with
+    // effective_from ≤ endDate and read requires_back_label.
+    const backLabelConfigMap = new Map<string, boolean>(); // lowerCase clientName → enabled
+    const historyByClient = new Map<string, typeof backLabelConfigRaw[0]>();
+    for (const h of backLabelConfigRaw) {
+      if (h.effective_from > endDate) continue;
+      const existing = historyByClient.get(h.client_name);
+      if (!existing || h.effective_from > existing.effective_from) {
+        historyByClient.set(h.client_name, h);
+      }
+    }
+    for (const [name, h] of historyByClient) {
+      backLabelConfigMap.set(name.toLowerCase(), h.requires_back_label);
+    }
+
+    // SKU → bottles per case lookup
+    const skuBottlesMap = new Map<string, number>();
+    for (const s of skuConfigRaw) {
+      skuBottlesMap.set(s.sku, s.bottles_per_case);
+    }
 
     // Front labels: direct per client. Only count record_type='purchase' with positive amount.
     // Keyed by "clientName|||branch" — same composite key used for sales rows.
@@ -381,10 +438,12 @@ const Profitability: React.FC = () => {
 
     // Aggregate revenue + cases (qty) per client+branch from sales_transactions.
     // Key = "clientName|||branch" so the same client+branch always merges into one row.
+    // Also capture the client's SKU from the customers join for back label calculation.
     const clientMap = new Map<string, {
       clientId: string;
       clientName: string;
       branch: string;
+      sku: string | null;
       revenue: number;
       cases: number;
     }>();
@@ -401,6 +460,7 @@ const Profitability: React.FC = () => {
           clientId: s.customer_id,
           clientName,
           branch,
+          sku: cust?.sku ?? null,
           revenue: 0,
           cases: 0,
         });
@@ -450,14 +510,20 @@ const Profitability: React.FC = () => {
     const result: ProfitRow[] = [];
 
     for (const [clientBranchKey, entry] of clientMap.entries()) {
-      const { clientId, clientName, branch, revenue: invoiceValue, cases } = entry;
+      const { clientId, clientName, branch, sku, revenue: invoiceValue, cases } = entry;
 
       const caseFraction = totalCases > 0 ? cases / totalCases : 0;
       const factoryCost =
         (directFactoryMap.get(clientBranchKey) ?? 0) +
         unlinkedFactory * caseFraction;
       const labelsCost = directLabelsMap.get(clientBranchKey) ?? 0;
-      const backLabelsCost = totalBackLabelsCost * caseFraction;
+
+      // Back labels: use formula if client is configured, else ₹0.
+      // backLabelsCost = cases × bottles_per_case[sku] × avg_cost_per_label_for_period
+      const hasBackLabel = backLabelConfigMap.get(clientName.toLowerCase()) ?? false;
+      const bottlesPerCase = sku ? (skuBottlesMap.get(sku) ?? 0) : 0;
+      const backLabelsCost = hasBackLabel ? cases * bottlesPerCase * avgBackLabelPrice : 0;
+
       const overheadTransportCost = totalOverheadTransport * caseFraction;
       const miscExpensesCost = totalMiscExpenses * caseFraction;
 
@@ -476,7 +542,7 @@ const Profitability: React.FC = () => {
       invoiceValue: result.reduce((s, r) => s + r.invoiceValue, 0),
       factoryCost: result.reduce((s, r) => s + r.factoryCost, 0),
       labelsCost: result.reduce((s, r) => s + r.labelsCost, 0),
-      backLabelsCost: totalBackLabelsCost,
+      backLabelsCost: result.reduce((s, r) => s + r.backLabelsCost, 0),
       overheadTransportCost: totalOverheadTransport,
       miscExpensesCost: totalMiscExpenses,
       transportCost: result.reduce((s, r) => s + r.transportCost, 0),
@@ -485,7 +551,7 @@ const Profitability: React.FC = () => {
     };
 
     return { rows: result, summary };
-  }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, transportRaw, miscRaw, year, months]);
+  }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, backLabelConfigRaw, skuConfigRaw, transportRaw, miscRaw, year, months]);
 
   // ── Filter option lists (derived from unfiltered rows) ────────────────────
 
@@ -859,7 +925,8 @@ const Profitability: React.FC = () => {
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
           Labels cost is direct per client (sum of their actual label purchases in the period).
-          Back labels cost, overhead transport, and misc expenses are global and allocated proportionally by each client's share of total dispatched cases.
+          Back labels cost is per client: cases × bottles/case × avg cost/label — only for clients enabled in back label configuration.
+          Overhead transport and misc expenses are allocated proportionally by cases.
           Factory and transport costs show only direct entries linked to each client.
           Numeric column filters show rows where the value is ≥ the entered threshold.
         </span>
