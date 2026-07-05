@@ -1689,7 +1689,11 @@ const SalesEntry = () => {
             isPending={paymentMutation.isPending}
             onSubmit={handlePaymentSubmit}
             onCustomerChange={handlePaymentCustomerChange}
-            onBranchChange={(area) => setPaymentForm((prev) => ({ ...prev, area }))}
+            onBranchChange={(area) => setPaymentForm((prev) => ({
+              ...prev,
+              area,
+              customer_id: resolveCustomerIdForBranch(prev.customer_id, area) || prev.customer_id,
+            }))}
             onFormChange={(updates) => setPaymentForm((prev) => ({ ...prev, ...updates }))}
             safeNumValue={safeNumValue}
           />
