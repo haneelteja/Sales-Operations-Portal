@@ -289,8 +289,8 @@ const Profitability: React.FC = () => {
       const { data } = await (supabase as any)
         .from("back_label_purchases")
         .select("quantity, cost_per_label, total_amount, purchase_date")
-        .gte("purchase_date", startDate)
-        .lte("purchase_date", endDate);
+        .lte("purchase_date", endDate)
+        .order("purchase_date", { ascending: false });
       return (data ?? []) as Array<{
         quantity: number;
         cost_per_label: number;
@@ -419,15 +419,15 @@ const Profitability: React.FC = () => {
     const sales = salesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
     const factoryPayables = factoryPayablesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
     const labels = labelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
-    const backLabels = backLabelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
     const miscExpenses = miscRaw.filter((r) => inPeriod(r.expense_date, year, months));
     const totalMiscExpenses = miscExpenses.reduce((s, r) => s + (r.amount ?? 0), 0);
 
-    // Back labels: compute average cost per label for this period
-    const totalBackLabelQty = backLabels.reduce((s, l) => s + (l.quantity ?? 0), 0);
-    const totalBackLabelAmt = backLabels.reduce((s, l) => s + (l.total_amount ?? 0), 0);
-    const avgBackLabelPrice = totalBackLabelQty > 0 ? totalBackLabelAmt / totalBackLabelQty : 0;
+    // Back labels: use cost_per_label from the most recent purchase on or before period end.
+    // Back label cost is usage-based (cases dispatched × bottles × price) not purchase-based —
+    // batches are bought in bulk and consumed across months as stock.
+    const mostRecentBackLabelPurchase = backLabelsRaw.find((l) => (l.total_amount ?? 0) > 0);
+    const avgBackLabelPrice = mostRecentBackLabelPurchase?.cost_per_label ?? 0;
 
     // Back label config: for each client_name, find the most recent record with
     // effective_from ≤ endDate and read requires_back_label.
