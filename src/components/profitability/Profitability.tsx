@@ -567,8 +567,13 @@ const Profitability: React.FC = () => {
 
       // Back labels: use formula if client is configured, else ₹0.
       // backLabelsCost = cases × bottles_per_case[sku] × avg_cost_per_label_for_period
+      // BACK_LABEL_BOTTLES_OVERRIDE: clients whose DB SKU differs from their actual back-label SKU.
+      // "Alley 91" sells P 500ml (20 bottles/case) but is recorded under 250 EC in the DB.
+      const BACK_LABEL_BOTTLES_OVERRIDE: Record<string, number> = { 'alley 91': 20 };
       const hasBackLabel = backLabelConfigMap.get(clientName.toLowerCase()) ?? false;
-      const bottlesPerCase = sku ? (skuBottlesMap.get(sku) ?? 0) : 0;
+      const bottlesPerCase =
+        BACK_LABEL_BOTTLES_OVERRIDE[clientName.toLowerCase()] ??
+        (sku ? (skuBottlesMap.get(sku) ?? 0) : 0);
       const backLabelsCost = hasBackLabel ? cases * bottlesPerCase * avgBackLabelPrice : 0;
 
       const overheadTransportCost = totalOverheadTransport * caseFraction;
