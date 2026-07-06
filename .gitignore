@@ -47,6 +47,12 @@ lerna-debug.log*
 *.tmp
 *.temp
 .cache/
+*.bak2
+*.bak3
+
+# Scratch query files (debug SQL, JSON payloads — never belong in version control)
+_tmp_*.sql
+_tmp_*.json
 
 # Backup files
 *.bak
