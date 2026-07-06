@@ -40,6 +40,7 @@ export interface SkuOption {
 }
 
 export interface SkuPricingRow {
+  id: string;
   sku: string;
   price_per_bottle: string;
   bottles_per_case: number;
@@ -142,6 +143,7 @@ async function fetchSampleContactForClient(
 }
 
 const getInitialRow = (): SkuPricingRow => ({
+  id: crypto.randomUUID(),
   sku: "",
   price_per_bottle: "",
   bottles_per_case: 0,
@@ -298,6 +300,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       prices[sku] = ppb;
       const opt = skuOptions.find((o) => o.sku === sku);
       rows.push({
+        id: crypto.randomUUID(),
         sku,
         price_per_bottle: String(ppb),
         bottles_per_case: opt?.bottles_per_case ?? cust.bottles_per_case ?? 0,
@@ -701,13 +704,13 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                 <TableBody>
                   {skuRows.map((row, index) => {
                     const selectedSkusInOtherRows = new Set(
-                      skuRows.map((r, i) => (i !== index && r.sku ? r.sku : null)).filter(Boolean) as string[]
+                      skuRows.map((r, i) => (i !== index && r.sku ? r.sku : null)).filter(Boolean) as string[]  // eslint-disable-line
                     );
                     const availableOptions = skuOptions.filter(
                       (opt) => opt.sku === row.sku || !selectedSkusInOtherRows.has(opt.sku)
                     );
                     return (
-                      <TableRow key={index}>
+                      <TableRow key={row.id}>
                         <TableCell>
                           <SearchableSelect
                             options={availableOptions.map(opt => ({

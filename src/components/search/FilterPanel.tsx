@@ -283,7 +283,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           {currentFilters.conditions.map((condition, index) => {
             const field = config.fields.find(f => f.name === condition.field);
             return (
-              <Card key={index} className="p-3">
+              <Card key={`${condition.field}-${condition.operator}-${index}`} className="p-3">
                 <div className="flex items-start gap-2">
                   <div className="flex-1 grid grid-cols-4 gap-2">
                     <Select

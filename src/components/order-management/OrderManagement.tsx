@@ -68,8 +68,8 @@ const OrderManagement: React.FC = () => {
     branch: "",
     tentative_delivery_date: "",
   });
-  const [skuRows, setSkuRows] = useState<{ sku: string; number_of_cases: string }[]>([
-    { sku: "", number_of_cases: "" },
+  const [skuRows, setSkuRows] = useState<{ id: string; sku: string; number_of_cases: string }[]>([
+    { id: crypto.randomUUID(), sku: "", number_of_cases: "" },
   ]);
 
   // Client autocomplete
@@ -264,7 +264,7 @@ const OrderManagement: React.FC = () => {
         branch: "",
         tentative_delivery_date: defaultDeliveryDate.toISOString().split("T")[0],
       });
-      setSkuRows([{ sku: "", number_of_cases: "" }]);
+      setSkuRows([{ id: crypto.randomUUID(), sku: "", number_of_cases: "" }]);
     },
     onError: (error: Error) => {
       toast({
@@ -630,7 +630,7 @@ const OrderManagement: React.FC = () => {
   const handleClientChange = (clientId: string) => {
     if (!clientId || clientId === "") {
       setOrderForm({ ...orderForm, client_id: "", branch: "" });
-      setSkuRows([{ sku: "", number_of_cases: "" }]);
+      setSkuRows([{ id: crypto.randomUUID(), sku: "", number_of_cases: "" }]);
       setClientSearch("");
       return;
     }
@@ -656,11 +656,11 @@ const OrderManagement: React.FC = () => {
     if (!orderForm.client_id || !orderForm.branch) return;
     const allSkus = getAllAvailableSKUs();
     if (allSkus.length === 1) {
-      setSkuRows([{ sku: allSkus[0], number_of_cases: "" }]);
+      setSkuRows([{ id: crypto.randomUUID(), sku: allSkus[0], number_of_cases: "" }]);
     }
   }, [orderForm.client_id, orderForm.branch, getAllAvailableSKUs]);
 
-  const addSkuRow = () => setSkuRows((prev) => [...prev, { sku: "", number_of_cases: "" }]);
+  const addSkuRow = () => setSkuRows((prev) => [...prev, { id: crypto.randomUUID(), sku: "", number_of_cases: "" }]);
   const removeSkuRow = (index: number) => {
     setSkuRows((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
   };
@@ -1140,7 +1140,7 @@ const OrderManagement: React.FC = () => {
                 </p>
               )}
               {skuRows.map((row, index) => (
-                <div key={index} className="flex items-center gap-2 md:gap-3 flex-wrap md:flex-nowrap">
+                <div key={row.id} className="flex items-center gap-2 md:gap-3 flex-wrap md:flex-nowrap">
                   <span className="text-xs font-medium text-muted-foreground w-6">{index + 1}.</span>
                   {singleSkuMode ? (
                     <span className="min-w-[140px] max-w-[260px] text-xs font-medium py-1.5 px-2 rounded border bg-muted/50 truncate">

@@ -591,8 +591,8 @@ const LabelPayments = () => {
             </TableHeader>
             <TableBody>
               {filteredAndSortedVendorOutstanding.length > 0 ? (
-                filteredAndSortedVendorOutstanding.map((vendor, index) => (
-                  <TableRow key={index}>
+                filteredAndSortedVendorOutstanding.map((vendor) => (
+                  <TableRow key={vendor.vendor_name}>
                     <TableCell className="font-medium">{vendor.vendor_name}</TableCell>
                     <TableCell>₹{vendor.total_purchased.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell>₹{vendor.total_paid.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>

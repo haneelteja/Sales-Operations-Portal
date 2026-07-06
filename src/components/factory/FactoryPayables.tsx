@@ -279,7 +279,7 @@ const FactoryPayables = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("factory_payables")
-        .select("*")
+        .select("id, transaction_date, transaction_type, sku, quantity, amount, description, customer_id, created_at")
         .order("created_at", { ascending: false });
 
       if (error) {

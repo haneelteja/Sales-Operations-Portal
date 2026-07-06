@@ -77,7 +77,7 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const log = useAuditLog();
-  const [rows, setRows] = useState<string[]>([]);
+  const [rows, setRows] = useState<{ id: string; value: string }[]>([]);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
   const isAssigneeList = configKey === 'assignee_list';
 
@@ -98,13 +98,14 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
   useEffect(() => {
     if (open) {
       const parse = isAssigneeList ? parseAssigneeNames : parseJsonArray;
-      setRows(config ? parse(config.config_value || '[]') : []);
+      const strings = config ? parse(config.config_value || '[]') : [];
+      setRows(strings.map((value) => ({ id: crypto.randomUUID(), value })));
       setHasLocalChanges(false);
     }
   }, [open, config, isAssigneeList]);
 
   const addRow = () => {
-    setRows((prev) => [...prev, '']);
+    setRows((prev) => [...prev, { id: crypto.randomUUID(), value: '' }]);
     setHasLocalChanges(true);
   };
 
@@ -114,11 +115,7 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
   };
 
   const updateRow = (index: number, value: string) => {
-    setRows((prev) => {
-      const next = [...prev];
-      next[index] = value;
-      return next;
-    });
+    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, value } : r)));
     setHasLocalChanges(true);
   };
 
@@ -164,7 +161,7 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
   });
 
   const handleSave = () => {
-    saveMutation.mutate(rows);
+    saveMutation.mutate(rows.map((r) => r.value));
   };
 
   return (
@@ -192,17 +189,17 @@ export const EditListConfigDialog: React.FC<EditListConfigDialogProps> = ({
                 </TableHeader>
                 <TableBody>
                   {rows.map((row, index) => (
-                    <TableRow key={index}>
+                    <TableRow key={row.id}>
                       {isAssigneeList && (
                         <TableCell>
-                            <div
+                          <div
                             className={`h-4 w-4 rounded-full flex-shrink-0 ${ASSIGNEE_PALETTE[index % ASSIGNEE_PALETTE.length]}`}
                           />
                         </TableCell>
                       )}
                       <TableCell>
                         <Input
-                          value={row}
+                          value={row.value}
                           onChange={(e) => updateRow(index, e.target.value)}
                           placeholder={placeholder}
                           className="h-9"

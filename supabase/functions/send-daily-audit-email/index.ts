@@ -81,7 +81,11 @@ serve(async (req) => {
       return `<span style="background:${bg[action]??'#f3f4f6'};color:${colors[action]??'#374151'};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${action}</span>`;
     };
 
-    const userSections = Object.entries(byUser).map(([username, userLogs]) => `
+    const MAX_ROWS_PER_USER = 100;
+    const userSections = Object.entries(byUser).map(([username, userLogs]) => {
+      const displayLogs = userLogs.slice(0, MAX_ROWS_PER_USER);
+      const truncated = userLogs.length > MAX_ROWS_PER_USER;
+      return `
       <div style="margin-bottom:24px;">
         <h3 style="margin:0 0 8px;color:#1e293b;font-size:15px;border-bottom:1px solid #e2e8f0;padding-bottom:6px;">
           👤 ${username} — ${userLogs.length} action${userLogs.length > 1 ? 's' : ''}
@@ -96,7 +100,7 @@ serve(async (req) => {
             </tr>
           </thead>
           <tbody>
-            ${userLogs.map(log => `
+            ${displayLogs.map(log => `
               <tr style="border-bottom:1px solid #f1f5f9;">
                 <td style="padding:6px 8px;color:#475569;white-space:nowrap;">${formatTime(log.created_at)}</td>
                 <td style="padding:6px 8px;">${actionBadge(log.action)}</td>
@@ -104,10 +108,18 @@ serve(async (req) => {
                 <td style="padding:6px 8px;color:#1e293b;">${log.description}</td>
               </tr>
             `).join('')}
+            ${truncated ? `
+              <tr>
+                <td colspan="4" style="padding:8px;color:#94a3b8;font-style:italic;font-size:12px;text-align:center;">
+                  … and ${userLogs.length - MAX_ROWS_PER_USER} more actions not shown
+                </td>
+              </tr>
+            ` : ''}
           </tbody>
         </table>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     const emailHtml = `
 <!DOCTYPE html>

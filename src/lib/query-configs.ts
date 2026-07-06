@@ -157,6 +157,9 @@ export function getQueryConfig(key: string) {
     'payment-reminder-schedules': 'userManagement',
   };
   
-  const configKey = keyMap[key] || 'transactions'; // Default to transactions config
-  return queryConfigs[configKey];
+  const configKey = keyMap[key];
+  if (!configKey && import.meta.env.DEV) {
+    console.warn(`[QueryConfig] Unmapped query key: "${key}" — falling back to 'transactions' config. Add it to keyMap in query-configs.ts.`);
+  }
+  return queryConfigs[configKey ?? 'transactions'];
 }

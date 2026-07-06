@@ -81,7 +81,7 @@ const TransportExpenses = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("*")
+        .select("id, client_name, branch")
         .eq("is_active", true)
         .eq("is_deprecated", false)
         .order("client_name", { ascending: true });
@@ -116,7 +116,7 @@ const TransportExpenses = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("transport_expenses")
-        .select("*")
+        .select("id, expense_date, description, client_id, branch, amount, expense_group, transport_vendor, created_at, updated_at")
         .order("created_at", { ascending: false });
       
       if (error) {
