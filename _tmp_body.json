@@ -1,2 +1,0 @@
-UPDATE customers SET client_name='Angana Caters' WHERE client_name='Anagana Caters';
-SELECT 'Done' as status;
