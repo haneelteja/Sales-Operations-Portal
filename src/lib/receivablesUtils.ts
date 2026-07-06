@@ -247,10 +247,17 @@ export async function fetchLedgerRows(
     .eq('customer_id', customerId)
     .in('transaction_type', ['sale', 'payment'])
     .lte('transaction_date', to)
-    .order('transaction_date', { ascending: true });
+    .order('transaction_date', { ascending: true })
+    .order('created_at', { ascending: true });
   if (error) throw error;
 
-  const all = data ?? [];
+  // Match the DB trigger's same-date ordering: payments before sales, then created_at.
+  // This ensures per-row balance values align with what the trigger stored in total_amount.
+  const all = (data ?? []).sort((a, b) => {
+    if (a.transaction_date !== b.transaction_date) return 0;
+    const typeRank = (t: string) => t === 'payment' ? 0 : 1;
+    return typeRank(a.transaction_type) - typeRank(b.transaction_type);
+  });
   const before = all.filter(tx => tx.transaction_date < from);
   const inRange = all.filter(tx => tx.transaction_date >= from);
 

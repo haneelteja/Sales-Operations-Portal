@@ -975,13 +975,15 @@ const SalesEntry = () => {
         try {
           // Apply sorting
           const activeSort = Object.entries(columnSorts).find(([_, direction]) => direction !== null);
-          // Default: latest date first; same date → payments before sales; then created_at DESC
+          // Default: latest date first; same date → sales before payments (trigger processes payments
+          // first, so the sale row holds the final running balance — it must appear at the top);
+          // then created_at DESC for ties within the same type.
           if (!activeSort) {
             const dateA = new Date(a.transaction_date).getTime();
             const dateB = new Date(b.transaction_date).getTime();
             if (isNaN(dateA) || isNaN(dateB)) return 0;
             if (dateA !== dateB) return dateB - dateA;
-            const typeOrder = (t: string) => t === 'payment' ? 0 : 1;
+            const typeOrder = (t: string) => t === 'payment' ? 1 : 0;
             const typeDiff = typeOrder(a.transaction_type || '') - typeOrder(b.transaction_type || '');
             if (typeDiff !== 0) return typeDiff;
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
