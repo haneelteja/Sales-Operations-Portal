@@ -119,6 +119,7 @@ interface MiscExpense {
 
 const MISC_CATEGORIES = [
   "Admin Salary",
+  "Factory Overhead",
   "GST Filing",
   "Label Designing",
   "Miscellaneous",
@@ -421,7 +422,16 @@ const Profitability: React.FC = () => {
     const labels = labelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
     const miscExpenses = miscRaw.filter((r) => inPeriod(r.expense_date, year, months));
-    const totalMiscExpenses = miscExpenses.reduce((s, r) => s + (r.amount ?? 0), 0);
+
+    // Factory overhead categories: Admin + Label Designing + Factory Overhead
+    // These are bundled into product cost in Elma; we move them from misc to factory cost here.
+    const FACTORY_OVERHEAD_CATS = new Set(['Admin', 'Label Designing', 'Factory Overhead']);
+    const factoryOverheadFromMisc = miscExpenses
+      .filter((r) => FACTORY_OVERHEAD_CATS.has(r.category))
+      .reduce((s, r) => s + (r.amount ?? 0), 0);
+    const totalMiscExpenses = miscExpenses
+      .filter((r) => !FACTORY_OVERHEAD_CATS.has(r.category))
+      .reduce((s, r) => s + (r.amount ?? 0), 0);
 
     // Back labels: use cost_per_label from the most recent purchase on or before period end.
     // Back label cost is usage-based (cases dispatched × bottles × price) not purchase-based —
@@ -535,6 +545,9 @@ const Profitability: React.FC = () => {
         unlinkedFactory += f.amount ?? 0;
       }
     }
+    // Factory overhead misc expenses (Admin, Label Designing, Factory Overhead) are bundled
+    // into factory cost and allocated proportionally by cases, just like unlinked factory payables.
+    unlinkedFactory += factoryOverheadFromMisc;
 
     // Transport: entries with no client go into a global overhead pool (all groups:
     // labels, general, labor, etc.) allocated proportionally by cases.
