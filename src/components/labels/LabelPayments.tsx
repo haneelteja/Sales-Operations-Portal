@@ -302,7 +302,7 @@ const LabelPayments = () => {
     }));
 
     return outstandingData.sort((a, b) => a.vendor_name.localeCompare(b.vendor_name));
-  }, [purchases, payments]);
+  }, [purchases, payments, labelVendors]);
 
   const filteredAndSortedVendorOutstanding = React.useMemo(() => {
     const filtered = vendorOutstanding.filter((vendor) =>

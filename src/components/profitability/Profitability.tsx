@@ -618,7 +618,7 @@ const Profitability: React.FC = () => {
     };
 
     return { rows: result, summary };
-  }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, backLabelConfigRaw, skuConfigRaw, commissionsRaw, transportRaw, miscRaw, year, months]);
+  }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, backLabelConfigRaw, skuConfigRaw, commissionsRaw, transportRaw, miscRaw, year, months, startDate, endDate]);
 
   // ── Filter option lists (derived from unfiltered rows) ────────────────────
 

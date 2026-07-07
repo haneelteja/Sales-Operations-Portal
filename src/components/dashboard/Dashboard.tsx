@@ -798,7 +798,7 @@ const Dashboard = memo(() => {
                       className={`hover:bg-muted/50 ${hasHistory ? 'cursor-pointer' : ''}`}
                       onClick={hasHistory ? () => setPlantExpandedKeys(prev => {
                         const next = new Set(prev);
-                        next.has(row.key) ? next.delete(row.key) : next.add(row.key);
+                        if (next.has(row.key)) { next.delete(row.key); } else { next.add(row.key); }
                         return next;
                       }) : undefined}
                     >

@@ -704,7 +704,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                 <TableBody>
                   {skuRows.map((row, index) => {
                     const selectedSkusInOtherRows = new Set(
-                      skuRows.map((r, i) => (i !== index && r.sku ? r.sku : null)).filter(Boolean) as string[]  // eslint-disable-line
+                      skuRows.map((r, i) => (i !== index && r.sku ? r.sku : null)).filter(Boolean) as string[]
                     );
                     const availableOptions = skuOptions.filter(
                       (opt) => opt.sku === row.sku || !selectedSkusInOtherRows.has(opt.sku)
