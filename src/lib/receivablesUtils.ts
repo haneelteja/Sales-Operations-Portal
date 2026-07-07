@@ -28,7 +28,8 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
   const [txResult, custResult, followupResult] = await Promise.all([
     supabase
       .from('sales_transactions')
-      .select('customer_id, transaction_type, amount, transaction_date'),
+      .select('customer_id, transaction_type, amount, transaction_date')
+      .limit(10000),
     supabase
       .from('customers')
       .select('id, client_name, branch'),

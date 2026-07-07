@@ -107,11 +107,13 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
     supabase
       .from('sales_transactions')
       .select('customer_id, transaction_type, amount, quantity, transaction_date, customers(id, client_name, branch)')
-      .order('transaction_date', { ascending: true }),
+      .order('transaction_date', { ascending: true })
+      .limit(10000),
     supabase
       .from('factory_payables')
       .select('customer_id, amount, transaction_date')
-      .order('transaction_date', { ascending: true }),
+      .order('transaction_date', { ascending: true })
+      .limit(10000),
     supabase
       .from('customers')
       .select('id, sku, price_per_case, phone, whatsapp_number'),

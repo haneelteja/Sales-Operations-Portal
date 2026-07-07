@@ -143,7 +143,7 @@ const BusinessAnalyticsChart: React.FC = () => {
   const { data: salesTxs = [] } = useQuery({
     queryKey: ['biz-analytics-sales'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('sales_transactions').select('customer_id, transaction_date, amount, quantity, transaction_type').in('transaction_type', ['sale', 'payment']);
+      const { data, error } = await supabase.from('sales_transactions').select('customer_id, transaction_date, amount, quantity, transaction_type').in('transaction_type', ['sale', 'payment']).limit(10000);
       if (error) throw error;
       return (data ?? []) as SaleTx[];
     },
@@ -183,7 +183,7 @@ const BusinessAnalyticsChart: React.FC = () => {
   const { data: transportExpenses = [] } = useQuery({
     queryKey: ['biz-analytics-transport'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('transport_expenses').select('client_id, expense_date, amount');
+      const { data, error } = await supabase.from('transport_expenses').select('client_id, expense_date, amount').limit(10000);
       if (error) throw error;
       return (data ?? []) as { client_id: string | null; expense_date: string; amount: number }[];
     },
