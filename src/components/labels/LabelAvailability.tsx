@@ -5,19 +5,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Download, Search, Filter, Maximize2, Minimize2, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
+import { Download, Search, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import { exportJsonToExcel } from '@/services/export/excelExport';
 import { useToast } from "@/hooks/use-toast";
-
-const DEFAULT_ROWS = 10;
 
 interface ClientSkuLabelSummary {
   key: string;
   client_id: string;
   client_name: string;
   sku: string;
+  is_deprecated: boolean;
   total_labels_purchased: number;
   total_adjustments: number;
   production_labels: number;
@@ -28,17 +26,10 @@ interface ClientSkuLabelSummary {
   last_purchase_date: string;
 }
 
-type SortField = keyof Omit<ClientSkuLabelSummary, 'key' | 'client_id'>;
-
 const LabelAvailability = () => {
   const [searchTerm, setSearchTerm] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState("all");
-  const [sortField, setSortField] = React.useState<SortField>("client_name");
-  const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc");
-  const [isExpanded, setIsExpanded] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
 
-  // Adjustment dialog state
   const [adjusting, setAdjusting] = React.useState<ClientSkuLabelSummary | null>(null);
   const [adjForm, setAdjForm] = React.useState({
     quantity: "",
@@ -64,15 +55,14 @@ const LabelAvailability = () => {
     },
   });
 
-  // 2. Active customers
+  // 2. All active customers including deprecated — no is_deprecated filter so we can split them
   const { data: customers, isLoading: isLoadingCustomers } = useQuery({
     queryKey: ["customers-for-availability"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, client_name")
+        .select("id, client_name, is_deprecated")
         .eq("is_active", true)
-        .eq("is_deprecated", false)
         .order("client_name", { ascending: true });
       if (error) throw error;
       return data || [];
@@ -179,19 +169,21 @@ const LabelAvailability = () => {
 
   const isLoading = isLoadingPurchases || isLoadingCustomers || isLoadingSales || isLoadingProduction;
 
-  // Build per-client+SKU summaries
+  // Build per-client+SKU summaries (all clients, including deprecated)
   const clientSkuSummaries: ClientSkuLabelSummary[] = React.useMemo(() => {
     if (!labelPurchases?.length) return [];
 
-    const customerMap = new Map(customers?.map(c => [c.id, c.client_name]) ?? []);
+    const customerMap = new Map(
+      customers?.map(c => [c.id, { client_name: c.client_name, is_deprecated: c.is_deprecated ?? false }]) ?? []
+    );
     const bottlesPerCase = (sku: string) => skuConfigs?.get(sku) ?? 1;
 
     const summaryMap = new Map<string, ClientSkuLabelSummary>();
 
     labelPurchases.forEach(p => {
       if (!p.client_id || !p.sku) return;
-      const clientName = customerMap.get(p.client_id);
-      if (!clientName) return;
+      const customerInfo = customerMap.get(p.client_id);
+      if (!customerInfo) return;
 
       const key = `${p.client_id}__${p.sku}`;
       const isAdj = (p.record_type as string) === 'adjustment';
@@ -212,8 +204,9 @@ const LabelAvailability = () => {
         summaryMap.set(key, {
           key,
           client_id: p.client_id,
-          client_name: clientName,
+          client_name: customerInfo.client_name,
           sku: p.sku,
+          is_deprecated: customerInfo.is_deprecated,
           total_labels_purchased: isAdj ? 0 : qty,
           total_adjustments: isAdj ? qty : 0,
           production_labels: 0,
@@ -247,44 +240,32 @@ const LabelAvailability = () => {
           s.total_adjustments -
           Math.max(s.production_labels, s.sales_labels),
       }))
-      .filter(s => s.sku !== 'Plates')
-      .sort((a, b) => a.client_name.localeCompare(b.client_name) || a.sku.localeCompare(b.sku));
+      .filter(s => s.sku !== 'Plates');
   }, [labelPurchases, customers, salesTransactions, productionData, skuConfigs]);
 
-  const filteredAndSortedData = React.useMemo(() => {
-    const filtered = clientSkuSummaries.filter(s => {
-      const matchesSearch =
-        s.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.sku.toLowerCase().includes(searchTerm.toLowerCase());
+  // Split into 3 groups, each sorted by labels_available ascending (least available first)
+  const { activeRows, zeroStockRows, deprecatedRows } = React.useMemo(() => {
+    const search = searchTerm.toLowerCase();
+    const filtered = clientSkuSummaries.filter(s =>
+      !search ||
+      s.client_name.toLowerCase().includes(search) ||
+      s.sku.toLowerCase().includes(search)
+    );
 
-      let matchesStatus = true;
-      if (statusFilter === "available") matchesStatus = s.labels_available > 2500;
-      else if (statusFilter === "low_stock") matchesStatus = s.labels_available > 0 && s.labels_available <= 2500;
-      else if (statusFilter === "out_of_stock") matchesStatus = s.labels_available <= 0;
+    const byAvailable = (a: ClientSkuLabelSummary, b: ClientSkuLabelSummary) =>
+      a.labels_available - b.labels_available;
 
-      return matchesSearch && matchesStatus;
-    });
+    const deprecated = filtered.filter(s => s.is_deprecated).sort(byAvailable);
+    const rest = filtered.filter(s => !s.is_deprecated);
+    const zeroStock = rest
+      .filter(s => s.labels_available === 0 || s.total_labels_purchased === 0)
+      .sort(byAvailable);
+    const active = rest
+      .filter(s => s.labels_available !== 0 && s.total_labels_purchased > 0)
+      .sort(byAvailable);
 
-    filtered.sort((a, b) => {
-      const aVal = a[sortField];
-      const bVal = b[sortField];
-      let cmp = 0;
-      if (typeof aVal === 'string' && typeof bVal === 'string') cmp = aVal.localeCompare(bVal);
-      else if (typeof aVal === 'number' && typeof bVal === 'number') cmp = aVal - bVal;
-      return sortDirection === 'asc' ? cmp : -cmp;
-    });
-
-    return filtered;
-  }, [clientSkuSummaries, searchTerm, statusFilter, sortField, sortDirection]);
-
-  const visibleRows = isFullscreen || isExpanded
-    ? filteredAndSortedData
-    : filteredAndSortedData.slice(0, DEFAULT_ROWS);
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDirection('asc'); }
-  };
+    return { activeRows: active, zeroStockRows: zeroStock, deprecatedRows: deprecated };
+  }, [clientSkuSummaries, searchTerm]);
 
   const openAdjustDialog = (row: ClientSkuLabelSummary) => {
     setAdjusting(row);
@@ -302,9 +283,11 @@ const LabelAvailability = () => {
   };
 
   const handleExport = async () => {
-    const exportData = filteredAndSortedData.map(s => ({
+    const allRows = [...activeRows, ...zeroStockRows, ...deprecatedRows];
+    const exportData = allRows.map(s => ({
       'Client': s.client_name,
       'SKU': s.sku,
+      'Status': s.is_deprecated ? 'Deprecated' : s.labels_available === 0 || s.total_labels_purchased === 0 ? 'Zero Stock' : 'Active',
       'Labels Purchased': s.total_labels_purchased,
       'Adjustments': s.total_adjustments,
       'Production Labels': s.production_labels,
@@ -316,33 +299,75 @@ const LabelAvailability = () => {
     await exportJsonToExcel(exportData, 'Label Availability', `label-availability-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const SortTh = ({ field, children, align = 'left' }: { field: SortField; children: React.ReactNode; align?: 'left' | 'right' }) => (
-    <TableHead
-      className={`bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 cursor-pointer hover:bg-slate-100 ${align === 'right' ? 'text-right' : ''}`}
-      onClick={() => handleSort(field)}
-    >
-      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
-        {children}
-        {sortField === field && <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
-      </div>
-    </TableHead>
-  );
-
   const availableColor = (n: number) =>
     n > 2500 ? 'text-green-600' : n > 0 ? 'text-yellow-600' : 'text-red-600';
 
   const availableBadge = (n: number) =>
-    n > 2500
-      ? 'bg-green-100 text-green-800'
-      : n > 0
-      ? 'bg-yellow-100 text-yellow-800'
-      : 'bg-red-100 text-red-800';
+    n > 2500 ? 'bg-green-100 text-green-800' : n > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
 
   const availableLabel = (n: number) =>
     n > 2500 ? 'Available' : n > 0 ? 'Low Stock' : 'Shortage';
 
+  const tableHeaders = (
+    <TableHeader>
+      <TableRow>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Client</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">SKU</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-right">Purchased</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-right">Adjustments</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-right">Production</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-right">Sales</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-right">Used (max)</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-right">Available ↑</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Status</TableHead>
+        <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-center">Action</TableHead>
+      </TableRow>
+    </TableHeader>
+  );
+
+  const renderRows = (rows: ClientSkuLabelSummary[]) =>
+    rows.map(s => (
+      <TableRow key={s.key}>
+        <TableCell className="font-medium">{s.client_name}</TableCell>
+        <TableCell className="text-muted-foreground text-sm">{s.sku}</TableCell>
+        <TableCell className="text-right">{s.total_labels_purchased.toLocaleString()}</TableCell>
+        <TableCell className={`text-right ${s.total_adjustments > 0 ? 'text-green-600' : s.total_adjustments < 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+          {s.total_adjustments > 0 ? '+' : ''}{s.total_adjustments.toLocaleString()}
+        </TableCell>
+        <TableCell className="text-right text-muted-foreground">{s.production_labels.toLocaleString()}</TableCell>
+        <TableCell className="text-right text-muted-foreground">{s.sales_labels.toLocaleString()}</TableCell>
+        <TableCell className="text-right font-medium">{s.labels_used.toLocaleString()}</TableCell>
+        <TableCell className={`text-right font-semibold ${availableColor(s.labels_available)}`}>
+          {s.labels_available.toLocaleString()}
+        </TableCell>
+        <TableCell>
+          <span className={`px-2 py-1 rounded-full text-xs ${availableBadge(s.labels_available)}`}>
+            {availableLabel(s.labels_available)}
+          </span>
+        </TableCell>
+        <TableCell className="text-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openAdjustDialog(s)}
+            className="gap-1.5 text-xs"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Adjust
+          </Button>
+        </TableCell>
+      </TableRow>
+    ));
+
+  const emptyRow = (msg: string) => (
+    <TableRow>
+      <TableCell colSpan={10} className="text-center text-muted-foreground py-6 text-sm">{msg}</TableCell>
+    </TableRow>
+  );
+
   const tableContent = (
-    <div className="space-y-4 flex flex-col flex-1 min-h-0">
+    <div className="space-y-6 flex flex-col flex-1 min-h-0">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-lg font-semibold">Label Availability</h3>
@@ -351,45 +376,25 @@ const LabelAvailability = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {filteredAndSortedData.length > 0 && (
-            <span className="text-sm text-muted-foreground">
-              {Math.min(isExpanded || isFullscreen ? filteredAndSortedData.length : DEFAULT_ROWS, filteredAndSortedData.length)} of {filteredAndSortedData.length} rows
-            </span>
-          )}
+          <Button onClick={handleExport} variant="outline" size="sm">
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setIsFullscreen(fs => !fs)}>
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-        <div className="flex-1 min-w-0 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input
-            placeholder="Search by client or SKU..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="available">Available (&gt;2500)</SelectItem>
-              <SelectItem value="low_stock">Low Stock</SelectItem>
-              <SelectItem value="out_of_stock">Shortage / Out</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button onClick={handleExport} variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-        </div>
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+        <Input
+          placeholder="Search by client or SKU..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="pl-10"
+        />
       </div>
 
       {isLoading ? (
@@ -400,84 +405,55 @@ const LabelAvailability = () => {
           </div>
         </div>
       ) : (
-        <div className={`border rounded-lg flex flex-col ${isFullscreen ? "flex-1 min-h-0 overflow-hidden" : ""}`}>
-          <div className={isFullscreen ? "overflow-y-auto flex-1" : ""}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortTh field="client_name">Client</SortTh>
-                  <SortTh field="sku">SKU</SortTh>
-                  <SortTh field="total_labels_purchased" align="right">Purchased</SortTh>
-                  <SortTh field="total_adjustments" align="right">Adjustments</SortTh>
-                  <SortTh field="production_labels" align="right">Production</SortTh>
-                  <SortTh field="sales_labels" align="right">Sales</SortTh>
-                  <SortTh field="labels_used" align="right">Used (max)</SortTh>
-                  <SortTh field="labels_available" align="right">Available</SortTh>
-                  <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4">Status</TableHead>
-                  <TableHead className="bg-slate-50 border-slate-200 text-slate-700 py-3 px-4 text-center">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAndSortedData.length > 0 ? (
-                  visibleRows.map(s => (
-                    <TableRow key={s.key}>
-                      <TableCell className="font-medium">{s.client_name}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{s.sku}</TableCell>
-                      <TableCell className="text-right">{s.total_labels_purchased.toLocaleString()}</TableCell>
-                      <TableCell className={`text-right ${s.total_adjustments > 0 ? 'text-green-600' : s.total_adjustments < 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                        {s.total_adjustments > 0 ? '+' : ''}{s.total_adjustments.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">{s.production_labels.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">{s.sales_labels.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-medium">{s.labels_used.toLocaleString()}</TableCell>
-                      <TableCell className={`text-right font-semibold ${availableColor(s.labels_available)}`}>
-                        {s.labels_available.toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs ${availableBadge(s.labels_available)}`}>
-                          {availableLabel(s.labels_available)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openAdjustDialog(s)}
-                          className="gap-1.5 text-xs"
-                        >
-                          <SlidersHorizontal className="h-3.5 w-3.5" />
-                          Adjust
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                      {clientSkuSummaries.length === 0
-                        ? "No label data found. Record label purchases to get started."
-                        : "No results match your filters."}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          {!isFullscreen && filteredAndSortedData.length > DEFAULT_ROWS && (
-            <div className="border-t">
-              <button
-                type="button"
-                onClick={() => setIsExpanded(e => !e)}
-                className="w-full py-2 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-              >
-                {isExpanded
-                  ? <><ChevronUp className="h-4 w-4" />Show less</>
-                  : <><ChevronDown className="h-4 w-4" />Show all {filteredAndSortedData.length} rows</>
-                }
-              </button>
+        <>
+          {/* Table 1 — Active */}
+          <div className="space-y-2">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-700">Active ({activeRows.length})</h4>
+              <p className="text-xs text-muted-foreground">Clients with label purchases — sorted least available first</p>
             </div>
-          )}
-        </div>
+            <div className="border rounded-lg">
+              <Table>
+                {tableHeaders}
+                <TableBody>
+                  {activeRows.length > 0 ? renderRows(activeRows) : emptyRow("No active label entries.")}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* Table 2 — Zero Stock */}
+          <div className="space-y-2">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-500">Zero Stock ({zeroStockRows.length})</h4>
+              <p className="text-xs text-muted-foreground">Available = 0 or no purchases recorded yet</p>
+            </div>
+            <div className="border rounded-lg opacity-80">
+              <Table>
+                {tableHeaders}
+                <TableBody>
+                  {zeroStockRows.length > 0 ? renderRows(zeroStockRows) : emptyRow("No zero-stock entries.")}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* Table 3 — Deprecated */}
+          <div className="space-y-2">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-400">Deprecated ({deprecatedRows.length})</h4>
+              <p className="text-xs text-muted-foreground">Clients marked as deprecated in Configurations</p>
+            </div>
+            <div className="border rounded-lg opacity-60">
+              <Table>
+                {tableHeaders}
+                <TableBody>
+                  {deprecatedRows.length > 0 ? renderRows(deprecatedRows) : emptyRow("No deprecated client entries.")}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Adjustment dialog */}
@@ -489,13 +465,11 @@ const LabelAvailability = () => {
 
           {adjusting && (
             <form onSubmit={handleAdjustSubmit} className="space-y-5">
-              {/* Client + SKU (read-only) */}
               <div className="rounded-lg bg-muted/50 px-4 py-3 space-y-1">
                 <div className="text-sm font-medium">{adjusting.client_name}</div>
                 <div className="text-xs text-muted-foreground">{adjusting.sku}</div>
               </div>
 
-              {/* Current balance */}
               <div className="rounded-lg border px-4 py-3 flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Current available</span>
                 <span className={`text-xl font-bold ${availableColor(adjusting.labels_available)}`}>
@@ -509,7 +483,6 @@ const LabelAvailability = () => {
                 </p>
               )}
 
-              {/* Date */}
               <div className="space-y-1.5">
                 <Label htmlFor="adj-date">Date *</Label>
                 <Input
@@ -522,7 +495,6 @@ const LabelAvailability = () => {
                 />
               </div>
 
-              {/* Quantity */}
               <div className="space-y-1.5">
                 <Label htmlFor="adj-qty">Quantity * <span className="font-normal text-muted-foreground">(use negative to deduct)</span></Label>
                 <Input
@@ -543,7 +515,6 @@ const LabelAvailability = () => {
                 )}
               </div>
 
-              {/* Reason */}
               <div className="space-y-1.5">
                 <Label htmlFor="adj-reason">Reason</Label>
                 <Input
@@ -554,7 +525,6 @@ const LabelAvailability = () => {
                 />
               </div>
 
-              {/* Source (optional) */}
               <div className="space-y-1.5">
                 <Label htmlFor="adj-vendor">Source / Vendor <span className="font-normal text-muted-foreground">(optional)</span></Label>
                 <select
@@ -585,7 +555,7 @@ const LabelAvailability = () => {
   if (isFullscreen) {
     return (
       <Dialog open onOpenChange={() => setIsFullscreen(false)}>
-        <DialogContent className="max-w-[95vw] w-[95vw] h-[92vh] flex flex-col p-6 gap-0">
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[92vh] flex flex-col p-6 gap-0 overflow-y-auto">
           <DialogHeader className="sr-only"><DialogTitle>Label Availability</DialogTitle></DialogHeader>
           {tableContent}
         </DialogContent>
