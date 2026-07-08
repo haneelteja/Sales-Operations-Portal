@@ -283,7 +283,7 @@ const LabelPayments = () => {
     });
 
     payments.forEach((payment) => {
-      if (payment.vendor_id && typeof payment.vendor_id === 'string') {
+      if (payment.vendor_id && typeof payment.vendor_id === 'string' && isCommercialVendor(payment.vendor_id)) {
         const vendorName = isUUID(payment.vendor_id) ? 'GMG labels' : canonicalizeVendorName(payment.vendor_id);
         const normalizedName = normalizeVendorName(vendorName);
         const paymentAmount = parseFloat(payment.payment_amount) || 0;
