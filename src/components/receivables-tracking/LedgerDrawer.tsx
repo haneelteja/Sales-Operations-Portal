@@ -70,9 +70,11 @@ export function LedgerDrawer({ open, onClose, customerId, dealerName, branch }: 
         description: r.particulars,
       }));
       const safeName = dealerName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeBranch = (branch || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const exportDate = new Date().toISOString().split('T')[0];
       await exportLedger(
         rows,
-        `Ledger_${safeName}_${dateFrom}_to_${dateTo}.xlsx`,
+        `${safeName}${safeBranch ? `_${safeBranch}` : ''}_${exportDate}.xlsx`,
         `Client Ledger — ${dealerName}${branch ? ` (${branch})` : ''} | ${dateFrom} to ${dateTo}`,
       );
     } finally {
