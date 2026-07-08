@@ -24,40 +24,37 @@ export interface FetchResult {
   collectionsThisMonth: number;
 }
 
+interface SummaryRow {
+  customer_id: string;
+  client_name: string;
+  branch: string;
+  outstanding: string | number;
+  payment_count: string | number;
+  last_payment_date: string | null;
+  first_payment_date: string | null;
+  payments_this_month: string | number;
+}
+
 export async function fetchReceivablesTracking(): Promise<FetchResult> {
-  const [txResult, custResult, followupResult] = await Promise.all([
-    supabase
-      .from('sales_transactions')
-      .select('customer_id, transaction_type, amount, transaction_date')
-      .limit(10000),
-    supabase
-      .from('customers')
-      .select('id, client_name, branch'),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [summaryResult, followupResult] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).rpc('get_receivables_summary'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('client_followups')
       .select('dealer_name, branch, comments, next_followup_date'),
   ]);
 
-  if (txResult.error) throw txResult.error;
-  if (custResult.error) throw custResult.error;
+  if (summaryResult.error) throw summaryResult.error;
 
-  const transactions = txResult.data ?? [];
-  const customers = custResult.data ?? [];
+  const summaryRows = (summaryResult.data ?? []) as SummaryRow[];
   const followups = (followupResult.data ?? []) as Array<{
     dealer_name: string;
     branch: string;
     comments: string | null;
     next_followup_date: string | null;
   }>;
-
-  const customerMap = new Map<string, { dealerName: string; branch: string }>();
-  for (const c of customers) {
-    customerMap.set(c.id, {
-      dealerName: (c.client_name || 'Unknown') as string,
-      branch: (c.branch || '') as string,
-    });
-  }
 
   const followupMap = new Map<string, { comments: string; nextFollowupDate: string }>();
   for (const f of followups) {
@@ -67,67 +64,23 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
     });
   }
 
-  const groups = new Map<string, {
-    customerId: string;
-    dealerName: string;
-    branch: string;
-    sales: number;
-    payments: number;
-    lastPaymentDate: string | null;
-    paymentCount: number;
-    firstPaymentDate: string | null;
-  }>();
-
-  const today = new Date().toISOString().split('T')[0];
-  const monthStart = today.substring(0, 7) + '-01';
   let collectionsThisMonth = 0;
-
-  for (const tx of transactions) {
-    const customer = customerMap.get(tx.customer_id);
-    if (!customer) continue;
-
-    const key = `${customer.dealerName.toLowerCase()}|||${customer.branch.toLowerCase()}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        customerId: tx.customer_id,
-        dealerName: customer.dealerName,
-        branch: customer.branch,
-        sales: 0,
-        payments: 0,
-        lastPaymentDate: null,
-        paymentCount: 0,
-        firstPaymentDate: null,
-      });
-    }
-    const g = groups.get(key)!;
-
-    if (tx.transaction_type === 'sale') {
-      g.sales += tx.amount ?? 0;
-    } else if (tx.transaction_type === 'payment') {
-      g.payments += tx.amount ?? 0;
-      g.paymentCount += 1;
-      const txDate = tx.transaction_date ?? null;
-      if (txDate) {
-        if (!g.firstPaymentDate || txDate < g.firstPaymentDate) g.firstPaymentDate = txDate;
-        if (!g.lastPaymentDate || txDate > g.lastPaymentDate) g.lastPaymentDate = txDate;
-      }
-      if ((tx.transaction_date ?? '') >= monthStart) {
-        collectionsThisMonth += tx.amount ?? 0;
-      }
-    }
+  for (const r of summaryRows) {
+    collectionsThisMonth += Number(r.payments_this_month);
   }
 
   const todayForCalc = new Date();
   todayForCalc.setHours(0, 0, 0, 0);
 
   const rows: RawRow[] = [];
-  for (const [key, g] of groups) {
-    const outstanding = g.sales - g.payments;
+  for (const r of summaryRows) {
+    const outstanding = Number(r.outstanding);
     if (outstanding < 0.01) continue;
 
-    const totalPayments = g.paymentCount;
-    const firstPaymentDate = g.firstPaymentDate;
-    const lastPmtDate = g.lastPaymentDate;
+    const key = `${r.client_name.toLowerCase()}|||${r.branch.toLowerCase()}`;
+    const totalPayments = Number(r.payment_count);
+    const firstPaymentDate = r.first_payment_date ?? null;
+    const lastPmtDate = r.last_payment_date ?? null;
 
     let avgDaysBetweenPayments: number | null = null;
     let expectedNextPayment: string | null = null;
@@ -167,9 +120,9 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
     const followup = followupMap.get(key) ?? { comments: '', nextFollowupDate: '' };
     rows.push({
       key,
-      customerId: g.customerId,
-      dealerName: g.dealerName,
-      branch: g.branch,
+      customerId: r.customer_id,
+      dealerName: r.client_name,
+      branch: r.branch,
       outstanding,
       lastPaymentDate: lastPmtDate,
       comments: followup.comments,
