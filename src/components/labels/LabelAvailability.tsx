@@ -247,6 +247,7 @@ const LabelAvailability = () => {
           s.total_adjustments -
           Math.max(s.production_labels, s.sales_labels),
       }))
+      .filter(s => s.sku !== 'Plates')
       .sort((a, b) => a.client_name.localeCompare(b.client_name) || a.sku.localeCompare(b.sku));
   }, [labelPurchases, customers, salesTransactions, productionData, skuConfigs]);
 
