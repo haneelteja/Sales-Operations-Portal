@@ -54,6 +54,21 @@ function buildMonthKeys(period: ChartPeriod): string[] {
   return keys;
 }
 
+function makeDotLabel(color: string, fmt?: (v: number) => string) {
+  return function LabelRenderer({ x, y, value }: { x?: number; y?: number; value?: number }) {
+    if (value == null || value === 0 || x == null || y == null) return null;
+    const text = fmt ? fmt(value) : String(value);
+    return (
+      <g>
+        <text x={x} y={y} dy={-12} textAnchor="middle" fontSize={10} fontWeight={700}
+          stroke="white" strokeWidth={4} strokeLinejoin="round" fill="white">{text}</text>
+        <text x={x} y={y} dy={-12} textAnchor="middle" fontSize={10} fontWeight={700}
+          fill={color}>{text}</text>
+      </g>
+    );
+  };
+}
+
 function getPeriodFrom(period: ChartPeriod): string {
   if (period === 'last_year') return `${new Date().getFullYear() - 1}-01-01`;
   const n = period === '3m' ? 3 : period === '6m' ? 6 : 12;
@@ -662,6 +677,7 @@ export default function SalesTrackerView() {
                     <Line type="monotone" dataKey="value" name="New Clients" stroke="#7c3aed" strokeWidth={2.5}
                       dot={{ r: 5, fill: '#7c3aed', strokeWidth: 2, stroke: 'white' }}
                       activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }}
+                      label={makeDotLabel('#7c3aed')}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -839,6 +855,7 @@ export default function SalesTrackerView() {
                     <Line type="monotone" dataKey="value" stroke={officerColor} strokeWidth={2.5}
                       dot={{ r: 5, fill: officerColor, strokeWidth: 2, stroke: 'white' }}
                       activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }}
+                      label={makeDotLabel(officerColor, chartMetric === 'revenue' ? (v) => `₹${(v / 1000).toFixed(0)}k` : undefined)}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
