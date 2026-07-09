@@ -20,8 +20,7 @@ import {
 } from 'recharts';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Users, TrendingUp, Package, UserPlus, AlertTriangle,
-  Plus, Trash2, Settings, UserCheck,
+  Users, TrendingUp, Package, UserPlus, AlertTriangle, Plus, Trash2, Settings, UserCheck,
 } from 'lucide-react';
 import { fetchReceivablesTracking } from '@/lib/receivablesUtils';
 
@@ -32,10 +31,40 @@ const OFFICER_COLORS = ['#7c3aed', '#059669', '#d97706', '#0284c7', '#dc2626', '
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ChartMetric = 'cases' | 'new_clients' | 'revenue';
+type ChartPeriod = '3m' | '6m' | '12m' | 'last_year';
+type OverviewChartType = 'new_clients' | 'cases_by_officer' | 'outstanding_by_officer';
 
 interface SalesOfficer { id: string; name: string; is_active: boolean; created_at: string; }
 interface ClientOfficerMapping { client_name: string; branch: string; officer_id: string; assigned_at: string; }
 interface MomTx { transaction_date: string; quantity: number | null; customer_id: string; amount: number | null; }
+
+// ── Pure helpers ───────────────────────────────────────────────────────────────
+
+function buildMonthKeys(period: ChartPeriod): string[] {
+  if (period === 'last_year') {
+    const year = new Date().getFullYear() - 1;
+    return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  }
+  const n = period === '3m' ? 3 : period === '6m' ? 6 : 12;
+  const keys: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(); d.setMonth(d.getMonth() - i);
+    keys.push(d.toISOString().substring(0, 7));
+  }
+  return keys;
+}
+
+function getPeriodFrom(period: ChartPeriod): string {
+  if (period === 'last_year') return `${new Date().getFullYear() - 1}-01-01`;
+  const n = period === '3m' ? 3 : period === '6m' ? 6 : 12;
+  const d = new Date(); d.setMonth(d.getMonth() - (n - 1)); d.setDate(1);
+  return d.toISOString().split('T')[0];
+}
+
+function monthLabel(key: string): string {
+  const [y, mo] = key.split('-').map(Number);
+  return new Date(y, mo - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
+}
 
 // ── StatCard ──────────────────────────────────────────────────────────────────
 
@@ -52,10 +81,7 @@ function StatCard({ title, value, icon: Icon, sub, highlight, accent }: {
             <p className={`text-2xl font-bold mt-1.5 ${highlight ? 'text-destructive' : ''}`}>{value}</p>
             {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
           </div>
-          <div
-            className="rounded-lg p-2 mt-0.5 flex-shrink-0"
-            style={{ background: accent ? `${accent}18` : 'hsl(var(--muted))' }}
-          >
+          <div className="rounded-lg p-2 mt-0.5 flex-shrink-0" style={{ background: accent ? `${accent}18` : 'hsl(var(--muted))' }}>
             <Icon className="h-4 w-4" style={{ color: accent ?? 'hsl(var(--muted-foreground))' }} />
           </div>
         </div>
@@ -66,25 +92,22 @@ function StatCard({ title, value, icon: Icon, sub, highlight, accent }: {
 
 // ── Custom Tooltip ─────────────────────────────────────────────────────────────
 
-function ChartTooltip({ active, payload, label, metric }: {
+function ChartTooltip({ active, payload, label, isMonetary }: {
   active?: boolean;
   payload?: Array<{ name: string; value: number; color: string }>;
   label?: string;
-  metric?: ChartMetric | 'overview' | 'outstanding';
+  isMonetary?: boolean;
 }) {
   if (!active || !payload?.length) return null;
+  const fmt = (v: number) => isMonetary ? `₹${Math.round(v).toLocaleString('en-IN')}` : v.toLocaleString('en-IN');
   return (
-    <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[140px]">
+    <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[150px]">
       <p className="font-semibold text-slate-700 mb-2 border-b border-slate-100 pb-1.5">{label}</p>
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 mb-1 last:mb-0">
           <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: p.color }} />
-          <span className="text-slate-500 truncate">{p.name}:</span>
-          <span className="font-semibold text-slate-800 ml-auto pl-2">
-            {metric === 'revenue' || metric === 'outstanding'
-              ? `₹${Math.round(p.value).toLocaleString('en-IN')}`
-              : p.value.toLocaleString('en-IN')}
-          </span>
+          <span className="text-slate-500 truncate max-w-[100px]">{p.name}</span>
+          <span className="font-semibold text-slate-800 ml-auto pl-2">{fmt(p.value)}</span>
         </div>
       ))}
     </div>
@@ -102,9 +125,17 @@ export default function SalesTrackerView() {
   const [showAssignClients, setShowAssignClients] = useState(false);
   const [newOfficerName, setNewOfficerName] = useState('');
   const [assignSearch, setAssignSearch] = useState('');
+
+  // Shared period selector (overview + per-officer)
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('6m');
+
+  // Overview unified chart
+  const [overviewChartType, setOverviewChartType] = useState<OverviewChartType>('new_clients');
+  // null = all officers visible
+  const [activeOfficerIds, setActiveOfficerIds] = useState<Set<string> | null>(null);
+
+  // Per-officer chart metric
   const [chartMetric, setChartMetric] = useState<ChartMetric>('new_clients');
-  const [chartMonths, setChartMonths] = useState(6);
-  const [overviewMetric, setOverviewMetric] = useState<'cases' | 'outstanding'>('cases');
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -155,60 +186,7 @@ export default function SalesTrackerView() {
     staleTime: 60000,
   });
 
-  // ── Derived: selected officer ─────────────────────────────────────────────
-
-  const officerMappings = useMemo(() => allMappings.filter(m => m.officer_id === selectedOfficerId), [allMappings, selectedOfficerId]);
-
-  const officerClientKeys = useMemo(() => {
-    const set = new Set<string>();
-    for (const m of officerMappings) set.add(`${m.client_name.toLowerCase()}|||${(m.branch ?? '').toLowerCase()}`);
-    return set;
-  }, [officerMappings]);
-
-  const officerRows = useMemo(() => {
-    if (!selectedOfficerId) return [];
-    return (receivablesData?.rows ?? []).filter(r =>
-      officerClientKeys.has(`${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`),
-    );
-  }, [receivablesData, officerClientKeys, selectedOfficerId]);
-
-  const officerCustomerIds = useMemo(() => officerRows.map(r => r.customerId), [officerRows]);
-
-  // ── Queries: per-officer MoM ─────────────────────────────────────────────
-
-  const { data: momTransactions = [] } = useQuery({
-    queryKey: ['officer-mom-transactions', selectedOfficerId, officerCustomerIds.join(','), chartMonths],
-    queryFn: async (): Promise<MomTx[]> => {
-      if (!officerCustomerIds.length) return [];
-      const d = new Date(); d.setMonth(d.getMonth() - (chartMonths - 1)); d.setDate(1);
-      const from = d.toISOString().split('T')[0];
-      const { data, error } = await supabase
-        .from('sales_transactions').select('transaction_date, quantity, customer_id, amount')
-        .eq('transaction_type', 'sale').in('customer_id', officerCustomerIds).gte('transaction_date', from);
-      if (error) throw error;
-      return (data ?? []) as MomTx[];
-    },
-    enabled: !!selectedOfficerId && officerCustomerIds.length > 0,
-    staleTime: 0,
-  });
-
-  const { data: firstSaleData = [] } = useQuery({
-    queryKey: ['officer-first-sales', selectedOfficerId, officerCustomerIds.join(',')],
-    queryFn: async (): Promise<{ customer_id: string; first_date: string }[]> => {
-      if (!officerCustomerIds.length) return [];
-      const { data, error } = await supabase
-        .from('sales_transactions').select('customer_id, transaction_date')
-        .eq('transaction_type', 'sale').in('customer_id', officerCustomerIds).order('transaction_date', { ascending: true });
-      if (error) throw error;
-      const map = new Map<string, string>();
-      for (const t of (data ?? [])) { if (!map.has(t.customer_id)) map.set(t.customer_id, t.transaction_date); }
-      return [...map.entries()].map(([customer_id, first_date]) => ({ customer_id, first_date }));
-    },
-    enabled: !!selectedOfficerId && officerCustomerIds.length > 0,
-    staleTime: 60000,
-  });
-
-  // ── Derived: overview ─────────────────────────────────────────────────────
+  // ── Derived: mapping lookups ─────────────────────────────────────────────
 
   const mappingByKey = useMemo(() => {
     const m = new Map<string, string>();
@@ -236,12 +214,65 @@ export default function SalesTrackerView() {
     return ids;
   }, [receivablesData, mappingByKey]);
 
+  // ── Derived: selected officer ─────────────────────────────────────────────
+
+  const officerMappings = useMemo(() => allMappings.filter(m => m.officer_id === selectedOfficerId), [allMappings, selectedOfficerId]);
+
+  const officerClientKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of officerMappings) set.add(`${m.client_name.toLowerCase()}|||${(m.branch ?? '').toLowerCase()}`);
+    return set;
+  }, [officerMappings]);
+
+  const officerRows = useMemo(() => {
+    if (!selectedOfficerId) return [];
+    return (receivablesData?.rows ?? []).filter(r =>
+      officerClientKeys.has(`${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`),
+    );
+  }, [receivablesData, officerClientKeys, selectedOfficerId]);
+
+  const officerCustomerIds = useMemo(() => officerRows.map(r => r.customerId), [officerRows]);
+
+  // ── Queries: per-officer ─────────────────────────────────────────────────
+
+  const { data: momTransactions = [] } = useQuery({
+    queryKey: ['officer-mom-transactions', selectedOfficerId, officerCustomerIds.join(','), chartPeriod],
+    queryFn: async (): Promise<MomTx[]> => {
+      if (!officerCustomerIds.length) return [];
+      const from = getPeriodFrom(chartPeriod);
+      const { data, error } = await supabase
+        .from('sales_transactions').select('transaction_date, quantity, customer_id, amount')
+        .eq('transaction_type', 'sale').in('customer_id', officerCustomerIds).gte('transaction_date', from);
+      if (error) throw error;
+      return (data ?? []) as MomTx[];
+    },
+    enabled: !!selectedOfficerId && officerCustomerIds.length > 0,
+    staleTime: 0,
+  });
+
+  const { data: firstSaleData = [] } = useQuery({
+    queryKey: ['officer-first-sales', selectedOfficerId, officerCustomerIds.join(',')],
+    queryFn: async (): Promise<{ customer_id: string; first_date: string }[]> => {
+      if (!officerCustomerIds.length) return [];
+      const { data, error } = await supabase
+        .from('sales_transactions').select('customer_id, transaction_date')
+        .eq('transaction_type', 'sale').in('customer_id', officerCustomerIds).order('transaction_date', { ascending: true });
+      if (error) throw error;
+      const map = new Map<string, string>();
+      for (const t of (data ?? [])) { if (!map.has(t.customer_id)) map.set(t.customer_id, t.transaction_date); }
+      return [...map.entries()].map(([customer_id, first_date]) => ({ customer_id, first_date }));
+    },
+    enabled: !!selectedOfficerId && officerCustomerIds.length > 0,
+    staleTime: 60000,
+  });
+
+  // ── Queries: overview ────────────────────────────────────────────────────
+
   const { data: overviewTransactions = [] } = useQuery({
-    queryKey: ['overview-mom-transactions', allMappedCustomerIds.join(','), chartMonths],
+    queryKey: ['overview-mom-transactions', allMappedCustomerIds.join(','), chartPeriod],
     queryFn: async (): Promise<MomTx[]> => {
       if (!allMappedCustomerIds.length) return [];
-      const d = new Date(); d.setMonth(d.getMonth() - (chartMonths - 1)); d.setDate(1);
-      const from = d.toISOString().split('T')[0];
+      const from = getPeriodFrom(chartPeriod);
       const { data, error } = await supabase
         .from('sales_transactions').select('transaction_date, quantity, customer_id, amount')
         .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).gte('transaction_date', from);
@@ -250,6 +281,23 @@ export default function SalesTrackerView() {
     },
     enabled: !selectedOfficerId && allMappedCustomerIds.length > 0,
     staleTime: 0,
+  });
+
+  // All-time first sale dates for all mapped customers (for New Clients chart)
+  const { data: allFirstSaleData = [] } = useQuery({
+    queryKey: ['all-first-sales', allMappedCustomerIds.join(',')],
+    queryFn: async (): Promise<{ customer_id: string; first_date: string }[]> => {
+      if (!allMappedCustomerIds.length) return [];
+      const { data, error } = await supabase
+        .from('sales_transactions').select('customer_id, transaction_date')
+        .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).order('transaction_date', { ascending: true });
+      if (error) throw error;
+      const map = new Map<string, string>();
+      for (const t of (data ?? [])) { if (!map.has(t.customer_id)) map.set(t.customer_id, t.transaction_date); }
+      return [...map.entries()].map(([customer_id, first_date]) => ({ customer_id, first_date }));
+    },
+    enabled: !selectedOfficerId && allMappedCustomerIds.length > 0,
+    staleTime: 60000,
   });
 
   // ── Stats ─────────────────────────────────────────────────────────────────
@@ -298,24 +346,28 @@ export default function SalesTrackerView() {
     return officers.map(o => ({ officer: o, ...sm[o.id] }));
   }, [officers, allMappings, receivablesData, mappingByKey, overviewTransactions, customerIdToOfficer, currentMonthStr]);
 
-  // ── Chart data ────────────────────────────────────────────────────────────
+  // ── Overview chart data ───────────────────────────────────────────────────
 
-  const buildMonthKeys = (n: number) => {
-    const keys: string[] = [];
-    for (let i = n - 1; i >= 0; i--) {
-      const d = new Date(); d.setMonth(d.getMonth() - i);
-      keys.push(d.toISOString().substring(0, 7));
+  // Officers visible in the overview chart (null = all)
+  const visibleOfficers = useMemo(() =>
+    activeOfficerIds === null ? officers : officers.filter(o => activeOfficerIds.has(o.id)),
+  [officers, activeOfficerIds]);
+
+  // New Clients Overall — single line, all assigned clients
+  const newClientsChartData = useMemo(() => {
+    const keys = buildMonthKeys(chartPeriod);
+    const counts: Record<string, number> = {};
+    keys.forEach(m => (counts[m] = 0));
+    for (const d of allFirstSaleData) {
+      const m = d.first_date?.substring(0, 7);
+      if (m && m in counts) counts[m] += 1;
     }
-    return keys;
-  };
+    return keys.map(key => ({ month: monthLabel(key), value: counts[key] }));
+  }, [allFirstSaleData, chartPeriod]);
 
-  const monthLabel = (key: string) => {
-    const [y, mo] = key.split('-').map(Number);
-    return new Date(y, mo - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
-  };
-
-  const overviewChartData = useMemo(() => {
-    const keys = buildMonthKeys(chartMonths);
+  // Cases by Officer — multi-line
+  const casesByOfficerChartData = useMemo(() => {
+    const keys = buildMonthKeys(chartPeriod);
     const data: Record<string, Record<string, number>> = {};
     for (const m of keys) { data[m] = {}; for (const o of officers) data[m][o.id] = 0; }
     for (const t of overviewTransactions) {
@@ -329,20 +381,22 @@ export default function SalesTrackerView() {
       for (const o of officers) row[o.id] = data[key]?.[o.id] ?? 0;
       return row;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overviewTransactions, officers, customerIdToOfficer, chartMonths]);
+  }, [overviewTransactions, officers, customerIdToOfficer, chartPeriod]);
 
-  const officerComparisonData = useMemo(() =>
+  // Outstanding by Officer — bar chart (current snapshot per officer)
+  const outstandingBarData = useMemo(() =>
     officerPerformanceStats.map(s => ({
       name: s.officer.name.split(' ')[0],
       fullName: s.officer.name,
-      value: overviewMetric === 'cases' ? s.casesThisMonth : Math.round(s.outstanding),
+      value: Math.round(s.outstanding),
       officer_id: s.officer.id,
     })),
-  [officerPerformanceStats, overviewMetric]);
+  [officerPerformanceStats]);
+
+  // ── Per-officer chart data ────────────────────────────────────────────────
 
   const momChartData = useMemo(() => {
-    const keys = buildMonthKeys(chartMonths);
+    const keys = buildMonthKeys(chartPeriod);
     const counts: Record<string, number> = {};
     keys.forEach(m => (counts[m] = 0));
     if (chartMetric === 'cases') {
@@ -353,8 +407,7 @@ export default function SalesTrackerView() {
       for (const d of firstSaleData) { const m = d.first_date?.substring(0, 7); if (m && m in counts) counts[m] += 1; }
     }
     return keys.map(key => ({ month: monthLabel(key), value: counts[key] }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [momTransactions, firstSaleData, chartMetric, chartMonths]);
+  }, [momTransactions, firstSaleData, chartMetric, chartPeriod]);
 
   const overdueRows = useMemo(() => officerRows.filter(r =>
     !r.lastPaymentDate || (Date.now() - new Date(r.lastPaymentDate).getTime()) / 86400000 > 60,
@@ -378,7 +431,11 @@ export default function SalesTrackerView() {
       const { error } = await (supabase as any).from('sales_officers').update({ is_active: false }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: (_, id) => { queryClient.invalidateQueries({ queryKey: ['sales-officers'] }); if (selectedOfficerId === id) setSelectedOfficerId(null); toast({ title: 'Officer removed' }); },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['sales-officers'] });
+      if (selectedOfficerId === id) setSelectedOfficerId(null);
+      toast({ title: 'Officer removed' });
+    },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
   });
 
@@ -414,23 +471,47 @@ export default function SalesTrackerView() {
   }, [allClientPairs, assignSearch]);
 
   const selectedOfficer = officers.find(o => o.id === selectedOfficerId);
+
   const officerColor = useMemo(() => {
     const idx = officers.findIndex(o => o.id === selectedOfficerId);
     return OFFICER_COLORS[idx % OFFICER_COLORS.length] ?? '#7c3aed';
   }, [officers, selectedOfficerId]);
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  const toggleOfficer = useCallback((id: string) => {
+    setActiveOfficerIds(prev => {
+      // On first toggle, start from all-selected state
+      const base = prev ?? new Set(officers.map(o => o.id));
+      const next = new Set(base);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      // If all are selected again, reset to null (all)
+      if (next.size === officers.length) return null;
+      return next;
+    });
+  }, [officers]);
+
+  // ── Shared selectors ──────────────────────────────────────────────────────
 
   const periodSelector = (
-    <Select value={String(chartMonths)} onValueChange={v => setChartMonths(Number(v))}>
+    <Select value={chartPeriod} onValueChange={v => setChartPeriod(v as ChartPeriod)}>
       <SelectTrigger className="h-8 w-36 text-sm"><SelectValue /></SelectTrigger>
       <SelectContent>
-        <SelectItem value="3">Last 3 months</SelectItem>
-        <SelectItem value="6">Last 6 months</SelectItem>
-        <SelectItem value="12">Last 12 months</SelectItem>
+        <SelectItem value="3m">Last 3 months</SelectItem>
+        <SelectItem value="6m">Last 6 months</SelectItem>
+        <SelectItem value="12m">Last 12 months</SelectItem>
+        <SelectItem value="last_year">Last year ({new Date().getFullYear() - 1})</SelectItem>
       </SelectContent>
     </Select>
   );
+
+  // ── Overview chart labels ─────────────────────────────────────────────────
+
+  const overviewChartMeta = {
+    new_clients:          { label: 'New Clients Overall',       sub: 'First-time sales per month across all officers' },
+    cases_by_officer:     { label: 'Cases Trend by Officer',    sub: 'Month-over-month cases, one line per officer' },
+    outstanding_by_officer: { label: 'Outstanding by Officer',  sub: 'Current outstanding balance per officer' },
+  } as const;
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 p-6">
@@ -484,7 +565,7 @@ export default function SalesTrackerView() {
         </div>
       )}
 
-      {/* ── OVERVIEW (no officer selected) ──────────────────────────────────── */}
+      {/* ── OVERVIEW ──────────────────────────────────────────────────────── */}
       {!selectedOfficer && officers.length > 0 && (
         <>
           {/* Team stats */}
@@ -495,106 +576,162 @@ export default function SalesTrackerView() {
             <StatCard title="Team Outstanding" value={fmtINR(teamStats.totalOutstanding)} icon={TrendingUp} accent="#0284c7" />
           </div>
 
-          {/* Officer comparison bar chart */}
+          {/* ── UNIFIED OVERVIEW CHART ─────────────────────────────────────── */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-start justify-between flex-wrap gap-3">
                 <div>
-                  <CardTitle className="text-base font-semibold text-gray-900">Officer Comparison</CardTitle>
-                  <p className="text-xs text-gray-400 mt-0.5">Side-by-side performance this month</p>
+                  <CardTitle className="text-base font-semibold text-gray-900">
+                    {overviewChartMeta[overviewChartType].label}
+                  </CardTitle>
+                  <p className="text-xs text-gray-400 mt-0.5">{overviewChartMeta[overviewChartType].sub}</p>
                 </div>
-                <Select value={overviewMetric} onValueChange={v => setOverviewMetric(v as 'cases' | 'outstanding')}>
-                  <SelectTrigger className="h-8 w-44 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cases">Cases This Month</SelectItem>
-                    <SelectItem value="outstanding">Outstanding (₹)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={officerComparisonData} margin={{ top: 16, right: 16, left: 4, bottom: 4 }} barCategoryGap="35%">
-                  <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
-                    tickFormatter={overviewMetric === 'outstanding' ? (v: number) => `₹${(v / 1000).toFixed(0)}k` : undefined}
-                  />
-                  <Tooltip
-                    cursor={{ fill: 'rgba(100,116,139,0.06)' }}
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload?.length) return null;
-                      const entry = officerComparisonData.find(d => d.name === label);
-                      return (
-                        <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs">
-                          <p className="font-semibold text-slate-700 mb-1">{entry?.fullName ?? label}</p>
-                          <p className="text-slate-600">
-                            {overviewMetric === 'outstanding'
-                              ? fmtINR(payload[0].value as number)
-                              : `${payload[0].value} cases`}
-                          </p>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                    {officerComparisonData.map((entry) => {
-                      const idx = officers.findIndex(o => o.id === entry.officer_id);
-                      return <Cell key={entry.officer_id} fill={OFFICER_COLORS[idx % OFFICER_COLORS.length]} />;
-                    })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
 
-          {/* Cases trend — multi-line per officer */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <CardTitle className="text-base font-semibold text-gray-900">Cases Trend by Officer</CardTitle>
-                  <p className="text-xs text-gray-400 mt-0.5">Month-over-month cases per sales officer</p>
+                {/* Controls row */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Chart type */}
+                  <Select value={overviewChartType} onValueChange={v => setOverviewChartType(v as OverviewChartType)}>
+                    <SelectTrigger className="h-8 w-52 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new_clients">New Clients Overall</SelectItem>
+                      <SelectItem value="cases_by_officer">Cases by Officer</SelectItem>
+                      <SelectItem value="outstanding_by_officer">Outstanding by Officer</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Period — not relevant for outstanding snapshot */}
+                  {overviewChartType !== 'outstanding_by_officer' && periodSelector}
                 </div>
-                {periodSelector}
               </div>
+
+              {/* Officer toggles — for multi-line modes */}
+              {(overviewChartType === 'cases_by_officer' || overviewChartType === 'outstanding_by_officer') && officers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
+                  {officers.map((o, idx) => {
+                    const color = OFFICER_COLORS[idx % OFFICER_COLORS.length];
+                    const isActive = activeOfficerIds === null || activeOfficerIds.has(o.id);
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => toggleOfficer(o.id)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
+                        style={isActive
+                          ? { background: `${color}15`, borderColor: color, color }
+                          : { background: 'transparent', borderColor: '#e2e8f0', color: '#94a3b8' }}
+                      >
+                        <span className="inline-block w-2 h-2 rounded-full" style={{ background: isActive ? color : '#cbd5e1' }} />
+                        {o.name}
+                      </button>
+                    );
+                  })}
+                  {activeOfficerIds !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveOfficerIds(null)}
+                      className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-slate-300 text-slate-400 hover:border-slate-400 transition-all"
+                    >
+                      Show all
+                    </button>
+                  )}
+                </div>
+              )}
             </CardHeader>
+
             <CardContent>
-              <ResponsiveContainer width="100%" height={260}>
-                <ComposedChart data={overviewChartData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    cursor={{ fill: 'rgba(100,116,139,0.06)' }}
-                    content={({ active, payload, label }) => (
-                      <ChartTooltip
-                        active={active}
-                        payload={payload?.map(p => ({
-                          name: officers.find(o => o.id === String(p.dataKey))?.name ?? String(p.dataKey),
-                          value: p.value as number,
-                          color: p.color ?? '#888',
-                        }))}
-                        label={label}
-                        metric="overview"
-                      />
-                    )}
-                  />
-                  <Legend
-                    formatter={(value) => <span className="text-xs text-slate-600">{officers.find(o => o.id === value)?.name ?? value}</span>}
-                    wrapperStyle={{ paddingTop: 12 }}
-                  />
-                  {officers.map((o, idx) => (
-                    <Line
-                      key={o.id} type="monotone" dataKey={o.id} name={o.id}
-                      stroke={OFFICER_COLORS[idx % OFFICER_COLORS.length]} strokeWidth={2.5}
-                      dot={{ r: 4, fill: OFFICER_COLORS[idx % OFFICER_COLORS.length], strokeWidth: 2, stroke: 'white' }}
-                      activeDot={{ r: 6, stroke: 'white', strokeWidth: 2 }}
+              {/* NEW CLIENTS — single line */}
+              {overviewChartType === 'new_clients' && (
+                <ResponsiveContainer width="100%" height={260}>
+                  <ComposedChart data={newClientsChartData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(100,116,139,0.06)' }}
+                      content={({ active, payload, label }) => (
+                        <ChartTooltip active={active} payload={payload?.map(p => ({ name: 'New Clients', value: p.value as number, color: '#7c3aed' }))} label={label} />
+                      )}
                     />
-                  ))}
-                </ComposedChart>
-              </ResponsiveContainer>
+                    <Line type="monotone" dataKey="value" name="New Clients" stroke="#7c3aed" strokeWidth={2.5}
+                      dot={{ r: 5, fill: '#7c3aed', strokeWidth: 2, stroke: 'white' }}
+                      activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
+
+              {/* CASES BY OFFICER — multi-line */}
+              {overviewChartType === 'cases_by_officer' && (
+                <ResponsiveContainer width="100%" height={260}>
+                  <ComposedChart data={casesByOfficerChartData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(100,116,139,0.06)' }}
+                      content={({ active, payload, label }) => (
+                        <ChartTooltip
+                          active={active}
+                          payload={payload?.map(p => ({ name: officers.find(o => o.id === String(p.dataKey))?.name ?? String(p.dataKey), value: p.value as number, color: p.color ?? '#888' }))}
+                          label={label}
+                        />
+                      )}
+                    />
+                    <Legend
+                      formatter={(value) => <span className="text-xs text-slate-600">{officers.find(o => o.id === value)?.name ?? value}</span>}
+                      wrapperStyle={{ paddingTop: 12 }}
+                    />
+                    {visibleOfficers.map((o, idx) => {
+                      const globalIdx = officers.findIndex(x => x.id === o.id);
+                      const color = OFFICER_COLORS[globalIdx % OFFICER_COLORS.length];
+                      return (
+                        <Line key={o.id} type="monotone" dataKey={o.id} name={o.id} stroke={color} strokeWidth={2.5}
+                          dot={{ r: 4, fill: color, strokeWidth: 2, stroke: 'white' }}
+                          activeDot={{ r: 6, stroke: 'white', strokeWidth: 2 }}
+                        />
+                      );
+                    })}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
+
+              {/* OUTSTANDING BY OFFICER — bar chart snapshot */}
+              {overviewChartType === 'outstanding_by_officer' && (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart
+                    data={outstandingBarData.filter(d => activeOfficerIds === null || activeOfficerIds.has(d.officer_id))}
+                    margin={{ top: 16, right: 16, left: 4, bottom: 4 }}
+                    barCategoryGap="35%"
+                  >
+                    <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+                      tickFormatter={(v: number) => `₹${(v / 1000).toFixed(0)}k`}
+                    />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(100,116,139,0.06)' }}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        const entry = outstandingBarData.find(d => d.name === label);
+                        return (
+                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs">
+                            <p className="font-semibold text-slate-700 mb-1">{entry?.fullName ?? label}</p>
+                            <p className="text-slate-600">{fmtINR(payload[0].value as number)}</p>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      {outstandingBarData
+                        .filter(d => activeOfficerIds === null || activeOfficerIds.has(d.officer_id))
+                        .map(entry => {
+                          const idx = officers.findIndex(o => o.id === entry.officer_id);
+                          return <Cell key={entry.officer_id} fill={OFFICER_COLORS[idx % OFFICER_COLORS.length]} />;
+                        })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
 
@@ -638,7 +775,7 @@ export default function SalesTrackerView() {
         </>
       )}
 
-      {/* ── PER-OFFICER DASHBOARD ──────────────────────────────────────────── */}
+      {/* ── PER-OFFICER DASHBOARD ─────────────────────────────────────────── */}
       {selectedOfficer && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -649,7 +786,6 @@ export default function SalesTrackerView() {
             <StatCard title="Overdue Clients" value={stats.overdueCount} icon={AlertTriangle} sub="No payment in 60+ days" highlight={stats.overdueCount > 0} accent={stats.overdueCount > 0 ? '#dc2626' : officerColor} />
           </div>
 
-          {/* MoM chart — styled line */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -687,18 +823,13 @@ export default function SalesTrackerView() {
                       content={({ active, payload, label }) => (
                         <ChartTooltip
                           active={active}
-                          payload={payload?.map(p => ({
-                            name: chartMetric === 'new_clients' ? 'New Clients' : chartMetric === 'cases' ? 'Cases' : 'Revenue',
-                            value: p.value as number,
-                            color: officerColor,
-                          }))}
+                          payload={payload?.map(p => ({ name: chartMetric === 'new_clients' ? 'New Clients' : chartMetric === 'cases' ? 'Cases' : 'Revenue', value: p.value as number, color: officerColor }))}
                           label={label}
-                          metric={chartMetric}
+                          isMonetary={chartMetric === 'revenue'}
                         />
                       )}
                     />
-                    <Line
-                      type="monotone" dataKey="value" stroke={officerColor} strokeWidth={2.5}
+                    <Line type="monotone" dataKey="value" stroke={officerColor} strokeWidth={2.5}
                       dot={{ r: 5, fill: officerColor, strokeWidth: 2, stroke: 'white' }}
                       activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }}
                     />
@@ -708,7 +839,6 @@ export default function SalesTrackerView() {
             </CardContent>
           </Card>
 
-          {/* Outstanding table */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold text-gray-900">
@@ -754,7 +884,6 @@ export default function SalesTrackerView() {
             </CardContent>
           </Card>
 
-          {/* Overdue table */}
           {overdueRows.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
@@ -806,32 +935,31 @@ export default function SalesTrackerView() {
           <DialogHeader><DialogTitle>Manage Sales Officers</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="flex gap-2">
-              <Input
-                placeholder="Officer name" value={newOfficerName}
-                onChange={e => setNewOfficerName(e.target.value)}
+              <Input placeholder="Officer name" value={newOfficerName} onChange={e => setNewOfficerName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && newOfficerName.trim()) addOfficerMutation.mutate(newOfficerName.trim()); }}
               />
-              <Button onClick={() => newOfficerName.trim() && addOfficerMutation.mutate(newOfficerName.trim())} disabled={!newOfficerName.trim() || addOfficerMutation.isPending} size="icon">
+              <Button type="button" onClick={() => newOfficerName.trim() && addOfficerMutation.mutate(newOfficerName.trim())} disabled={!newOfficerName.trim() || addOfficerMutation.isPending} size="icon">
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
             <div className="space-y-1 max-h-60 overflow-y-auto">
-              {officers.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">No officers yet</p>
-              ) : officers.map(o => (
-                <div key={o.id} className="flex items-center justify-between px-3 py-2 rounded-md border">
-                  <span className="text-sm font-medium">{o.name}</span>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeOfficerMutation.mutate(o.id)} disabled={removeOfficerMutation.isPending}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+              {officers.length === 0
+                ? <p className="text-sm text-muted-foreground text-center py-6">No officers yet</p>
+                : officers.map(o => (
+                  <div key={o.id} className="flex items-center justify-between px-3 py-2 rounded-md border">
+                    <span className="text-sm font-medium">{o.name}</span>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeOfficerMutation.mutate(o.id)} disabled={removeOfficerMutation.isPending}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))
+              }
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* ── Assign Clients ────────────────────────────────────────────────── */}
+      {/* ── Assign Clients ─────────────────────────────────────────────────── */}
       <Dialog open={showAssignClients} onOpenChange={v => { setShowAssignClients(v); if (!v) setAssignSearch(''); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col gap-4">
           <DialogHeader><DialogTitle>Assign Clients to Sales Officers</DialogTitle></DialogHeader>
@@ -840,32 +968,31 @@ export default function SalesTrackerView() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>Sales Officer</TableHead>
+                  <TableHead>Client</TableHead><TableHead>Branch</TableHead><TableHead>Sales Officer</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredClientPairs.length === 0 ? (
-                  <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">No clients found</TableCell></TableRow>
-                ) : filteredClientPairs.map(p => {
-                  const mapping = getMappingForClient(p.client_name, p.branch);
-                  return (
-                    <TableRow key={`${p.client_name}|||${p.branch}`}>
-                      <TableCell className="font-medium text-sm">{p.client_name}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{p.branch}</TableCell>
-                      <TableCell>
-                        <Select value={mapping?.officer_id ?? '__none__'} onValueChange={v => assignOfficerMutation.mutate({ client_name: p.client_name, branch: p.branch, officer_id: v === '__none__' ? null : v })}>
-                          <SelectTrigger className="h-8 w-48 text-sm"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">Unassigned</SelectItem>
-                            {officers.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {filteredClientPairs.length === 0
+                  ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">No clients found</TableCell></TableRow>
+                  : filteredClientPairs.map(p => {
+                    const mapping = getMappingForClient(p.client_name, p.branch);
+                    return (
+                      <TableRow key={`${p.client_name}|||${p.branch}`}>
+                        <TableCell className="font-medium text-sm">{p.client_name}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{p.branch}</TableCell>
+                        <TableCell>
+                          <Select value={mapping?.officer_id ?? '__none__'} onValueChange={v => assignOfficerMutation.mutate({ client_name: p.client_name, branch: p.branch, officer_id: v === '__none__' ? null : v })}>
+                            <SelectTrigger className="h-8 w-48 text-sm"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">Unassigned</SelectItem>
+                              {officers.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                }
               </TableBody>
             </Table>
           </div>
