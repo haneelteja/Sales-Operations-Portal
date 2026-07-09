@@ -18,6 +18,7 @@ import {
   TrendingUp,
   ScrollText,
   Mail,
+  ChartBar,
 } from "lucide-react";
 
 import {
@@ -57,6 +58,7 @@ const menuItems: MenuItem[] = [
   { id: "labels", title: "Labels", icon: Tag },
   { id: "reports", title: "Reports", icon: FileText },
   { id: "profitability", title: "Profitability", icon: TrendingUp },
+  { id: "sales-tracker", title: "Sales Tracker", icon: ChartBar },
   { id: "receivables-management", title: "Client Analysis", icon: Wallet },
   { id: "audit-logs", title: "Audit Logs", icon: ScrollText, roles: ['manager'] },
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers

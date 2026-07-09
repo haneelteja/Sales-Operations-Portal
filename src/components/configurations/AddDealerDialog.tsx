@@ -30,6 +30,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Loader2 } from "lucide-react";
 import { gstinSchema, indiaWhatsAppSchema } from "@/lib/validation/schemas";
@@ -169,6 +176,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [requiresBackLabel, setRequiresBackLabel] = useState(false);
   const [skuRows, setSkuRows] = useState<SkuPricingRow[]>([getInitialRow()]);
+  const [salesOfficerId, setSalesOfficerId] = useState<string>('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   /** After loading an existing client+branch, baseline prices per SKU - inserts only when price changes or SKU is new */
   const initialPricesBySkuRef = useRef<Record<string, number>>({});
@@ -211,6 +219,35 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     queryKey: ["add-client-contact", selectedExistingClient],
     queryFn: () => fetchSampleContactForClient(selectedExistingClient),
     enabled: open && isExistingClient && !!selectedExistingClient.trim(),
+  });
+
+  const { data: salesOfficers = [] } = useQuery({
+    queryKey: ['sales-officers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sales_officers')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw new Error(handleSupabaseError(error));
+      return data as { id: string; name: string }[];
+    },
+    enabled: open,
+  });
+
+  const { data: existingOfficerMapping } = useQuery({
+    queryKey: ['customer-sales-officer', pairKey],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('customer_sales_officer')
+        .select('officer_id')
+        .eq('client_name', selectedExistingClient)
+        .eq('branch', selectedExistingBranch)
+        .maybeSingle();
+      if (error) throw new Error(handleSupabaseError(error));
+      return data as { officer_id: string } | null;
+    },
+    enabled: open && !!pairKey,
   });
 
 
@@ -264,6 +301,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setGstNumber("");
     setWhatsappNumber("");
     setRequiresBackLabel(false);
+    setSalesOfficerId('');
     setSkuRows(updateRowPricePerCase([getInitialRow()]));
     setFieldErrors({});
     initialPricesBySkuRef.current = {};
@@ -281,6 +319,15 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setGstNumber(sampleContact.gst_number || "");
     setWhatsappNumber(sampleContact.whatsapp_number || "");
   }, [open, isExistingClient, selectedExistingClient, isExistingBranch, selectedExistingBranch, sampleContact]);
+
+  // Populate sales officer when an existing client+branch mapping is found
+  useEffect(() => {
+    if (existingOfficerMapping?.officer_id) {
+      setSalesOfficerId(existingOfficerMapping.officer_id);
+    } else if (pairKey === null) {
+      setSalesOfficerId('');
+    }
+  }, [existingOfficerMapping, pairKey]);
 
   // When both client and branch are existing, load latest SKU rows (display only - saves insert new rows)
   useEffect(() => {
@@ -479,6 +526,17 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
           if (histErr) throw new Error(handleSupabaseError(histErr));
         }
       }
+
+      // Upsert sales officer mapping if an officer is selected
+      if (salesOfficerId) {
+        const { error: officerErr } = await (supabase as any)
+          .from('customer_sales_officer')
+          .upsert(
+            { client_name: resolvedDealerName, branch: resolvedArea, officer_id: salesOfficerId },
+            { onConflict: 'client_name,branch' }
+          );
+        if (officerErr) throw new Error(handleSupabaseError(officerErr));
+      }
     },
     onSuccess: (_result, variables) => {
       log({ action: isPairHistoryMode ? 'CREATE' : 'UPDATE', entityType: 'client_configuration', description: `Client pricing saved for ${variables?.[0]?.client_name ?? 'client'} — ${variables?.[0]?.branch ?? ''}` });
@@ -490,6 +548,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       queryClient.invalidateQueries({ queryKey: ["add-client-pair-rows"] });
       queryClient.invalidateQueries({ queryKey: ["sku-configurations-options"] });
       queryClient.invalidateQueries({ queryKey: ["back-label-history"] });
+      queryClient.invalidateQueries({ queryKey: ["customer-sales-officer"] });
       toast({
         title: "Success",
         description: isPairHistoryMode
@@ -656,6 +715,20 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               {fieldErrors.whatsapp_number && (
                 <p className="text-sm text-destructive">{fieldErrors.whatsapp_number}</p>
               )}
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="sales-officer">Sales Officer</Label>
+              <Select value={salesOfficerId} onValueChange={setSalesOfficerId}>
+                <SelectTrigger id="sales-officer">
+                  <SelectValue placeholder="Select sales officer (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesOfficers.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

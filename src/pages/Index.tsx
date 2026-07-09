@@ -21,6 +21,7 @@ const EmailReportScheduleTab = lazy(() => import("@/components/user-management/E
 const ReceivablesManagement = lazy(() => import("@/components/receivables/ReceivablesManagement"));
 const ReceivablesTrackingView = lazy(() => import("@/components/receivables-tracking/ReceivablesTrackingView"));
 const Profitability = lazy(() => import("@/components/profitability/Profitability"));
+const SalesTrackerView = lazy(() => import("@/components/sales-tracker/SalesTrackerView"));
 const AuditLogs = lazy(() => import("@/components/logs/AuditLogs"));
 
 // Loading component for route transitions
@@ -116,6 +117,14 @@ const Index = () => {
           <ErrorBoundary>
             <Suspense fallback={<RouteLoader />}>
               <Profitability />
+            </Suspense>
+          </ErrorBoundary>
+        );
+      case "sales-tracker":
+        return (
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <SalesTrackerView />
             </Suspense>
           </ErrorBoundary>
         );
