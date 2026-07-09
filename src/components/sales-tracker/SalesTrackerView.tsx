@@ -87,7 +87,8 @@ export default function SalesTrackerView() {
   const [showAssignClients, setShowAssignClients] = useState(false);
   const [newOfficerName, setNewOfficerName] = useState('');
   const [assignSearch, setAssignSearch] = useState('');
-  const [chartMetric, setChartMetric] = useState<ChartMetric>('cases');
+  const [chartMetric, setChartMetric] = useState<ChartMetric>('new_clients');
+  const [chartMonths, setChartMonths] = useState(6);
 
   // ── Queries ─────────────────────────────────────────────────────────────────
 
@@ -173,11 +174,11 @@ export default function SalesTrackerView() {
   const officerCustomerIds = useMemo(() => officerRows.map(r => r.customerId), [officerRows]);
 
   const { data: momTransactions = [] } = useQuery({
-    queryKey: ['officer-mom-transactions', selectedOfficerId, officerCustomerIds.join(',')],
+    queryKey: ['officer-mom-transactions', selectedOfficerId, officerCustomerIds.join(','), chartMonths],
     queryFn: async (): Promise<MomTx[]> => {
       if (!officerCustomerIds.length) return [];
       const d = new Date();
-      d.setMonth(d.getMonth() - 5);
+      d.setMonth(d.getMonth() - (chartMonths - 1));
       d.setDate(1);
       const from = d.toISOString().split('T')[0];
       const { data, error } = await supabase
@@ -242,7 +243,7 @@ export default function SalesTrackerView() {
   // MoM chart: last 6 months
   const momChartData = useMemo(() => {
     const monthKeys: string[] = [];
-    for (let i = 5; i >= 0; i--) {
+    for (let i = chartMonths - 1; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
       monthKeys.push(d.toISOString().substring(0, 7));
@@ -273,7 +274,7 @@ export default function SalesTrackerView() {
       const label = new Date(y, mo - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
       return { month: label, value: counts[key] };
     });
-  }, [momTransactions, firstSaleData, chartMetric]);
+  }, [momTransactions, firstSaleData, chartMetric, chartMonths]);
 
   // Overdue = outstanding > 0 AND (never paid OR last payment > 60 days ago)
   const overdueRows = useMemo(() => officerRows.filter(r => {
@@ -451,16 +452,28 @@ export default function SalesTrackerView() {
                 <CardTitle className="text-base">
                   Month-over-Month — {selectedOfficer.name}
                 </CardTitle>
-                <Select value={chartMetric} onValueChange={v => setChartMetric(v as ChartMetric)}>
-                  <SelectTrigger className="h-8 w-44 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cases">Cases Sold</SelectItem>
-                    <SelectItem value="new_clients">New Clients</SelectItem>
-                    <SelectItem value="revenue">Revenue (₹)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <Select value={String(chartMonths)} onValueChange={v => setChartMonths(Number(v))}>
+                    <SelectTrigger className="h-8 w-32 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3">Last 3 months</SelectItem>
+                      <SelectItem value="6">Last 6 months</SelectItem>
+                      <SelectItem value="12">Last 12 months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={chartMetric} onValueChange={v => setChartMetric(v as ChartMetric)}>
+                    <SelectTrigger className="h-8 w-40 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new_clients">New Clients</SelectItem>
+                      <SelectItem value="cases">Cases Sold</SelectItem>
+                      <SelectItem value="revenue">Revenue (₹)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
