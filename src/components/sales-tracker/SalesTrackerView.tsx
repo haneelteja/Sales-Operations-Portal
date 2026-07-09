@@ -353,17 +353,24 @@ export default function SalesTrackerView() {
     activeOfficerIds === null ? officers : officers.filter(o => activeOfficerIds.has(o.id)),
   [officers, activeOfficerIds]);
 
-  // New Clients Overall — single line, all assigned clients
+  // New Clients Overall — single line, filtered by visibleOfficers
   const newClientsChartData = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod);
     const counts: Record<string, number> = {};
     keys.forEach(m => (counts[m] = 0));
+    const visibleIds = new Set(visibleOfficers.map(o => o.id));
     for (const d of allFirstSaleData) {
       const m = d.first_date?.substring(0, 7);
-      if (m && m in counts) counts[m] += 1;
+      if (!m || !(m in counts)) continue;
+      // When officers are toggled, only count clients belonging to visible officers
+      if (activeOfficerIds !== null) {
+        const oid = customerIdToOfficer.get(d.customer_id);
+        if (!oid || !visibleIds.has(oid)) continue;
+      }
+      counts[m] += 1;
     }
     return keys.map(key => ({ month: monthLabel(key), value: counts[key] }));
-  }, [allFirstSaleData, chartPeriod]);
+  }, [allFirstSaleData, chartPeriod, activeOfficerIds, visibleOfficers, customerIdToOfficer]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
@@ -604,8 +611,8 @@ export default function SalesTrackerView() {
                 </div>
               </div>
 
-              {/* Officer toggles — for multi-line modes */}
-              {(overviewChartType === 'cases_by_officer' || overviewChartType === 'outstanding_by_officer') && officers.length > 0 && (
+              {/* Officer toggles — all modes */}
+              {officers.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
                   {officers.map((o, idx) => {
                     const color = OFFICER_COLORS[idx % OFFICER_COLORS.length];
