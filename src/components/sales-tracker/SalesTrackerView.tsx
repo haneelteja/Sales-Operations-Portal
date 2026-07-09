@@ -40,10 +40,13 @@ interface ClientOfficerMapping {
   assigned_at: string;
 }
 
+type ChartMetric = 'cases' | 'new_clients' | 'revenue';
+
 interface MomTx {
   transaction_date: string;
   quantity: number | null;
   customer_id: string;
+  amount: number | null;
 }
 
 // ── StatCard ──────────────────────────────────────────────────────────────────
@@ -84,6 +87,7 @@ export default function SalesTrackerView() {
   const [showAssignClients, setShowAssignClients] = useState(false);
   const [newOfficerName, setNewOfficerName] = useState('');
   const [assignSearch, setAssignSearch] = useState('');
+  const [chartMetric, setChartMetric] = useState<ChartMetric>('cases');
 
   // ── Queries ─────────────────────────────────────────────────────────────────
 
@@ -178,7 +182,7 @@ export default function SalesTrackerView() {
       const from = d.toISOString().split('T')[0];
       const { data, error } = await supabase
         .from('sales_transactions')
-        .select('transaction_date, quantity, customer_id')
+        .select('transaction_date, quantity, customer_id, amount')
         .eq('transaction_type', 'sale')
         .in('customer_id', officerCustomerIds)
         .gte('transaction_date', from);
@@ -187,6 +191,28 @@ export default function SalesTrackerView() {
     },
     enabled: !!selectedOfficerId && officerCustomerIds.length > 0,
     staleTime: 0,
+  });
+
+  // First-ever sale date per customer (all time) — used for "new clients" stat and chart
+  const { data: firstSaleData = [] } = useQuery({
+    queryKey: ['officer-first-sales', selectedOfficerId, officerCustomerIds.join(',')],
+    queryFn: async (): Promise<{ customer_id: string; first_date: string }[]> => {
+      if (!officerCustomerIds.length) return [];
+      const { data, error } = await supabase
+        .from('sales_transactions')
+        .select('customer_id, transaction_date')
+        .eq('transaction_type', 'sale')
+        .in('customer_id', officerCustomerIds)
+        .order('transaction_date', { ascending: true });
+      if (error) throw error;
+      const map = new Map<string, string>();
+      for (const t of (data ?? [])) {
+        if (!map.has(t.customer_id)) map.set(t.customer_id, t.transaction_date);
+      }
+      return [...map.entries()].map(([customer_id, first_date]) => ({ customer_id, first_date }));
+    },
+    enabled: !!selectedOfficerId && officerCustomerIds.length > 0,
+    staleTime: 60000,
   });
 
   // ── Stats ────────────────────────────────────────────────────────────────────
@@ -208,30 +234,46 @@ export default function SalesTrackerView() {
       return days > 60;
     }).length;
 
-    const newThisMonth = officerMappings.filter(
-      m => (m.assigned_at ?? '').startsWith(currentMonthStr),
-    ).length;
+    const newThisMonth = firstSaleData.filter(d => d.first_date?.startsWith(currentMonthStr)).length;
 
     return { totalClients, casesThisMonth, totalOutstanding, overdueCount, newThisMonth };
-  }, [officerMappings, momTransactions, officerRows, currentMonthStr]);
+  }, [officerMappings, momTransactions, officerRows, currentMonthStr, firstSaleData]);
 
   // MoM chart: last 6 months
   const momChartData = useMemo(() => {
-    const months: Record<string, number> = {};
+    const monthKeys: string[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
-      months[d.toISOString().substring(0, 7)] = 0;
+      monthKeys.push(d.toISOString().substring(0, 7));
     }
-    for (const t of momTransactions) {
-      const m = t.transaction_date?.substring(0, 7);
-      if (m && m in months) months[m] += t.quantity ?? 0;
+    const counts: Record<string, number> = {};
+    monthKeys.forEach(m => (counts[m] = 0));
+
+    if (chartMetric === 'cases') {
+      for (const t of momTransactions) {
+        const m = t.transaction_date?.substring(0, 7);
+        if (m && m in counts) counts[m] += t.quantity ?? 0;
+      }
+    } else if (chartMetric === 'revenue') {
+      for (const t of momTransactions) {
+        const m = t.transaction_date?.substring(0, 7);
+        if (m && m in counts) counts[m] += t.amount ?? 0;
+      }
+    } else {
+      // new_clients: count clients whose first-ever sale falls in each month
+      for (const d of firstSaleData) {
+        const m = d.first_date?.substring(0, 7);
+        if (m && m in counts) counts[m] += 1;
+      }
     }
-    return Object.entries(months).map(([key, cases]) => ({
-      month: new Date(key + '-01').toLocaleString('default', { month: 'short', year: '2-digit' }),
-      cases,
-    }));
-  }, [momTransactions]);
+
+    return monthKeys.map(key => {
+      const [y, mo] = key.split('-').map(Number);
+      const label = new Date(y, mo - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
+      return { month: label, value: counts[key] };
+    });
+  }, [momTransactions, firstSaleData, chartMetric]);
 
   // Overdue = outstanding > 0 AND (never paid OR last payment > 60 days ago)
   const overdueRows = useMemo(() => officerRows.filter(r => {
@@ -402,15 +444,27 @@ export default function SalesTrackerView() {
             />
           </div>
 
-          {/* MoM Cases Chart */}
+          {/* MoM Chart */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">
-                Month-over-Month Cases — {selectedOfficer.name}
-              </CardTitle>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <CardTitle className="text-base">
+                  Month-over-Month — {selectedOfficer.name}
+                </CardTitle>
+                <Select value={chartMetric} onValueChange={v => setChartMetric(v as ChartMetric)}>
+                  <SelectTrigger className="h-8 w-44 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cases">Cases Sold</SelectItem>
+                    <SelectItem value="new_clients">New Clients</SelectItem>
+                    <SelectItem value="revenue">Revenue (₹)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
-              {momTransactions.length === 0 ? (
+              {momTransactions.length === 0 && firstSaleData.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
                   No sales data in the last 6 months
                 </p>
@@ -419,9 +473,17 @@ export default function SalesTrackerView() {
                   <BarChart data={momChartData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v: number) => [`${v} cases`, 'Cases']} />
-                    <Bar dataKey="cases" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    <YAxis tick={{ fontSize: 12 }} tickFormatter={chartMetric === 'revenue' ? (v: number) => `₹${(v / 1000).toFixed(0)}k` : undefined} />
+                    <Tooltip
+                      formatter={(v: number) =>
+                        chartMetric === 'revenue'
+                          ? [`₹${Math.round(v).toLocaleString('en-IN')}`, 'Revenue']
+                          : chartMetric === 'cases'
+                          ? [`${v} cases`, 'Cases']
+                          : [`${v} clients`, 'New Clients']
+                      }
+                    />
+                    <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
