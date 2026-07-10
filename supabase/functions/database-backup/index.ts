@@ -94,7 +94,7 @@ serve(async (req) => {
       const compressed = await compressGzip(data);
 
       // Step 2: Upload to Google Drive
-      const base64Data = btoa(String.fromCharCode(...compressed));
+      const base64Data = uint8ToBase64(compressed);
 
       const { data: uploadResult, error: uploadInvokeError } = await supabase.functions.invoke('google-drive-upload', {
         body: {
@@ -342,13 +342,34 @@ async function exportTableSQL(supabase: ReturnType<typeof createClient>, tableNa
 function toSqlLiteral(val: unknown): string {
   if (val === null || val === undefined) return 'NULL';
   if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
-  if (typeof val === 'number') return String(val);
+  if (typeof val === 'number') return isFinite(val as number) ? String(val) : 'NULL';
+  if (Array.isArray(val)) {
+    // PostgreSQL TEXT[] array literal: '{"val1","val2"}'
+    if (val.length === 0) return "'{}'";
+    const elements = val.map(el => {
+      if (el === null) return 'NULL';
+      return `"${String(el).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    });
+    return `'{${elements.join(',')}}'`;
+  }
   if (typeof val === 'object') {
-    // JSONB columns — escape single quotes and cast
-    return `'${JSON.stringify(val).replace(/'/g, "''")}'::jsonb`;
+    // JSONB columns (audit_logs.old_values / new_values, etc.)
+    return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
   }
   // Strings, UUIDs, timestamps, etc.
   return `'${String(val).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Chunked base64 encoding — avoids call-stack overflow from large spread.
+ */
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const CHUNK = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.slice(i, Math.min(i + CHUNK, bytes.length)));
+  }
+  return btoa(binary);
 }
 
 /**
