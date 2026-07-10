@@ -1,4 +1,5 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
+import { importExcelJS } from '@/lib/heavyImports';
 
 export interface LedgerTransaction {
   date: string;
@@ -69,6 +70,7 @@ export async function exportLedger(
   const COLS = 7; // A…G
 
   // ── Workbook ─────────────────────────────────────────────────────────────────
+  const ExcelJS = await importExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Aamodha Operations Portal';
   const ws = wb.addWorksheet('Ledger');

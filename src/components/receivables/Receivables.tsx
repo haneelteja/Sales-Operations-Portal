@@ -31,8 +31,7 @@ const Receivables = () => {
   const [dateFilter, setDateFilter] = useState<string>('all');
 
   // Transform sales transactions into receivables
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const receivables: ReceivableTransaction[] = salesTransactions?.map(transaction => ({
+  const receivables: ReceivableTransaction[] = useMemo(() => salesTransactions?.map(transaction => ({
     id: transaction.id,
     customer_name: transaction.customers?.client_name || 'Unknown Customer',
     area: transaction.customers?.branch || 'Unknown Branch',
@@ -40,8 +39,8 @@ const Receivables = () => {
     quantity: transaction.quantity,
     total_amount: transaction.total_amount,
     transaction_date: transaction.transaction_date,
-    status: 'pending' as const // Default status, in real app this would come from the database
-  })) || [];
+    status: 'pending' as const,
+  })) ?? [], [salesTransactions]);
 
   // Filter receivables based on search and filters (memoized for performance)
   const filteredReceivables = useMemo(() => {

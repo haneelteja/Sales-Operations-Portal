@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import { importExcelJS } from '@/lib/heavyImports';
 
 function parseDateValue(v: unknown): number {
   if (!v) return 0;
@@ -17,6 +17,7 @@ export async function exportJsonToExcel<T extends Record<string, unknown>>(
   sheetName: string,
   fileName: string
 ): Promise<void> {
+  const ExcelJS = await importExcelJS();
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet(sheetName);
 

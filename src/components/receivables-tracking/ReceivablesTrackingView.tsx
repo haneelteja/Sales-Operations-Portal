@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertCircle, TrendingUp, Download, Search, Loader2, StickyNote, X, Wallet, Receipt, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
+import { importExcelJS } from '@/lib/heavyImports';
 import { LedgerDrawer } from './LedgerDrawer';
 import { FollowupNotesDrawer } from './FollowupNotesDrawer';
 import { fetchReceivablesTracking, type RawRow, type FetchResult } from '@/lib/receivablesUtils';
@@ -19,6 +20,13 @@ import { fetchReceivablesTracking, type RawRow, type FetchResult } from '@/lib/r
 type SortCol = 'name' | 'outstanding' | 'expectedNext' | 'daysOverdue' | 'pmtStatus' | 'followup' | 'assignee';
 
 interface AssigneeEntry { name: string; bgClass: string; }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const ASSIGNEE_PALETTE_CLASSES = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-red-500', 'bg-violet-500',
+  'bg-cyan-500', 'bg-orange-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500',
+];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -49,9 +57,8 @@ export default function ReceivablesTrackingView() {
   const { data, isLoading } = useQuery<FetchResult>({
     queryKey: ['receivables-tracking'],
     queryFn: fetchReceivablesTracking,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const queryClient = useQueryClient();
@@ -81,11 +88,6 @@ export default function ReceivablesTrackingView() {
     staleTime: 60000,
   });
 
-  const ASSIGNEE_PALETTE_CLASSES = [
-    'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-red-500', 'bg-violet-500',
-    'bg-cyan-500', 'bg-orange-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500',
-  ];
-
   const assigneeList: AssigneeEntry[] = useMemo(() => {
     try {
       const parsed = JSON.parse(assigneeListRaw ?? '[]');
@@ -99,7 +101,6 @@ export default function ReceivablesTrackingView() {
     } catch {
       return [];
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assigneeListRaw]);
 
   const assigneeMap: Record<string, string> = useMemo(() => {
@@ -259,6 +260,7 @@ export default function ReceivablesTrackingView() {
   );
 
   const handleExport = async () => {
+    const ExcelJS = await importExcelJS();
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Aamodha Operations Portal';
     const ws = wb.addWorksheet('Receivables');

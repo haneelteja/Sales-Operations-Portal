@@ -38,7 +38,10 @@
       "Bash(grep -n \"^\\\\s*const.*=.*{$\\\\|^\\\\s*const.*=.*\\\\[\" src/components/sales/SalesEntry.tsx)",
       "Bash(date /t)",
       "Bash(npx shadcn@latest add command popover --yes)",
-      "Bash(npx shadcn@latest add command --yes)"
+      "Bash(npx shadcn@latest add command --yes)",
+      "Bash(xargs grep -l \"ADD COLUMN\")",
+      "Bash(xargs grep -l \"factory_payables\")",
+      "Bash(xargs grep -l \"CREATE TABLE\")"
     ]
   },
   "hooks": {

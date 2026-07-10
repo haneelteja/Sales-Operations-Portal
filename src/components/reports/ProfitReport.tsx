@@ -29,7 +29,7 @@ import { Pagination } from "@/components/ui/pagination";
 import {
   Download, ChevronDown, ChevronRight, Loader2, TrendingUp, TrendingDown,
 } from "lucide-react";
-import ExcelJS from "exceljs";
+import { importExcelJS } from '@/lib/heavyImports';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -566,6 +566,7 @@ export default function ProfitReport() {
 
   // Export handler
   const handleExport = useCallback(async () => {
+    const ExcelJS = await importExcelJS();
     const wb = new ExcelJS.Workbook();
 
     // Sheet 1: Main profit data

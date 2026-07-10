@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate, useNavigate } from 'react-router-dom';
-import Auth from '@/pages/Auth';
 import Index from '@/pages/Index';
-import ResetPassword from '@/pages/ResetPassword';
 import { Loader2 } from 'lucide-react';
+
+const Auth = lazy(() => import('@/pages/Auth'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 import { SessionWarning } from '@/components/SessionWarning';
 import { isRecoveryInProgress } from '@/lib/sessionKeys';
 
@@ -58,17 +59,17 @@ const PortalRouter: React.FC = () => {
 
   // If this is a password reset flow, show reset password page
   if (isPasswordReset) {
-    return <ResetPassword />;
+    return <Suspense fallback={null}><ResetPassword /></Suspense>;
   }
 
   // Recovery in progress: user landed from reset link but has not set new password yet — do not show portal
   if (user && typeof window !== 'undefined' && isRecoveryInProgress()) {
-    return <ResetPassword />;
+    return <Suspense fallback={null}><ResetPassword /></Suspense>;
   }
 
   // If not authenticated, show login page
   if (!user) {
-    return <Auth />;
+    return <Suspense fallback={null}><Auth /></Suspense>;
   }
 
   // If user requires password reset (first login with temporary password), redirect to Auth page

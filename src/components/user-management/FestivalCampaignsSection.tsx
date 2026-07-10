@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import ExcelJS from 'exceljs';
+import { importExcelJS } from '@/lib/heavyImports';
 import {
   Loader2,
   Upload,
@@ -174,6 +174,7 @@ const CampaignRecipients: React.FC<{ campaignId: string; campaignName: string }>
   const exportExcel = async () => {
     setExporting(true);
     try {
+      const ExcelJS = await importExcelJS();
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Recipients');
 

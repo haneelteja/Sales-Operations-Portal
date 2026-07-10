@@ -92,10 +92,6 @@ export default defineConfig(({ mode }) => ({
     dedupe: ["react", "react-dom", "@tanstack/react-query"],
   },
 
-  optimizeDeps: {
-    exclude: ["react", "react-dom"],
-  },
-
   build: {
     rollupOptions: {
       output: {

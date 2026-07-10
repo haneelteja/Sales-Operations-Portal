@@ -82,7 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const { data: rows, error: userError } = await supabase
         .from('user_management')
-        .select('*')
+        .select('id, user_id, username, email, associated_clients, associated_branches, status, role, created_by, last_login, created_at, updated_at')
         .or(orFilter)
         .limit(2);
 
@@ -95,7 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Fall back to profiles table
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, user_id, username, email, associated_clients, associated_branches, status, role, created_by, last_login, created_at, updated_at')
         .eq('id', userId)
         .maybeSingle();
 

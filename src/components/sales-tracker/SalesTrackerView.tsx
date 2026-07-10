@@ -172,7 +172,7 @@ export default function SalesTrackerView() {
     queryKey: ['sales-officers'],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any).from('sales_officers').select('*').eq('is_active', true).order('name');
+      const { data, error } = await (supabase as any).from('sales_officers').select('id, name, is_active').eq('is_active', true).order('name');
       if (error) throw error;
       return (data ?? []) as SalesOfficer[];
     },
@@ -183,7 +183,7 @@ export default function SalesTrackerView() {
     queryKey: ['customer-sales-officer'],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any).from('customer_sales_officer').select('*');
+      const { data, error } = await (supabase as any).from('customer_sales_officer').select('customer_id, officer_id, client_name, branch');
       if (error) throw error;
       return (data ?? []) as ClientOfficerMapping[];
     },
@@ -193,9 +193,8 @@ export default function SalesTrackerView() {
   const { data: receivablesData, isLoading: receivablesLoading } = useQuery({
     queryKey: ['receivables-tracking'],
     queryFn: fetchReceivablesTracking,
-    staleTime: 0,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: allClientPairs = [] } = useQuery({
