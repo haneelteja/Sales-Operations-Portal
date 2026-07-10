@@ -689,33 +689,6 @@ const FactoryPayables = () => {
         });
 
       if (error) throw error;
-
-      // Auto-reduce plant stock for this SKU if any stock exists
-      const { data: latestStock } = await supabase
-        .from("factory_payables")
-        .select("quantity")
-        .eq("transaction_type", "plant_stock")
-        .eq("sku", data.sku)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (latestStock !== null) {
-        const currentQty = latestStock.quantity || 0;
-        const newQty = Math.max(0, currentQty - dispatchedQty);
-        const { error: stockError } = await supabase
-          .from("factory_payables")
-          .insert({
-            sku: data.sku,
-            quantity: newQty,
-            description: `Auto-deducted: ${dispatchedQty} cases dispatched`,
-            transaction_date: data.transaction_date,
-            transaction_type: "plant_stock",
-            amount: 0,
-            customer_id: null,
-          });
-        if (stockError) throw stockError;
-      }
     },
     onSuccess: (_result, variables) => {
       log({ action: 'CREATE', entityType: 'factory_production', description: `Factory production recorded: ${variables.quantity} cases of ${variables.sku} on ${variables.transaction_date}`, newValues: { sku: variables.sku, quantity: variables.quantity, date: variables.transaction_date } });

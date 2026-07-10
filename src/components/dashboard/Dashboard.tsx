@@ -144,6 +144,8 @@ const Dashboard = memo(() => {
       history[key].push({ quantity: row.quantity, transaction_date: row.transaction_date });
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
+        // Skip orphaned rows that have no client name (customer_id missing or deleted)
+        if (!row.clientName) continue;
         current.push({ key, clientName: row.clientName, sku: row.sku, quantity: row.quantity, transaction_date: row.transaction_date });
       }
     }
