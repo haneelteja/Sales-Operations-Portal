@@ -383,6 +383,42 @@ export default function SalesTrackerView() {
     activeOfficerIds === null ? officers : officers.filter(o => activeOfficerIds.has(o.id)),
   [officers, activeOfficerIds]);
 
+  // Client detail lookup for tooltips: monthLabel → officerId → [{dealerName, branch}]
+  const newClientsDetailByLabel = useMemo(() => {
+    const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
+    const result = new Map<string, Map<string, Array<{ dealerName: string; branch: string }>>>();
+    for (const k of keys) result.set(monthLabel(k), new Map());
+    const customerInfo = new Map<string, { dealerName: string; branch: string }>();
+    for (const r of (receivablesData?.rows ?? [])) customerInfo.set(r.customerId, { dealerName: r.dealerName, branch: r.branch });
+    for (const d of allFirstSaleData) {
+      const m = d.first_date?.substring(0, 7);
+      if (!m) continue;
+      const lbl = monthLabel(m);
+      if (!result.has(lbl)) continue;
+      const oid = customerIdToOfficer.get(d.customer_id);
+      if (!oid) continue;
+      if (activeOfficerIds !== null && !activeOfficerIds.has(oid)) continue;
+      const om = result.get(lbl)!;
+      if (!om.has(oid)) om.set(oid, []);
+      const info = customerInfo.get(d.customer_id);
+      if (info) om.get(oid)!.push(info);
+    }
+    return result;
+  }, [allFirstSaleData, chartPeriod, customStartDate, customEndDate, receivablesData, customerIdToOfficer, activeOfficerIds]);
+
+  // Client detail lookup for outstanding tooltip: officerId → [{dealerName, branch, outstanding}]
+  const officerClientsDetail = useMemo(() => {
+    const result = new Map<string, Array<{ dealerName: string; branch: string; outstanding: number }>>();
+    for (const o of officers) result.set(o.id, []);
+    for (const r of (receivablesData?.rows ?? [])) {
+      const k = `${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`;
+      const oid = mappingByKey.get(k);
+      if (oid && result.has(oid)) result.get(oid)!.push({ dealerName: r.dealerName, branch: r.branch, outstanding: r.outstanding });
+    }
+    for (const [, clients] of result) clients.sort((a, b) => b.outstanding - a.outstanding);
+    return result;
+  }, [officers, receivablesData, mappingByKey]);
+
   // New Clients Overall — line (total) + per-officer breakdown for tooltip
   const newClientsByOfficerData = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
@@ -768,27 +804,40 @@ export default function SalesTrackerView() {
                         if (!active || !label) return null;
                         const row = newClientsByOfficerData.find(r => r.month === label);
                         if (!row) return null;
-                        const officerRows = visibleOfficers
+                        const detailMap = newClientsDetailByLabel.get(label);
+                        const officerBreakdown = visibleOfficers
                           .map((o, idx) => ({
+                            id: o.id,
                             name: o.name,
                             value: (row[o.id] as number) ?? 0,
                             color: OFFICER_COLORS[officers.findIndex(x => x.id === o.id) % OFFICER_COLORS.length],
+                            clients: detailMap?.get(o.id) ?? [],
                           }))
                           .filter(r => r.value > 0);
                         return (
-                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[160px]">
+                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[200px] max-w-[280px]">
                             <p className="font-semibold text-slate-700 mb-2 border-b border-slate-100 pb-1.5">{label}</p>
                             <div className="flex items-center gap-2 mb-2">
                               <span className="text-slate-500">Total new clients</span>
                               <span className="font-bold text-slate-800 ml-auto">{row['total'] as number}</span>
                             </div>
-                            {officerRows.length > 0 && (
-                              <div className="border-t border-slate-100 pt-1.5 space-y-1">
-                                {officerRows.map(r => (
-                                  <div key={r.name} className="flex items-center gap-2">
-                                    <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
-                                    <span className="text-slate-500 truncate max-w-[110px]">{r.name}</span>
-                                    <span className="font-semibold text-slate-800 ml-auto pl-2">{r.value}</span>
+                            {officerBreakdown.length > 0 && (
+                              <div className="border-t border-slate-100 pt-1.5 space-y-2.5">
+                                {officerBreakdown.map(r => (
+                                  <div key={r.id}>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                                      <span className="font-semibold text-slate-700">{r.name}</span>
+                                      <span className="ml-auto font-bold text-slate-800">{r.value}</span>
+                                    </div>
+                                    {r.clients.map((c, ci) => (
+                                      <div key={ci} className="flex items-start gap-1.5 pl-3.5 mb-0.5">
+                                        <span className="text-slate-300 mt-px">•</span>
+                                        <span className="text-slate-500 leading-tight">
+                                          {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                        </span>
+                                      </div>
+                                    ))}
                                   </div>
                                 ))}
                               </div>
@@ -815,13 +864,46 @@ export default function SalesTrackerView() {
                     <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <Tooltip
                       cursor={{ fill: 'rgba(100,116,139,0.06)' }}
-                      content={({ active, payload, label }) => (
-                        <ChartTooltip
-                          active={active}
-                          payload={payload?.map(p => ({ name: officers.find(o => o.id === String(p.dataKey))?.name ?? String(p.dataKey), value: p.value as number, color: p.color ?? '#888' }))}
-                          label={label}
-                        />
-                      )}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        const officerEntries = payload
+                          .map(p => {
+                            const o = officers.find(x => x.id === String(p.dataKey));
+                            return o ? { id: o.id, name: o.name, value: p.value as number, color: p.color ?? '#888', clients: officerClientsDetail.get(o.id) ?? [] } : null;
+                          })
+                          .filter((e): e is NonNullable<typeof e> => e !== null && e.value > 0);
+                        const total = officerEntries.reduce((s, e) => s + e.value, 0);
+                        return (
+                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[200px] max-w-[280px]">
+                            <p className="font-semibold text-slate-700 mb-2 border-b border-slate-100 pb-1.5">{label}</p>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-slate-500">Total cases</span>
+                              <span className="font-bold text-slate-800 ml-auto">{total.toLocaleString('en-IN')}</span>
+                            </div>
+                            {officerEntries.length > 0 && (
+                              <div className="border-t border-slate-100 pt-1.5 space-y-2.5">
+                                {officerEntries.map(e => (
+                                  <div key={e.id}>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: e.color }} />
+                                      <span className="font-semibold text-slate-700">{e.name}</span>
+                                      <span className="ml-auto font-bold text-slate-800">{e.value.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    {e.clients.map((c, ci) => (
+                                      <div key={ci} className="flex items-start gap-1.5 pl-3.5 mb-0.5">
+                                        <span className="text-slate-300 mt-px">•</span>
+                                        <span className="text-slate-500 leading-tight">
+                                          {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }}
                     />
                     <Legend
                       formatter={(value) => <span className="text-xs text-slate-600">{officers.find(o => o.id === value)?.name ?? value}</span>}
@@ -859,10 +941,32 @@ export default function SalesTrackerView() {
                       content={({ active, payload, label }) => {
                         if (!active || !payload?.length) return null;
                         const entry = outstandingBarData.find(d => d.name === label);
+                        const clients = entry ? (officerClientsDetail.get(entry.officer_id) ?? []) : [];
                         return (
-                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs">
-                            <p className="font-semibold text-slate-700 mb-1">{entry?.fullName ?? label}</p>
-                            <p className="text-slate-600">{fmtINR(payload[0].value as number)}</p>
+                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[210px] max-w-[290px]">
+                            <p className="font-semibold text-slate-700 mb-1.5 border-b border-slate-100 pb-1.5">{entry?.fullName ?? label}</p>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-slate-500">Total outstanding</span>
+                              <span className="font-bold text-slate-800 ml-auto">{fmtINR(payload[0].value as number)}</span>
+                            </div>
+                            {clients.length > 0 && (
+                              <div className="border-t border-slate-100 pt-1.5">
+                                <p className="text-slate-400 mb-1.5">{clients.length} client{clients.length !== 1 ? 's' : ''}</p>
+                                <div className="space-y-1 max-h-48 overflow-y-auto">
+                                  {clients.map((c, ci) => (
+                                    <div key={ci} className="flex items-start gap-1.5">
+                                      <span className="text-slate-300 mt-px">•</span>
+                                      <span className="text-slate-500 flex-1 leading-tight">
+                                        {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                      </span>
+                                      {c.outstanding > 0 && (
+                                        <span className="font-semibold text-slate-700 ml-2 whitespace-nowrap">{fmtINR(c.outstanding)}</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       }}
