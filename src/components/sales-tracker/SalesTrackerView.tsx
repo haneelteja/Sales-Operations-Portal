@@ -183,7 +183,7 @@ export default function SalesTrackerView() {
     queryKey: ['customer-sales-officer'],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any).from('customer_sales_officer').select('customer_id, officer_id, client_name, branch');
+      const { data, error } = await (supabase as any).from('customer_sales_officer').select('customer_id, officer_id, client_name, branch, assigned_at');
       if (error) throw error;
       return (data ?? []) as ClientOfficerMapping[];
     },
@@ -313,22 +313,7 @@ export default function SalesTrackerView() {
     staleTime: 0,
   });
 
-  // All-time first sale dates for all mapped customers (for New Clients chart)
-  const { data: allFirstSaleData = [] } = useQuery({
-    queryKey: ['all-first-sales', allMappedCustomerIds.join(',')],
-    queryFn: async (): Promise<{ customer_id: string; first_date: string }[]> => {
-      if (!allMappedCustomerIds.length) return [];
-      const { data, error } = await supabase
-        .from('sales_transactions').select('customer_id, transaction_date')
-        .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).order('transaction_date', { ascending: true }).limit(10000);
-      if (error) throw error;
-      const map = new Map<string, string>();
-      for (const t of (data ?? [])) { if (!map.has(t.customer_id)) map.set(t.customer_id, t.transaction_date); }
-      return [...map.entries()].map(([customer_id, first_date]) => ({ customer_id, first_date }));
-    },
-    enabled: !selectedOfficerId && allMappedCustomerIds.length > 0,
-    staleTime: 60000,
-  });
+  // (allFirstSaleData removed — New Clients chart now uses assigned_at from allMappings)
 
   // ── Stats ─────────────────────────────────────────────────────────────────
 
@@ -384,27 +369,23 @@ export default function SalesTrackerView() {
   [officers, activeOfficerIds]);
 
   // Client detail lookup for tooltips: monthLabel → officerId → [{dealerName, branch}]
+  // Uses assigned_at from allMappings so the chart shows when officers onboarded clients,
+  // not the historical first-ever-sale date (which predates the sales tracker for all existing clients).
   const newClientsDetailByLabel = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
     const result = new Map<string, Map<string, Array<{ dealerName: string; branch: string }>>>();
     for (const k of keys) result.set(monthLabel(k), new Map());
-    const customerInfo = new Map<string, { dealerName: string; branch: string }>();
-    for (const r of (receivablesData?.rows ?? [])) customerInfo.set(r.customerId, { dealerName: r.dealerName, branch: r.branch });
-    for (const d of allFirstSaleData) {
-      const m = d.first_date?.substring(0, 7);
-      if (!m) continue;
-      const lbl = monthLabel(m);
+    for (const m of allMappings) {
+      if (!m.assigned_at) continue;
+      const lbl = monthLabel(m.assigned_at.substring(0, 7));
       if (!result.has(lbl)) continue;
-      const oid = customerIdToOfficer.get(d.customer_id);
-      if (!oid) continue;
-      if (activeOfficerIds !== null && !activeOfficerIds.has(oid)) continue;
+      if (activeOfficerIds !== null && !activeOfficerIds.has(m.officer_id)) continue;
       const om = result.get(lbl)!;
-      if (!om.has(oid)) om.set(oid, []);
-      const info = customerInfo.get(d.customer_id);
-      if (info) om.get(oid)!.push(info);
+      if (!om.has(m.officer_id)) om.set(m.officer_id, []);
+      om.get(m.officer_id)!.push({ dealerName: m.client_name, branch: m.branch ?? '' });
     }
     return result;
-  }, [allFirstSaleData, chartPeriod, customStartDate, customEndDate, receivablesData, customerIdToOfficer, activeOfficerIds]);
+  }, [allMappings, chartPeriod, customStartDate, customEndDate, activeOfficerIds]);
 
   // Client detail lookup for outstanding tooltip: officerId → [{dealerName, branch, outstanding}]
   const officerClientsDetail = useMemo(() => {
@@ -420,6 +401,7 @@ export default function SalesTrackerView() {
   }, [officers, receivablesData, mappingByKey]);
 
   // New Clients Overall — line (total) + per-officer breakdown for tooltip
+  // Uses assigned_at from allMappings (when the officer was assigned each client).
   const newClientsByOfficerData = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
     const data: Record<string, Record<string, number>> = {};
@@ -427,12 +409,11 @@ export default function SalesTrackerView() {
       data[k] = {};
       for (const o of visibleOfficers) data[k][o.id] = 0;
     }
-    for (const d of allFirstSaleData) {
-      const m = d.first_date?.substring(0, 7);
-      if (!m || !(m in data)) continue;
-      const oid = customerIdToOfficer.get(d.customer_id);
-      if (!oid || data[m][oid] === undefined) continue;
-      data[m][oid] += 1;
+    for (const m of allMappings) {
+      if (!m.assigned_at) continue;
+      const month = m.assigned_at.substring(0, 7);
+      if (!(month in data) || data[month][m.officer_id] === undefined) continue;
+      data[month][m.officer_id] += 1;
     }
     return keys.map(key => {
       const row: Record<string, string | number> = { month: monthLabel(key) };
@@ -445,37 +426,29 @@ export default function SalesTrackerView() {
       row['total'] = total;
       return row;
     });
-  }, [allFirstSaleData, chartPeriod, customStartDate, customEndDate, visibleOfficers, customerIdToOfficer]);
+  }, [allMappings, chartPeriod, customStartDate, customEndDate, visibleOfficers]);
 
-  // New clients table — grouped by year/month, with officer and onboarding date
+  // New clients table — grouped by year/month with officer and assignment date
   const newClientsTableData = useMemo(() => {
     const keySet = new Set(buildMonthKeys(chartPeriod, customStartDate, customEndDate));
-    // customer_id → { dealerName, branch }
-    const customerInfo = new Map<string, { dealerName: string; branch: string }>();
-    for (const r of (receivablesData?.rows ?? [])) customerInfo.set(r.customerId, { dealerName: r.dealerName, branch: r.branch });
 
-    const entries = allFirstSaleData
-      .filter(d => {
-        const m = d.first_date?.substring(0, 7);
-        if (!m || !keySet.has(m)) return false;
-        if (activeOfficerIds !== null) {
-          const oid = customerIdToOfficer.get(d.customer_id);
-          if (!oid || !activeOfficerIds.has(oid)) return false;
-        }
+    const entries = allMappings
+      .filter(m => {
+        if (!m.assigned_at) return false;
+        if (!keySet.has(m.assigned_at.substring(0, 7))) return false;
+        if (activeOfficerIds !== null && !activeOfficerIds.has(m.officer_id)) return false;
         return true;
       })
-      .map(d => {
-        const info = customerInfo.get(d.customer_id);
-        const oid = customerIdToOfficer.get(d.customer_id);
-        const officerName = officers.find(o => o.id === oid)?.name ?? '—';
-        const monthKey = d.first_date?.substring(0, 7) ?? '';
+      .map(m => {
+        const officerName = officers.find(o => o.id === m.officer_id)?.name ?? '—';
+        const monthKey = m.assigned_at!.substring(0, 7);
         const [y, mo] = monthKey.split('-').map(Number);
         return {
-          dealerName: info?.dealerName ?? 'Unknown',
-          branch: info?.branch ?? '',
+          dealerName: m.client_name,
+          branch: m.branch ?? '',
           officerName,
-          officerId: oid ?? '',
-          first_date: d.first_date ?? '',
+          officerId: m.officer_id,
+          first_date: m.assigned_at!,
           monthKey,
           year: y,
           month: mo,
@@ -483,7 +456,6 @@ export default function SalesTrackerView() {
       })
       .sort((a, b) => a.first_date.localeCompare(b.first_date));
 
-    // Group: year → monthKey → entries[]
     const grouped = new Map<number, Map<string, typeof entries>>();
     for (const e of entries) {
       if (!grouped.has(e.year)) grouped.set(e.year, new Map());
@@ -492,7 +464,7 @@ export default function SalesTrackerView() {
       yg.get(e.monthKey)!.push(e);
     }
     return grouped;
-  }, [allFirstSaleData, chartPeriod, customStartDate, customEndDate, receivablesData, activeOfficerIds, customerIdToOfficer, officers]);
+  }, [allMappings, chartPeriod, customStartDate, customEndDate, activeOfficerIds, officers]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
@@ -658,7 +630,7 @@ export default function SalesTrackerView() {
   // ── Overview chart labels ─────────────────────────────────────────────────
 
   const overviewChartMeta = {
-    new_clients:          { label: 'New Clients Overall',       sub: 'First-time sales per month across all officers' },
+    new_clients:          { label: 'New Clients Overall',       sub: 'Clients assigned to officers per month' },
     cases_by_officer:     { label: 'Cases Trend by Officer',    sub: 'Month-over-month cases, one line per officer' },
     outstanding_by_officer: { label: 'Outstanding by Officer',  sub: 'Current outstanding balance per officer' },
   } as const;
@@ -990,9 +962,9 @@ export default function SalesTrackerView() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold text-gray-900">
-                  New Clients — Onboarding Details
+                  New Clients — Assignment Details
                   <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    (first sale per client in selected period)
+                    (clients assigned to officers in selected period)
                   </span>
                 </CardTitle>
               </CardHeader>
@@ -1014,7 +986,7 @@ export default function SalesTrackerView() {
                               <TableHead>Client</TableHead>
                               <TableHead>Branch</TableHead>
                               <TableHead>Sales Officer</TableHead>
-                              <TableHead>Onboarding Date</TableHead>
+                              <TableHead>Assigned Date</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
