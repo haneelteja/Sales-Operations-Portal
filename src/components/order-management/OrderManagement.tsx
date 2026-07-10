@@ -1702,7 +1702,6 @@ const OrderManagement: React.FC = () => {
                   id="dispatch-cases"
                   type="number"
                   min={1}
-                  max={dispatchModal.order.number_of_cases}
                   value={dispatchModal.casesToDispatch}
                   onChange={(e) =>
                     setDispatchModal((prev) => ({ ...prev, casesToDispatch: e.target.value }))
@@ -1715,6 +1714,13 @@ const OrderManagement: React.FC = () => {
                     return (
                       <p className="text-xs text-amber-600">
                         Partial dispatch — {total - cases} case{total - cases === 1 ? "" : "s"} will remain in Current Orders.
+                      </p>
+                    );
+                  }
+                  if (!isNaN(cases) && cases > total) {
+                    return (
+                      <p className="text-xs text-blue-600">
+                        Over-dispatch — {cases - total} case{cases - total === 1 ? "" : "s"} above the ordered quantity. Order will be closed.
                       </p>
                     );
                   }
@@ -1733,10 +1739,6 @@ const OrderManagement: React.FC = () => {
                 const cases = parseInt(dispatchModal.casesToDispatch);
                 if (isNaN(cases) || cases <= 0) {
                   toast({ title: "Validation Error", description: "Enter a valid number of cases", variant: "destructive" });
-                  return;
-                }
-                if (cases > dispatchModal.order.number_of_cases) {
-                  toast({ title: "Validation Error", description: `Cannot dispatch more than ${dispatchModal.order.number_of_cases} cases`, variant: "destructive" });
                   return;
                 }
                 dispatchOrderMutation.mutate({ orderId: dispatchModal.order.id, casesToDispatch: cases });
