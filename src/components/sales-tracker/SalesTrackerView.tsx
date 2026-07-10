@@ -183,7 +183,7 @@ export default function SalesTrackerView() {
     queryKey: ['customer-sales-officer'],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any).from('customer_sales_officer').select('customer_id, officer_id, client_name, branch, assigned_at');
+      const { data, error } = await (supabase as any).from('customer_sales_officer').select('officer_id, client_name, branch, assigned_at');
       if (error) throw error;
       return (data ?? []) as ClientOfficerMapping[];
     },
