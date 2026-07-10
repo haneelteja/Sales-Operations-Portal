@@ -85,32 +85,8 @@ serve(async (req) => {
     const logId = logEntry.id;
 
     try {
-      // Step 1: Generate database dump
-      // Note: In Supabase, we need to use pg_dump via connection string
-      // For Edge Functions, we'll use Supabase's database connection
-      const dbUrl = Deno.env.get('DATABASE_URL') || Deno.env.get('SUPABASE_DB_URL');
-      
-      if (!dbUrl) {
-        throw new Error('Database URL not configured. Set DATABASE_URL or SUPABASE_DB_URL in Edge Function secrets.');
-      }
-
-      // Use pg_dump command (requires Deno exec or external service)
-      // For now, we'll use Supabase's REST API to export data
-      // This is a simplified approach - full pg_dump requires database access
-      
-      // Alternative: Use Supabase's database dump API if available
-      // Or use a PostgreSQL client library to generate dump
-      
-      // For production, consider using Supabase's built-in backup feature
-      // or a dedicated backup service
-      
-      // Placeholder: Generate a backup file
-      // In production, replace this with actual pg_dump execution
-      const backupContent = `-- Database Backup
--- Generated: ${new Date().toISOString()}
--- This is a placeholder backup file
--- Replace with actual pg_dump output in production
-`;
+      // Step 1: Export all tables via Supabase service-role client → SQL dump
+      const backupContent = await generateDatabaseSQL(supabase);
 
       // Compress backup (using Deno's built-in compression)
       const encoder = new TextEncoder();
@@ -231,6 +207,149 @@ serve(async (req) => {
     );
   }
 });
+
+// ── All tables in the database (order matters for FK restore) ─────────────────
+const TABLES_TO_BACKUP = [
+  // Config / master data (no FK dependencies)
+  'profiles',
+  'invoice_configurations',
+  'sku_configurations',
+  'factory_pricing',
+  'label_vendors',
+  'sales_officers',
+  'whatsapp_templates',
+  'email_report_schedules',
+  'payment_reminder_schedules',
+  'saved_filters',
+  'user_management',
+
+  // Customer master
+  'customers',
+
+  // Transactional tables
+  'sales_transactions',
+  'factory_payables',
+  'transport_expenses',
+  'orders',
+  'orders_dispatch',
+  'invoices',
+  'invoice_number_sequence',
+  'label_purchases',
+  'label_payments',
+  'back_label_purchases',
+  'label_availabilities',
+  'material_purchases',
+  'misc_expenses',
+
+  // Client relationship tables
+  'customer_sales_officer',
+  'customer_back_label_history',
+  'customer_assignee',
+  'client_followups',
+  'client_followup_notes',
+  'client_contacts',
+  'client_commissions',
+
+  // Campaign / communication tables
+  'festival_campaigns',
+  'festival_campaign_recipients',
+  'payment_reminder_logs',
+  'email_report_logs',
+  'whatsapp_message_logs',
+
+  // System / audit tables
+  'audit_logs',
+  'backup_logs',
+  'bulk_operations',
+  'production',
+];
+
+/**
+ * Export every table as SQL INSERT statements, wrapped in a transaction
+ * with FK checks disabled so restore order doesn't matter.
+ */
+async function generateDatabaseSQL(supabase: ReturnType<typeof createClient>): Promise<string> {
+  const generated = new Date().toISOString();
+  let sql = `-- Aamodha Operations Portal — Full Database Backup\n`;
+  sql += `-- Generated: ${generated}\n`;
+  sql += `-- Tables included: ${TABLES_TO_BACKUP.length}\n`;
+  sql += `-- Restore: psql -d <database> -f <this_file>\n`;
+  sql += `-- =============================================================\n\n`;
+  sql += `BEGIN;\n\n`;
+  sql += `-- Disable FK checks so tables can be restored in any order\n`;
+  sql += `SET session_replication_role = replica;\n`;
+
+  for (const table of TABLES_TO_BACKUP) {
+    sql += await exportTableSQL(supabase, table);
+  }
+
+  sql += `\n-- Re-enable FK checks\n`;
+  sql += `SET session_replication_role = DEFAULT;\n\n`;
+  sql += `COMMIT;\n`;
+  return sql;
+}
+
+/**
+ * Export one table as DELETE + INSERT statements.
+ * Uses paginated SELECT to handle any number of rows.
+ */
+async function exportTableSQL(supabase: ReturnType<typeof createClient>, tableName: string): Promise<string> {
+  const PAGE = 1000;
+  let out = `\n-- -------------------------------------------------------------\n`;
+  out += `-- TABLE: ${tableName}\n`;
+  out += `-- -------------------------------------------------------------\n`;
+
+  const allRows: Record<string, unknown>[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .range(offset, offset + PAGE - 1);
+
+    if (error) {
+      out += `-- SKIPPED (error: ${error.message})\n`;
+      return out;
+    }
+
+    if (!data || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  if (allRows.length === 0) {
+    out += `-- (empty)\n`;
+    return out;
+  }
+
+  const cols = Object.keys(allRows[0]);
+  const colList = cols.map(c => `"${c}"`).join(', ');
+
+  out += `DELETE FROM public."${tableName}";\n`;
+  for (const row of allRows) {
+    const vals = cols.map(c => toSqlLiteral(row[c])).join(', ');
+    out += `INSERT INTO public."${tableName}" (${colList}) VALUES (${vals});\n`;
+  }
+  out += `-- ${allRows.length} row(s)\n`;
+  return out;
+}
+
+/**
+ * Convert a JS value to a safe PostgreSQL literal.
+ */
+function toSqlLiteral(val: unknown): string {
+  if (val === null || val === undefined) return 'NULL';
+  if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    // JSONB columns — escape single quotes and cast
+    return `'${JSON.stringify(val).replace(/'/g, "''")}'::jsonb`;
+  }
+  // Strings, UUIDs, timestamps, etc.
+  return `'${String(val).replace(/'/g, "''")}'`;
+}
 
 /**
  * Get current date and time in IST (UTC+5:30) for backup filename
