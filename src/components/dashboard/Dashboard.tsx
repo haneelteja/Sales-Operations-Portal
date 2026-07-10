@@ -200,11 +200,13 @@ const Dashboard = memo(() => {
           .from("factory_payables")
           .select("customer_id, sku, quantity, customers(client_name, branch)")
           .eq("transaction_type", "production")
-          .not("customer_id", "is", null),
+          .not("customer_id", "is", null)
+          .limit(10000),
         supabase
           .from("sales_transactions")
           .select("customer_id, sku, quantity, transaction_type, customers(client_name, branch)")
-          .in("transaction_type", ["sale", "stock_adjustment"]),
+          .in("transaction_type", ["sale", "stock_adjustment"])
+          .limit(10000),
       ]);
 
       // Group production by (client_name, branch, sku)
