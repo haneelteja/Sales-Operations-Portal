@@ -21,6 +21,7 @@ const invalidationMap: Record<string, string[]> = {
     'customer-receivables',
     'dashboard-aggregates',
     'client-report',
+    'plant-stock-dashboard',
   ],
   'customers': [
     'customers',
@@ -36,6 +37,7 @@ const invalidationMap: Record<string, string[]> = {
     'factory-report',
     'dashboard-aggregates',
     'production-records',
+    'plant-stock-dashboard',
   ],
   'transport_expenses': [
     'transport-expenses',
