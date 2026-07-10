@@ -494,14 +494,15 @@ const FactoryPayables = () => {
   // Latest plant stock per client+SKU (for display in Plant Stock tab)
   const currentPlantStock = useMemo(() => {
     if (!transactions) return [];
-    const latestByKey = new Map<string, { sku: string; quantity: number; transaction_date: string; clientName: string }>();
+    const latestByKey = new Map<string, { customer_id: string; sku: string; quantity: number; transaction_date: string; clientName: string }>();
     transactions
-      .filter(t => t.transaction_type === 'plant_stock' && t.sku)
+      .filter(t => t.transaction_type === 'plant_stock' && t.sku && t.customer_id)
       .forEach(t => {
-        const key = `${t.customer_id ?? ''}|||${t.sku!}`;
+        const key = `${t.customer_id!}|||${t.sku!}`;
         if (!latestByKey.has(key)) {
-          const clientName = t.customer_id ? (customerById[t.customer_id]?.client_name ?? '') : '';
-          latestByKey.set(key, { sku: t.sku!, quantity: t.quantity || 0, transaction_date: t.transaction_date, clientName });
+          const clientName = customerById[t.customer_id!]?.client_name ?? '';
+          if (!clientName) return; // skip orphaned rows with no matching customer
+          latestByKey.set(key, { customer_id: t.customer_id!, sku: t.sku!, quantity: t.quantity || 0, transaction_date: t.transaction_date, clientName });
         }
       });
     return Array.from(latestByKey.values()).sort((a, b) =>
@@ -1094,7 +1095,7 @@ const FactoryPayables = () => {
 
         <TabsContent value="plant-stock">
           <div className="border rounded-lg p-6 space-y-6">
-            <div>
+            <div id="plant-stock-form">
               <h3 className="text-lg font-semibold mb-4">Record Plant Stock (Fresh Count)</h3>
               <form onSubmit={handlePlantStockSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1155,6 +1156,9 @@ const FactoryPayables = () => {
 
             <div>
               <h3 className="text-lg font-semibold mb-3">Current Stock at Plant</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Click <span className="font-medium">Adjust</span> on any row to pre-fill the form above with that client's current count — change the quantity and submit.
+              </p>
               {currentPlantStock.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No plant stock recorded yet.</p>
               ) : (
@@ -1166,12 +1170,13 @@ const FactoryPayables = () => {
                         <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">SKU</TableHead>
                         <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4 text-center">Current Qty (Cases)</TableHead>
                         <TableHead className="font-semibold text-slate-700 text-xs uppercase tracking-widest py-3 px-4">Last Updated</TableHead>
+                        <TableHead className="py-3 px-4 w-20" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {currentPlantStock.map((stock, i) => (
                         <TableRow key={i}>
-                          <TableCell className="font-medium">{stock.clientName || '—'}</TableCell>
+                          <TableCell className="font-medium">{stock.clientName}</TableCell>
                           <TableCell>{stock.sku}</TableCell>
                           <TableCell className="text-center">
                             <span className={`font-semibold ${stock.quantity === 0 ? 'text-muted-foreground' : 'text-blue-700'}`}>
@@ -1180,6 +1185,25 @@ const FactoryPayables = () => {
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
                             {new Date(stock.transaction_date).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell className="px-4">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setPlantStockForm({
+                                  customer_id: stock.customer_id,
+                                  sku: stock.sku,
+                                  quantity: String(stock.quantity),
+                                  description: '',
+                                  transaction_date: new Date().toISOString().split('T')[0],
+                                });
+                                document.getElementById('plant-stock-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }}
+                            >
+                              Adjust
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
