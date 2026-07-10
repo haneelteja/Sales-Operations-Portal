@@ -117,7 +117,8 @@ const BackLabels = () => {
       const { data, error } = await supabase
         .from("back_label_purchases")
         .select("id, purchase_date, quantity, cost_per_label, total_amount, vendor_id, description")
-        .order("purchase_date", { ascending: false });
+        .order("purchase_date", { ascending: false })
+        .limit(10000);
       if (error) throw error;
       return (data || []) as BackLabelPurchase[];
     },
@@ -131,7 +132,8 @@ const BackLabels = () => {
         .select("id, client_name, requires_back_label, effective_from, created_at")
         .order("client_name", { ascending: true })
         .order("effective_from", { ascending: false })
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(10000);
       if (error) throw error;
       return (data || []) as HistoryRow[];
     },
@@ -155,7 +157,8 @@ const BackLabels = () => {
       const { data, error } = await supabase
         .from("factory_payables")
         .select("customer_id, transaction_date, sku, quantity")
-        .eq("transaction_type", "production");
+        .eq("transaction_type", "production")
+        .limit(10000);
       if (error) throw error;
       return data || [];
     },

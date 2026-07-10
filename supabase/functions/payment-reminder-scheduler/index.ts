@@ -133,7 +133,8 @@ serve(async (req) => {
     const { data: schedules, error: schedulesError } = await supabase
       .from('payment_reminder_schedules')
       .select('*')
-      .eq('is_enabled', true);
+      .eq('is_enabled', true)
+      .limit(10000);
 
     if (schedulesError) throw new Error(`Failed to fetch schedules: ${schedulesError.message}`);
 
@@ -178,7 +179,8 @@ serve(async (req) => {
     // All customer rows → id-to-name map
     const { data: allCustomers, error: custError } = await supabase
       .from('customers')
-      .select('id, client_name, whatsapp_number, is_active');
+      .select('id, client_name, whatsapp_number, is_active')
+      .limit(10000);
     if (custError) throw new Error(`Failed to fetch customers: ${custError.message}`);
 
     const idToDealerName = new Map<string, string>(

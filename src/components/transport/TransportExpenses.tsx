@@ -96,7 +96,8 @@ const TransportExpenses = () => {
       const { data } = await supabase
         .from("customers")
         .select("id, client_name, branch")
-        .order("client_name", { ascending: true });
+        .order("client_name", { ascending: true })
+        .limit(10000);
       return data || [];
     },
   });
@@ -117,8 +118,9 @@ const TransportExpenses = () => {
       const { data, error } = await supabase
         .from("transport_expenses")
         .select("id, expense_date, description, client_id, branch, amount, expense_group, transport_vendor, created_at, updated_at")
-        .order("created_at", { ascending: false });
-      
+        .order("created_at", { ascending: false })
+        .limit(10000);
+
       if (error) {
         console.error("Error fetching transport expenses:", error);
         throw error;

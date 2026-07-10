@@ -285,7 +285,7 @@ export default function SalesTrackerView() {
       if (!officerCustomerIds.length) return [];
       const { data, error } = await supabase
         .from('sales_transactions').select('customer_id, transaction_date')
-        .eq('transaction_type', 'sale').in('customer_id', officerCustomerIds).order('transaction_date', { ascending: true });
+        .eq('transaction_type', 'sale').in('customer_id', officerCustomerIds).order('transaction_date', { ascending: true }).limit(10000);
       if (error) throw error;
       const map = new Map<string, string>();
       for (const t of (data ?? [])) { if (!map.has(t.customer_id)) map.set(t.customer_id, t.transaction_date); }
@@ -305,7 +305,7 @@ export default function SalesTrackerView() {
       const from = getPeriodFrom(chartPeriod, customStartDate);
       const { data, error } = await supabase
         .from('sales_transactions').select('transaction_date, quantity, customer_id, amount')
-        .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).gte('transaction_date', from);
+        .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).gte('transaction_date', from).limit(10000);
       if (error) throw error;
       return (data ?? []) as MomTx[];
     },
@@ -320,7 +320,7 @@ export default function SalesTrackerView() {
       if (!allMappedCustomerIds.length) return [];
       const { data, error } = await supabase
         .from('sales_transactions').select('customer_id, transaction_date')
-        .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).order('transaction_date', { ascending: true });
+        .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).order('transaction_date', { ascending: true }).limit(10000);
       if (error) throw error;
       const map = new Map<string, string>();
       for (const t of (data ?? [])) { if (!map.has(t.customer_id)) map.set(t.customer_id, t.transaction_date); }

@@ -41,7 +41,8 @@ const Reports = memo(() => {
             branch
           )
         `)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(10000);
 
       if (!transactions) return [];
 
@@ -167,7 +168,8 @@ const Reports = memo(() => {
       const { data } = await supabase
         .from("factory_payables")
         .select("id, amount, transaction_type, transaction_date, description, sku, quantity")
-        .order("transaction_date", { ascending: false });
+        .order("transaction_date", { ascending: false })
+        .limit(10000);
       
       const totalProduction = data?.filter(t => t.transaction_type === 'production')
         .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
@@ -189,7 +191,8 @@ const Reports = memo(() => {
           id, customer_id, amount, transaction_type, transaction_date, sku, description, quantity,
           customers (client_name, branch)
         `)
-        .order("transaction_date", { ascending: false });
+        .order("transaction_date", { ascending: false })
+        .limit(10000);
       
       const totalSales = data?.filter(t => t.transaction_type === 'sale')
         .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
@@ -208,7 +211,8 @@ const Reports = memo(() => {
       const { data } = await supabase
         .from("transport_expenses")
         .select("id, amount, expense_date, expense_group, description, client_id, transport_vendor")
-        .order("expense_date", { ascending: false });
+        .order("expense_date", { ascending: false })
+        .limit(10000);
       
       const totalExpenses = data?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
       
@@ -224,7 +228,8 @@ const Reports = memo(() => {
       const { data: purchases } = await supabase
         .from("label_purchases")
         .select("id, client_id, sku, vendor_id, quantity, total_amount, purchase_date")
-        .order("purchase_date", { ascending: false });
+        .order("purchase_date", { ascending: false })
+        .limit(10000);
       
       const totalPurchases = purchases?.reduce((sum, p) => sum + (p.total_amount || 0), 0) || 0;
       

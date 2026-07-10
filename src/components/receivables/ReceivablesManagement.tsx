@@ -116,11 +116,13 @@ async function fetchReceivablesData(): Promise<CustomerRow[]> {
       .limit(10000),
     supabase
       .from('customers')
-      .select('id, sku, price_per_case, phone, whatsapp_number'),
+      .select('id, sku, price_per_case, phone, whatsapp_number')
+      .limit(10000),
     supabase
       .from('invoices')
       .select('customer_id, status')
-      .not('status', 'in', '(paid,cancelled)'),
+      .not('status', 'in', '(paid,cancelled)')
+      .limit(10000),
   ]);
 
   if (txRes.error) throw txRes.error;
@@ -305,7 +307,8 @@ async function fetchLatestFollowupInfo(): Promise<Record<string, FollowupInfo>> 
   const { data, error } = await supabase
     .from('client_followup_notes')
     .select('customer_id, followup_date, note, created_at')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(10000);
   if (error) throw error;
 
   const dateMap: Record<string, string> = {};

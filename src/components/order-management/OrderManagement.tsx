@@ -450,7 +450,8 @@ const OrderManagement: React.FC = () => {
         const { data, error } = await supabase
           .from("orders_dispatch")
           .select("id, client, branch, sku, cases, order_date, delivery_date")
-          .order("delivery_date", { ascending: false });
+          .order("delivery_date", { ascending: false })
+          .limit(10000);
 
         if (error) {
           logger.error("[orders_dispatch] Query failed", { message: error.message, code: (error as { code?: string }).code, details: (error as { details?: string }).details });

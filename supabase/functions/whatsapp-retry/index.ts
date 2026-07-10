@@ -112,7 +112,8 @@ serve(async (req) => {
         .select('*')
         .eq('status', 'failed')
         .lt('retry_count', maxRetries)
-        .or(`updated_at.lt.${retryCutoffTime.toISOString()},updated_at.is.null`);
+        .or(`updated_at.lt.${retryCutoffTime.toISOString()},updated_at.is.null`)
+        .limit(10000);
 
       if (fetchError) {
         throw new Error(`Failed to fetch failed messages: ${fetchError.message}`);

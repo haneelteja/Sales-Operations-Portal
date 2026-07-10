@@ -111,7 +111,8 @@ const LabelPayments = () => {
       const { data, error } = await supabase
         .from("label_purchases")
         .select("vendor_id, total_amount, purchase_date, record_type")
-        .order("purchase_date", { ascending: false });
+        .order("purchase_date", { ascending: false })
+        .limit(10000);
       if (error) throw error;
       return (data || []).filter(p => (p.record_type as string) !== 'adjustment');
     },
@@ -123,7 +124,8 @@ const LabelPayments = () => {
       const { data, error } = await supabase
         .from("label_payments")
         .select("id, payment_amount, payment_date, payment_method, vendor_id, description")
-        .order("payment_date", { ascending: false });
+        .order("payment_date", { ascending: false })
+        .limit(10000);
       if (error) throw error;
       return data || [];
     },

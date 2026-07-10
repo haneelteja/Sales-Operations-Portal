@@ -113,7 +113,8 @@ const OrderAnalysis: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("transaction_type, amount, transaction_date, customers(client_name, branch, is_deprecated)");
+        .select("transaction_type, amount, transaction_date, customers(client_name, branch, is_deprecated)")
+        .limit(10000);
       return (data || []) as Array<{
         transaction_type: string;
         amount: number | null;

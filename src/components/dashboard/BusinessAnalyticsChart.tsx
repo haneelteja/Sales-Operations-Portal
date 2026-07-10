@@ -153,7 +153,7 @@ const BusinessAnalyticsChart: React.FC = () => {
   const { data: factoryPayables = [] } = useQuery({
     queryKey: ['biz-analytics-factory'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('factory_payables').select('transaction_date, amount').eq('transaction_type', 'production');
+      const { data, error } = await supabase.from('factory_payables').select('transaction_date, amount').eq('transaction_type', 'production').limit(10000);
       if (error) throw error;
       return (data ?? []) as { transaction_date: string; amount: number }[];
     },
@@ -163,7 +163,7 @@ const BusinessAnalyticsChart: React.FC = () => {
   const { data: labelPurchases = [] } = useQuery({
     queryKey: ['biz-analytics-labels'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('label_purchases').select('purchase_date, total_amount');
+      const { data, error } = await supabase.from('label_purchases').select('purchase_date, total_amount').limit(10000);
       if (error) throw error;
       return (data ?? []) as { purchase_date: string; total_amount: number }[];
     },

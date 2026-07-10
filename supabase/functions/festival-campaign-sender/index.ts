@@ -40,7 +40,8 @@ serve(async (req) => {
       .from('festival_campaigns')
       .select('*')
       .eq('status', 'scheduled')
-      .lte('scheduled_at', new Date().toISOString());
+      .lte('scheduled_at', new Date().toISOString())
+      .limit(10000);
 
     if (fetchErr) throw new Error(`Failed to fetch campaigns: ${fetchErr.message}`);
     if (!dueCampaigns || dueCampaigns.length === 0) {
@@ -83,7 +84,8 @@ serve(async (req) => {
         .from('festival_campaign_recipients')
         .select('*')
         .eq('campaign_id', campaign.id)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .limit(10000);
 
       if (!recipients || recipients.length === 0) {
         await supabase

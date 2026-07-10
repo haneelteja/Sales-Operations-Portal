@@ -190,7 +190,8 @@ const LabelPurchases = () => {
       const { data } = await supabase
         .from("customers")
         .select("id, client_name")
-        .order("client_name", { ascending: true });
+        .order("client_name", { ascending: true })
+        .limit(10000);
       return data || [];
     },
   });
@@ -278,7 +279,8 @@ const LabelPurchases = () => {
       const { data } = await supabase
         .from("label_purchases")
         .select("id, vendor_id, client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description, record_type, reason")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(10000);
       return (data || []) as LabelPurchase[];
     },
   });

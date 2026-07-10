@@ -28,7 +28,8 @@ serve(async (req) => {
       .from('audit_logs')
       .select('*')
       .gte('created_at', since)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(10000);
 
     if (error) throw error;
 

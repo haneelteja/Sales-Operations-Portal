@@ -43,7 +43,8 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('client_followups')
-      .select('dealer_name, branch, comments, next_followup_date'),
+      .select('dealer_name, branch, comments, next_followup_date')
+      .limit(10000),
   ]);
 
   if (summaryResult.error) throw summaryResult.error;

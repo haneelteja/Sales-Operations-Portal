@@ -49,7 +49,8 @@ const LabelAvailability = () => {
       const { data, error } = await supabase
         .from("label_purchases")
         .select("client_id, sku, quantity, total_amount, purchase_date, record_type")
-        .order("purchase_date", { ascending: false });
+        .order("purchase_date", { ascending: false })
+        .limit(10000);
       if (error) throw error;
       return data || [];
     },
@@ -79,7 +80,8 @@ const LabelAvailability = () => {
         .eq("transaction_type", "sale")
         .not("customer_id", "is", null)
         .not("sku", "is", null)
-        .gt("quantity", 0);
+        .gt("quantity", 0)
+        .limit(10000);
       if (error) throw error;
       return data || [];
     },
@@ -94,7 +96,8 @@ const LabelAvailability = () => {
         .select("customer_id, sku, quantity")
         .eq("transaction_type", "production")
         .not("customer_id", "is", null)
-        .gt("quantity", 0);
+        .gt("quantity", 0)
+        .limit(10000);
       if (error) throw error;
       return data || [];
     },

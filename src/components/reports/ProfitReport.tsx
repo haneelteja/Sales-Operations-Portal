@@ -458,7 +458,8 @@ export default function ProfitReport() {
         .from("sales_transactions")
         .select("transaction_date")
         .eq("transaction_type", "sale")
-        .order("transaction_date", { ascending: true });
+        .order("transaction_date", { ascending: true })
+        .limit(10000);
       if (!data?.length) return [];
       const years = new Set<number>();
       data.forEach(r => {

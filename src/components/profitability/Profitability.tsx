@@ -235,7 +235,8 @@ const Profitability: React.FC = () => {
         .select("customer_id, amount, quantity, transaction_date, sku, customers(client_name, branch, sku)")
         .eq("transaction_type", "sale")
         .gte("transaction_date", startDate)
-        .lte("transaction_date", endDate);
+        .lte("transaction_date", endDate)
+        .limit(10000);
       return (data ?? []) as Array<{
         customer_id: string;
         amount: number;
@@ -255,7 +256,8 @@ const Profitability: React.FC = () => {
         .select("customer_id, amount, transaction_date, customers(client_name, branch)")
         .eq("transaction_type", "production")
         .gte("transaction_date", startDate)
-        .lte("transaction_date", endDate);
+        .lte("transaction_date", endDate)
+        .limit(10000);
       return (data ?? []) as Array<{
         customer_id: string | null;
         amount: number;
@@ -272,7 +274,8 @@ const Profitability: React.FC = () => {
         .from("label_purchases")
         .select("client_id, total_amount, purchase_date, record_type, customers(client_name, branch)")
         .gte("purchase_date", startDate)
-        .lte("purchase_date", endDate);
+        .lte("purchase_date", endDate)
+        .limit(10000);
       return (data ?? []) as Array<{
         client_id: string | null;
         total_amount: number;
@@ -291,7 +294,8 @@ const Profitability: React.FC = () => {
         .from("back_label_purchases")
         .select("quantity, cost_per_label, total_amount, purchase_date")
         .lte("purchase_date", endDate)
-        .order("purchase_date", { ascending: false });
+        .order("purchase_date", { ascending: false })
+        .limit(10000);
       return (data ?? []) as Array<{
         quantity: number;
         cost_per_label: number;
@@ -310,7 +314,8 @@ const Profitability: React.FC = () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase as any)
         .from("customer_back_label_history")
-        .select("client_name, requires_back_label, effective_from");
+        .select("client_name, requires_back_label, effective_from")
+        .limit(10000);
       return (data ?? []) as Array<{
         client_name: string;
         requires_back_label: boolean;
@@ -339,7 +344,8 @@ const Profitability: React.FC = () => {
       const { data } = await supabase
         .from("client_commissions")
         .select("customer_id, sku, amount_per_case, effective_from, effective_to, is_active")
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .limit(10000);
       return (data ?? []) as Array<{
         customer_id: string;
         sku: string;
@@ -358,7 +364,8 @@ const Profitability: React.FC = () => {
         .from("transport_expenses")
         .select("client_id, amount, expense_date, expense_group, customers(client_name, branch)")
         .gte("expense_date", startDate)
-        .lte("expense_date", endDate);
+        .lte("expense_date", endDate)
+        .limit(10000);
       return (data ?? []) as Array<{
         client_id: string | null;
         amount: number;
@@ -377,7 +384,8 @@ const Profitability: React.FC = () => {
         .from("misc_expenses")
         .select("id, expense_date, category, amount, description")
         .gte("expense_date", startDate)
-        .lte("expense_date", endDate);
+        .lte("expense_date", endDate)
+        .limit(10000);
       return (data ?? []) as MiscExpense[];
     },
   });

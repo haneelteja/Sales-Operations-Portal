@@ -76,8 +76,9 @@ export const useSalesTransactions = () => {
             branch
           )
         `)
-        .order("created_at", { ascending: false });
-      
+        .order("created_at", { ascending: false })
+        .limit(10000);
+
       if (error) throw error;
       return data as (SalesTransaction & { customers: Customer })[];
     },
@@ -93,8 +94,9 @@ export const useFactoryPayables = () => {
       const { data, error } = await supabase
         .from("factory_payables")
         .select("id, customer_id, transaction_type, amount, transaction_date, description, created_at, updated_at")
-        .order("created_at", { ascending: false });
-      
+        .order("created_at", { ascending: false })
+        .limit(10000);
+
       if (error) throw error;
       return data as FactoryPayable[];
     },
@@ -110,8 +112,9 @@ export const useTransportExpenses = () => {
       const { data, error } = await supabase
         .from("transport_expenses")
         .select("id, client_id, expense_date, amount, expense_group, description, transport_vendor, created_at, updated_at")
-        .order("created_at", { ascending: false });
-      
+        .order("created_at", { ascending: false })
+        .limit(10000);
+
       if (error) throw error;
       return data as TransportExpense[];
     },
@@ -127,8 +130,9 @@ export const useLabelPurchases = () => {
       const { data, error } = await supabase
         .from("label_purchases")
         .select("id, vendor_id, client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description, created_at, updated_at")
-        .order("created_at", { ascending: false });
-      
+        .order("created_at", { ascending: false })
+        .limit(10000);
+
       if (error) throw error;
       return data as LabelPurchase[];
     },
@@ -144,8 +148,9 @@ export const useLabelPayments = () => {
       const { data, error } = await supabase
         .from("label_payments")
         .select("id, vendor_id, amount, payment_date, description, created_at, updated_at")
-        .order("created_at", { ascending: false });
-      
+        .order("created_at", { ascending: false })
+        .limit(10000);
+
       if (error) throw error;
       return data as LabelPayment[];
     },
@@ -161,8 +166,9 @@ export const useOrders = () => {
       const { data, error } = await supabase
         .from("orders")
         .select("id, client, customer_id, branch, order_date, sku, number_of_cases, status, tentative_delivery_date, created_at, updated_at")
-        .order("created_at", { ascending: false });
-      
+        .order("created_at", { ascending: false })
+        .limit(10000);
+
       if (error) throw error;
       return data as Order[];
     },
@@ -178,7 +184,8 @@ export const useUserManagement = () => {
       const { data, error } = await supabase
         .from("user_management")
         .select("id, user_id, username, email, associated_clients, associated_branches, status, role, created_by, last_login, created_at, updated_at")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(10000);
       
       if (error) {
         if (error.code === 'PGRST116' || error.message.includes('relation "user_management" does not exist')) {

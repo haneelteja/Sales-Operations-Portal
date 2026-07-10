@@ -259,8 +259,9 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
       .from('sales_transactions')
       .select('customer_id, transaction_date')
       .eq('transaction_type', 'payment')
-      .order('transaction_date', { ascending: true }),
-    supabase.from('customers').select('id, client_name, branch, whatsapp_number').eq('is_active', true),
+      .order('transaction_date', { ascending: true })
+      .limit(10000),
+    supabase.from('customers').select('id, client_name, branch, whatsapp_number').eq('is_active', true).limit(10000),
   ]);
 
   const customerMap = new Map(
@@ -408,7 +409,8 @@ serve(async (req) => {
     // Load schedules
     const { data: schedules, error: schErr } = await supabase
       .from('email_report_schedules')
-      .select('*');
+      .select('*')
+      .limit(10000);
     if (schErr) throw schErr;
 
     const results: Record<string, string> = {};
