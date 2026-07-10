@@ -31,7 +31,7 @@ const OFFICER_COLORS = ['#7c3aed', '#059669', '#d97706', '#0284c7', '#dc2626', '
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ChartMetric = 'cases' | 'new_clients' | 'revenue';
-type ChartPeriod = '3m' | '6m' | '12m' | 'last_year';
+type ChartPeriod = '3m' | '6m' | '12m' | 'last_year' | 'custom';
 type OverviewChartType = 'new_clients' | 'cases_by_officer' | 'outstanding_by_officer';
 
 interface SalesOfficer { id: string; name: string; is_active: boolean; created_at: string; }
@@ -40,7 +40,18 @@ interface MomTx { transaction_date: string; quantity: number | null; customer_id
 
 // ── Pure helpers ───────────────────────────────────────────────────────────────
 
-function buildMonthKeys(period: ChartPeriod): string[] {
+function buildMonthKeys(period: ChartPeriod, customStart?: string, customEnd?: string): string[] {
+  if (period === 'custom') {
+    if (!customStart || !customEnd || customStart > customEnd) return [];
+    const keys: string[] = [];
+    let cur = customStart;
+    while (cur <= customEnd) {
+      keys.push(cur);
+      const [y, m] = cur.split('-').map(Number);
+      cur = new Date(y, m, 1).toISOString().substring(0, 7);
+    }
+    return keys;
+  }
   if (period === 'last_year') {
     const year = new Date().getFullYear() - 1;
     return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
@@ -69,7 +80,8 @@ function makeDotLabel(color: string, fmt?: (v: number) => string) {
   };
 }
 
-function getPeriodFrom(period: ChartPeriod): string {
+function getPeriodFrom(period: ChartPeriod, customStart?: string): string {
+  if (period === 'custom' && customStart) return `${customStart}-01`;
   if (period === 'last_year') return `${new Date().getFullYear() - 1}-01-01`;
   const n = period === '3m' ? 3 : period === '6m' ? 6 : 12;
   const d = new Date(); d.setMonth(d.getMonth() - (n - 1)); d.setDate(1);
@@ -143,6 +155,8 @@ export default function SalesTrackerView() {
 
   // Shared period selector (overview + per-officer)
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('6m');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
 
   // Overview unified chart
   const [overviewChartType, setOverviewChartType] = useState<OverviewChartType>('new_clients');
@@ -251,17 +265,18 @@ export default function SalesTrackerView() {
   // ── Queries: per-officer ─────────────────────────────────────────────────
 
   const { data: momTransactions = [] } = useQuery({
-    queryKey: ['officer-mom-transactions', selectedOfficerId, officerCustomerIds.join(','), chartPeriod],
+    queryKey: ['officer-mom-transactions', selectedOfficerId, officerCustomerIds.join(','), chartPeriod, customStartDate],
     queryFn: async (): Promise<MomTx[]> => {
       if (!officerCustomerIds.length) return [];
-      const from = getPeriodFrom(chartPeriod);
+      if (chartPeriod === 'custom' && !customStartDate) return [];
+      const from = getPeriodFrom(chartPeriod, customStartDate);
       const { data, error } = await supabase
         .from('sales_transactions').select('transaction_date, quantity, customer_id, amount')
         .eq('transaction_type', 'sale').in('customer_id', officerCustomerIds).gte('transaction_date', from);
       if (error) throw error;
       return (data ?? []) as MomTx[];
     },
-    enabled: !!selectedOfficerId && officerCustomerIds.length > 0,
+    enabled: !!selectedOfficerId && officerCustomerIds.length > 0 && (chartPeriod !== 'custom' || !!customStartDate),
     staleTime: 0,
   });
 
@@ -284,17 +299,18 @@ export default function SalesTrackerView() {
   // ── Queries: overview ────────────────────────────────────────────────────
 
   const { data: overviewTransactions = [] } = useQuery({
-    queryKey: ['overview-mom-transactions', allMappedCustomerIds.join(','), chartPeriod],
+    queryKey: ['overview-mom-transactions', allMappedCustomerIds.join(','), chartPeriod, customStartDate],
     queryFn: async (): Promise<MomTx[]> => {
       if (!allMappedCustomerIds.length) return [];
-      const from = getPeriodFrom(chartPeriod);
+      if (chartPeriod === 'custom' && !customStartDate) return [];
+      const from = getPeriodFrom(chartPeriod, customStartDate);
       const { data, error } = await supabase
         .from('sales_transactions').select('transaction_date, quantity, customer_id, amount')
         .eq('transaction_type', 'sale').in('customer_id', allMappedCustomerIds).gte('transaction_date', from);
       if (error) throw error;
       return (data ?? []) as MomTx[];
     },
-    enabled: !selectedOfficerId && allMappedCustomerIds.length > 0,
+    enabled: !selectedOfficerId && allMappedCustomerIds.length > 0 && (chartPeriod !== 'custom' || !!customStartDate),
     staleTime: 0,
   });
 
@@ -368,28 +384,31 @@ export default function SalesTrackerView() {
     activeOfficerIds === null ? officers : officers.filter(o => activeOfficerIds.has(o.id)),
   [officers, activeOfficerIds]);
 
-  // New Clients Overall — single line, filtered by visibleOfficers
-  const newClientsChartData = useMemo(() => {
-    const keys = buildMonthKeys(chartPeriod);
-    const counts: Record<string, number> = {};
-    keys.forEach(m => (counts[m] = 0));
-    const visibleIds = new Set(visibleOfficers.map(o => o.id));
+  // New Clients Overall — stacked bar per officer
+  const newClientsByOfficerData = useMemo(() => {
+    const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
+    const data: Record<string, Record<string, number>> = {};
+    for (const k of keys) {
+      data[k] = {};
+      for (const o of visibleOfficers) data[k][o.id] = 0;
+    }
     for (const d of allFirstSaleData) {
       const m = d.first_date?.substring(0, 7);
-      if (!m || !(m in counts)) continue;
-      // When officers are toggled, only count clients belonging to visible officers
-      if (activeOfficerIds !== null) {
-        const oid = customerIdToOfficer.get(d.customer_id);
-        if (!oid || !visibleIds.has(oid)) continue;
-      }
-      counts[m] += 1;
+      if (!m || !(m in data)) continue;
+      const oid = customerIdToOfficer.get(d.customer_id);
+      if (!oid || data[m][oid] === undefined) continue;
+      data[m][oid] += 1;
     }
-    return keys.map(key => ({ month: monthLabel(key), value: counts[key] }));
-  }, [allFirstSaleData, chartPeriod, activeOfficerIds, visibleOfficers, customerIdToOfficer]);
+    return keys.map(key => {
+      const row: Record<string, string | number> = { month: monthLabel(key) };
+      for (const o of visibleOfficers) row[o.id] = data[key]?.[o.id] ?? 0;
+      return row;
+    });
+  }, [allFirstSaleData, chartPeriod, customStartDate, customEndDate, visibleOfficers, customerIdToOfficer]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
-    const keys = buildMonthKeys(chartPeriod);
+    const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
     const data: Record<string, Record<string, number>> = {};
     for (const m of keys) { data[m] = {}; for (const o of officers) data[m][o.id] = 0; }
     for (const t of overviewTransactions) {
@@ -403,7 +422,7 @@ export default function SalesTrackerView() {
       for (const o of officers) row[o.id] = data[key]?.[o.id] ?? 0;
       return row;
     });
-  }, [overviewTransactions, officers, customerIdToOfficer, chartPeriod]);
+  }, [overviewTransactions, officers, customerIdToOfficer, chartPeriod, customStartDate, customEndDate]);
 
   // Outstanding by Officer — bar chart (current snapshot per officer)
   const outstandingBarData = useMemo(() =>
@@ -418,7 +437,7 @@ export default function SalesTrackerView() {
   // ── Per-officer chart data ────────────────────────────────────────────────
 
   const momChartData = useMemo(() => {
-    const keys = buildMonthKeys(chartPeriod);
+    const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
     const counts: Record<string, number> = {};
     keys.forEach(m => (counts[m] = 0));
     if (chartMetric === 'cases') {
@@ -429,7 +448,7 @@ export default function SalesTrackerView() {
       for (const d of firstSaleData) { const m = d.first_date?.substring(0, 7); if (m && m in counts) counts[m] += 1; }
     }
     return keys.map(key => ({ month: monthLabel(key), value: counts[key] }));
-  }, [momTransactions, firstSaleData, chartMetric, chartPeriod]);
+  }, [momTransactions, firstSaleData, chartMetric, chartPeriod, customStartDate, customEndDate]);
 
   const overdueRows = useMemo(() => officerRows.filter(r =>
     !r.lastPaymentDate || (Date.now() - new Date(r.lastPaymentDate).getTime()) / 86400000 > 60,
@@ -514,15 +533,38 @@ export default function SalesTrackerView() {
   // ── Shared selectors ──────────────────────────────────────────────────────
 
   const periodSelector = (
-    <Select value={chartPeriod} onValueChange={v => setChartPeriod(v as ChartPeriod)}>
-      <SelectTrigger className="h-8 w-36 text-sm"><SelectValue /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value="3m">Last 3 months</SelectItem>
-        <SelectItem value="6m">Last 6 months</SelectItem>
-        <SelectItem value="12m">Last 12 months</SelectItem>
-        <SelectItem value="last_year">Last year ({new Date().getFullYear() - 1})</SelectItem>
-      </SelectContent>
-    </Select>
+    <div className="flex items-center gap-2 flex-wrap">
+      <Select value={chartPeriod} onValueChange={v => setChartPeriod(v as ChartPeriod)}>
+        <SelectTrigger className="h-8 w-40 text-sm"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="3m">Last 3 months</SelectItem>
+          <SelectItem value="6m">Last 6 months</SelectItem>
+          <SelectItem value="12m">Last 12 months</SelectItem>
+          <SelectItem value="last_year">Last year ({new Date().getFullYear() - 1})</SelectItem>
+          <SelectItem value="custom">Custom range</SelectItem>
+        </SelectContent>
+      </Select>
+      {chartPeriod === 'custom' && (
+        <>
+          <input
+            type="month"
+            title="Start month"
+            value={customStartDate}
+            onChange={e => setCustomStartDate(e.target.value)}
+            className="h-8 px-2 border border-input rounded-md text-sm bg-background"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input
+            type="month"
+            title="End month"
+            value={customEndDate}
+            min={customStartDate}
+            onChange={e => setCustomEndDate(e.target.value)}
+            className="h-8 px-2 border border-input rounded-md text-sm bg-background"
+          />
+        </>
+      )}
+    </div>
   );
 
   // ── Overview chart labels ─────────────────────────────────────────────────
@@ -661,25 +703,37 @@ export default function SalesTrackerView() {
             </CardHeader>
 
             <CardContent>
-              {/* NEW CLIENTS — single line */}
+              {/* NEW CLIENTS — stacked bar per officer */}
               {overviewChartType === 'new_clients' && (
                 <ResponsiveContainer width="100%" height={260}>
-                  <ComposedChart data={newClientsChartData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
+                  <BarChart data={newClientsByOfficerData} margin={{ top: 16, right: 16, left: 4, bottom: 4 }} barCategoryGap="35%">
                     <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
                     <Tooltip
                       cursor={{ fill: 'rgba(100,116,139,0.06)' }}
                       content={({ active, payload, label }) => (
-                        <ChartTooltip active={active} payload={payload?.map(p => ({ name: 'New Clients', value: p.value as number, color: '#7c3aed' }))} label={label} />
+                        <ChartTooltip
+                          active={active}
+                          payload={payload
+                            ?.filter(p => (p.value as number) > 0)
+                            .map(p => ({
+                              name: officers.find(o => o.id === String(p.dataKey))?.name ?? String(p.dataKey),
+                              value: p.value as number,
+                              color: p.fill as string,
+                            }))}
+                          label={label}
+                        />
                       )}
                     />
-                    <Line type="monotone" dataKey="value" name="New Clients" stroke="#7c3aed" strokeWidth={2.5}
-                      dot={{ r: 5, fill: '#7c3aed', strokeWidth: 2, stroke: 'white' }}
-                      activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }}
-                      label={makeDotLabel('#7c3aed')}
-                    />
-                  </ComposedChart>
+                    {visibleOfficers.map(o => {
+                      const globalIdx = officers.findIndex(x => x.id === o.id);
+                      const color = OFFICER_COLORS[globalIdx % OFFICER_COLORS.length];
+                      return (
+                        <Bar key={o.id} dataKey={o.id} name={o.name} stackId="stack" fill={color} />
+                      );
+                    })}
+                  </BarChart>
                 </ResponsiveContainer>
               )}
 
