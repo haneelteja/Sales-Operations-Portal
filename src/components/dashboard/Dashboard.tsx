@@ -109,7 +109,7 @@ const Dashboard = memo(() => {
   }, [aggregates]);
 
   // Fetch all plant stock entries (full history) per (client, SKU)
-  const { data: plantStockAllRows } = useQuery({
+  const { data: plantStockAllRows, isLoading: plantStockLoading } = useQuery({
     queryKey: ["plant-stock-dashboard"],
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -191,7 +191,7 @@ const Dashboard = memo(() => {
   // Grouped by client+branch only (no per-SKU breakdown).
   // Negative sale entries (returns/adjustments) reduce the production commitment,
   // not the sales total — so they correctly bring inventory down toward 0.
-  const { data: inventoryRows } = useQuery({
+  const { data: inventoryRows, isLoading: inventoryLoading } = useQuery({
     queryKey: ["dashboard-inventory"],
     ...getQueryConfig("dashboard-inventory"),
     queryFn: async () => {
@@ -583,7 +583,7 @@ const Dashboard = memo(() => {
         {/* Row 1: Financials */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           {/* Factory Outstanding */}
-          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-purple-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-purple-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
             <Building2 className="h-9 w-9 text-purple-200 shrink-0" />
             <div className="min-w-0">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Factory Outstanding</p>
@@ -593,7 +593,7 @@ const Dashboard = memo(() => {
           </div>
 
           {/* Client Outstanding */}
-          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-rose-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-rose-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
             <DollarSign className="h-9 w-9 text-rose-200 shrink-0" />
             <div className="min-w-0">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Client Outstanding</p>
@@ -609,7 +609,7 @@ const Dashboard = memo(() => {
             const pct = prevM > 0 ? Math.round(((thisM - prevM) / prevM) * 100) : 0;
             const up = pct >= 0;
             return (
-              <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-teal-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+              <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-teal-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
                 <TrendingUp className="h-9 w-9 text-teal-200 shrink-0" />
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Sale This Month</p>
@@ -621,7 +621,7 @@ const Dashboard = memo(() => {
           })()}
 
           {/* Sale Previous Month */}
-          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-cyan-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-cyan-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
             <TrendingUp className="h-9 w-9 text-cyan-200 shrink-0" />
             <div className="min-w-0">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Sale Prev Month</p>
@@ -640,7 +640,7 @@ const Dashboard = memo(() => {
             const BAR_WIDTHS = ['w-0','w-[10%]','w-[20%]','w-[30%]','w-[40%]','w-[50%]','w-[60%]','w-[70%]','w-[80%]','w-[90%]','w-full'] as const;
             const barWClass = BAR_WIDTHS[Math.round(Math.min(100, Math.max(0, rate)) / 10)];
             return (
-              <div className={`bg-white rounded-xl border border-gray-100 border-l-4 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 ${good ? 'border-l-sky-500' : 'border-l-rose-500'}`}>
+              <div className={`bg-white rounded-xl border border-gray-100 border-l-4 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px] ${good ? 'border-l-sky-500' : 'border-l-rose-500'}`}>
                 <CreditCard className={`h-9 w-9 shrink-0 ${good ? 'text-sky-200' : 'text-rose-200'}`} />
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">Collection Rate</p>
@@ -660,7 +660,7 @@ const Dashboard = memo(() => {
           {(() => {
             const count = receivables?.filter(r => r.outstanding > 100000).length || 0;
             return (
-              <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-amber-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+              <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-amber-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
                 <div className="h-9 w-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
                   <AlertTriangle className="h-5 w-5 text-amber-500" />
                 </div>
@@ -674,7 +674,7 @@ const Dashboard = memo(() => {
           })()}
 
           {/* Payment Overdue */}
-          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-red-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-red-500 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
             <div className="h-9 w-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
               <AlertTriangle className="h-5 w-5 text-red-500" />
             </div>
@@ -686,7 +686,7 @@ const Dashboard = memo(() => {
           </div>
 
           {/* Due Soon */}
-          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-orange-400 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-orange-400 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
             <div className="h-9 w-9 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
               <TrendingUp className="h-5 w-5 text-orange-500" />
             </div>
@@ -698,7 +698,7 @@ const Dashboard = memo(() => {
           </div>
 
           {/* Over Credit Limit */}
-          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-rose-600 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-rose-600 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
             <div className="h-9 w-9 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
               <AlertTriangle className="h-5 w-5 text-rose-600" />
             </div>
@@ -710,7 +710,7 @@ const Dashboard = memo(() => {
           </div>
 
           {/* Caution / Warning */}
-          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-yellow-400 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3">
+          <div className="bg-white rounded-xl border border-gray-100 border-l-4 border-l-yellow-400 shadow-sm hover:shadow-md transition-all p-3 flex items-center gap-3 min-h-[88px]">
             <div className="h-9 w-9 rounded-lg bg-yellow-50 flex items-center justify-center shrink-0">
               <Eye className="h-5 w-5 text-yellow-600" />
             </div>
@@ -723,8 +723,8 @@ const Dashboard = memo(() => {
         </div>
       </div>
 
-      {/* Stock at Plant */}
-      {plantStockCurrent.length > 0 && (
+      {/* Stock at Plant — always rendered to avoid CLS from conditional mount */}
+      {(plantStockLoading || plantStockCurrent.length > 0) && (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -732,12 +732,14 @@ const Dashboard = memo(() => {
                 <CardTitle className="text-base">Stock at Plant</CardTitle>
                 <CardDescription>Current cases held at the factory, per client and SKU</CardDescription>
               </div>
-              <Input
-                placeholder="Search..."
-                value={plantSearch}
-                onChange={e => { setPlantSearch(e.target.value); setPlantPage(1); }}
-                className="w-44 h-8 text-sm"
-              />
+              {!plantStockLoading && (
+                <Input
+                  placeholder="Search..."
+                  value={plantSearch}
+                  onChange={e => { setPlantSearch(e.target.value); setPlantPage(1); }}
+                  className="w-44 h-8 text-sm"
+                />
+              )}
             </div>
             {plantClientOptions.length > 1 && (
               <div className="flex flex-wrap gap-1 pt-2">
@@ -769,74 +771,90 @@ const Dashboard = memo(() => {
             )}
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8" />
-                  <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => togglePlantSort('clientName')}>
-                    Client <span className="ml-1 text-gray-400">{plantSort?.col === 'clientName' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => togglePlantSort('sku')}>
-                    SKU <span className="ml-1 text-gray-400">{plantSort?.col === 'sku' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => togglePlantSort('quantity')}>
-                    Cases <span className="ml-1 text-gray-400">{plantSort?.col === 'quantity' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => togglePlantSort('transaction_date')}>
-                    Last Updated <span className="ml-1 text-gray-400">{plantSort?.col === 'transaction_date' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedPlantStock.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-4">No results</TableCell>
-                  </TableRow>
-                ) : paginatedPlantStock.flatMap(row => {
-                  const isExpanded = plantExpandedKeys.has(row.key);
-                  const history = plantStockHistory[row.key] ?? [];
-                  const hasHistory = history.length > 1;
-                  const result = [
-                    <TableRow
-                      key={row.key}
-                      className={`hover:bg-muted/50 ${hasHistory ? 'cursor-pointer' : ''}`}
-                      onClick={hasHistory ? () => setPlantExpandedKeys(prev => {
-                        const next = new Set(prev);
-                        if (next.has(row.key)) { next.delete(row.key); } else { next.add(row.key); }
-                        return next;
-                      }) : undefined}
-                    >
-                      <TableCell className="text-muted-foreground w-8">
-                        {hasHistory ? (isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : null}
-                      </TableCell>
-                      <TableCell className="font-medium">{row.clientName}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{row.sku}</Badge></TableCell>
-                      <TableCell className="text-right font-bold text-blue-700 tabular-nums">{row.quantity}</TableCell>
-                      <TableCell className="text-right text-muted-foreground text-sm">
-                        {new Date(row.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </TableCell>
-                    </TableRow>,
-                  ];
-                  if (isExpanded) {
-                    history.slice(1).forEach((h, i) => result.push(
-                      <TableRow key={`${row.key}-h-${i}`} className="bg-muted/30">
-                        <TableCell />
-                        <TableCell colSpan={2} className="pl-10 text-xs text-muted-foreground italic">Previous entry</TableCell>
-                        <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{h.quantity} cases</TableCell>
-                        <TableCell className="text-right text-xs text-muted-foreground">
-                          {new Date(h.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </TableCell>
-                      </TableRow>
-                    ));
-                  }
-                  return result;
-                })}
-              </TableBody>
-            </Table>
-            {plantTotalPages > 1 && (
-              <div className="border-t p-3">
-                <Pagination currentPage={plantPage} totalPages={plantTotalPages} onPageChange={setPlantPage} />
+            {plantStockLoading ? (
+              <div className="min-h-[120px] space-y-0">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-0 animate-pulse">
+                    <div className="h-4 w-8 bg-slate-100 rounded" />
+                    <div className="h-4 flex-1 bg-slate-100 rounded" />
+                    <div className="h-4 w-20 bg-slate-100 rounded" />
+                    <div className="h-4 w-12 bg-slate-100 rounded" />
+                    <div className="h-4 w-24 bg-slate-100 rounded" />
+                  </div>
+                ))}
               </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8" />
+                      <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => togglePlantSort('clientName')}>
+                        Client <span className="ml-1 text-gray-400">{plantSort?.col === 'clientName' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => togglePlantSort('sku')}>
+                        SKU <span className="ml-1 text-gray-400">{plantSort?.col === 'sku' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => togglePlantSort('quantity')}>
+                        Cases <span className="ml-1 text-gray-400">{plantSort?.col === 'quantity' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => togglePlantSort('transaction_date')}>
+                        Last Updated <span className="ml-1 text-gray-400">{plantSort?.col === 'transaction_date' ? (plantSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedPlantStock.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-4">No results</TableCell>
+                      </TableRow>
+                    ) : paginatedPlantStock.flatMap(row => {
+                      const isExpanded = plantExpandedKeys.has(row.key);
+                      const history = plantStockHistory[row.key] ?? [];
+                      const hasHistory = history.length > 1;
+                      const result = [
+                        <TableRow
+                          key={row.key}
+                          className={`hover:bg-muted/50 ${hasHistory ? 'cursor-pointer' : ''}`}
+                          onClick={hasHistory ? () => setPlantExpandedKeys(prev => {
+                            const next = new Set(prev);
+                            if (next.has(row.key)) { next.delete(row.key); } else { next.add(row.key); }
+                            return next;
+                          }) : undefined}
+                        >
+                          <TableCell className="text-muted-foreground w-8">
+                            {hasHistory ? (isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : null}
+                          </TableCell>
+                          <TableCell className="font-medium">{row.clientName}</TableCell>
+                          <TableCell><Badge variant="outline" className="text-xs">{row.sku}</Badge></TableCell>
+                          <TableCell className="text-right font-bold text-blue-700 tabular-nums">{row.quantity}</TableCell>
+                          <TableCell className="text-right text-muted-foreground text-sm">
+                            {new Date(row.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </TableCell>
+                        </TableRow>,
+                      ];
+                      if (isExpanded) {
+                        history.slice(1).forEach((h, i) => result.push(
+                          <TableRow key={`${row.key}-h-${i}`} className="bg-muted/30">
+                            <TableCell />
+                            <TableCell colSpan={2} className="pl-10 text-xs text-muted-foreground italic">Previous entry</TableCell>
+                            <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{h.quantity} cases</TableCell>
+                            <TableCell className="text-right text-xs text-muted-foreground">
+                              {new Date(h.transaction_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </TableCell>
+                          </TableRow>
+                        ));
+                      }
+                      return result;
+                    })}
+                  </TableBody>
+                </Table>
+                {plantTotalPages > 1 && (
+                  <div className="border-t p-3">
+                    <Pagination currentPage={plantPage} totalPages={plantTotalPages} onPageChange={setPlantPage} />
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -893,6 +911,18 @@ const Dashboard = memo(() => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              {inventoryLoading ? (
+                <div className="min-h-[120px] space-y-0">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-0 animate-pulse">
+                      <div className="h-4 flex-1 bg-slate-100 rounded" />
+                      <div className="h-4 w-24 bg-slate-100 rounded" />
+                      <div className="h-4 w-20 bg-slate-100 rounded" />
+                      <div className="h-4 w-12 bg-slate-100 rounded" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -927,6 +957,7 @@ const Dashboard = memo(() => {
                   ))}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
         );
