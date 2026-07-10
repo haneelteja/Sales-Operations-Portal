@@ -384,7 +384,7 @@ export default function SalesTrackerView() {
     activeOfficerIds === null ? officers : officers.filter(o => activeOfficerIds.has(o.id)),
   [officers, activeOfficerIds]);
 
-  // New Clients Overall — stacked bar per officer
+  // New Clients Overall — line (total) + per-officer breakdown for tooltip
   const newClientsByOfficerData = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
     const data: Record<string, Record<string, number>> = {};
@@ -401,10 +401,63 @@ export default function SalesTrackerView() {
     }
     return keys.map(key => {
       const row: Record<string, string | number> = { month: monthLabel(key) };
-      for (const o of visibleOfficers) row[o.id] = data[key]?.[o.id] ?? 0;
+      let total = 0;
+      for (const o of visibleOfficers) {
+        const count = data[key]?.[o.id] ?? 0;
+        row[o.id] = count;
+        total += count;
+      }
+      row['total'] = total;
       return row;
     });
   }, [allFirstSaleData, chartPeriod, customStartDate, customEndDate, visibleOfficers, customerIdToOfficer]);
+
+  // New clients table — grouped by year/month, with officer and onboarding date
+  const newClientsTableData = useMemo(() => {
+    const keySet = new Set(buildMonthKeys(chartPeriod, customStartDate, customEndDate));
+    // customer_id → { dealerName, branch }
+    const customerInfo = new Map<string, { dealerName: string; branch: string }>();
+    for (const r of (receivablesData?.rows ?? [])) customerInfo.set(r.customerId, { dealerName: r.dealerName, branch: r.branch });
+
+    const entries = allFirstSaleData
+      .filter(d => {
+        const m = d.first_date?.substring(0, 7);
+        if (!m || !keySet.has(m)) return false;
+        if (activeOfficerIds !== null) {
+          const oid = customerIdToOfficer.get(d.customer_id);
+          if (!oid || !activeOfficerIds.has(oid)) return false;
+        }
+        return true;
+      })
+      .map(d => {
+        const info = customerInfo.get(d.customer_id);
+        const oid = customerIdToOfficer.get(d.customer_id);
+        const officerName = officers.find(o => o.id === oid)?.name ?? '—';
+        const monthKey = d.first_date?.substring(0, 7) ?? '';
+        const [y, mo] = monthKey.split('-').map(Number);
+        return {
+          dealerName: info?.dealerName ?? 'Unknown',
+          branch: info?.branch ?? '',
+          officerName,
+          officerId: oid ?? '',
+          first_date: d.first_date ?? '',
+          monthKey,
+          year: y,
+          month: mo,
+        };
+      })
+      .sort((a, b) => a.first_date.localeCompare(b.first_date));
+
+    // Group: year → monthKey → entries[]
+    const grouped = new Map<number, Map<string, typeof entries>>();
+    for (const e of entries) {
+      if (!grouped.has(e.year)) grouped.set(e.year, new Map());
+      const yg = grouped.get(e.year)!;
+      if (!yg.has(e.monthKey)) yg.set(e.monthKey, []);
+      yg.get(e.monthKey)!.push(e);
+    }
+    return grouped;
+  }, [allFirstSaleData, chartPeriod, customStartDate, customEndDate, receivablesData, activeOfficerIds, customerIdToOfficer, officers]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
@@ -703,37 +756,54 @@ export default function SalesTrackerView() {
             </CardHeader>
 
             <CardContent>
-              {/* NEW CLIENTS — stacked bar per officer */}
+              {/* NEW CLIENTS — line (total) with per-officer tooltip breakdown */}
               {overviewChartType === 'new_clients' && (
                 <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={newClientsByOfficerData} margin={{ top: 16, right: 16, left: 4, bottom: 4 }} barCategoryGap="35%">
+                  <ComposedChart data={newClientsByOfficerData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
                     <Tooltip
                       cursor={{ fill: 'rgba(100,116,139,0.06)' }}
-                      content={({ active, payload, label }) => (
-                        <ChartTooltip
-                          active={active}
-                          payload={payload
-                            ?.filter(p => (p.value as number) > 0)
-                            .map(p => ({
-                              name: officers.find(o => o.id === String(p.dataKey))?.name ?? String(p.dataKey),
-                              value: p.value as number,
-                              color: p.fill as string,
-                            }))}
-                          label={label}
-                        />
-                      )}
+                      content={({ active, label }) => {
+                        if (!active || !label) return null;
+                        const row = newClientsByOfficerData.find(r => r.month === label);
+                        if (!row) return null;
+                        const officerRows = visibleOfficers
+                          .map((o, idx) => ({
+                            name: o.name,
+                            value: (row[o.id] as number) ?? 0,
+                            color: OFFICER_COLORS[officers.findIndex(x => x.id === o.id) % OFFICER_COLORS.length],
+                          }))
+                          .filter(r => r.value > 0);
+                        return (
+                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs min-w-[160px]">
+                            <p className="font-semibold text-slate-700 mb-2 border-b border-slate-100 pb-1.5">{label}</p>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-slate-500">Total new clients</span>
+                              <span className="font-bold text-slate-800 ml-auto">{row['total'] as number}</span>
+                            </div>
+                            {officerRows.length > 0 && (
+                              <div className="border-t border-slate-100 pt-1.5 space-y-1">
+                                {officerRows.map(r => (
+                                  <div key={r.name} className="flex items-center gap-2">
+                                    <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                                    <span className="text-slate-500 truncate max-w-[110px]">{r.name}</span>
+                                    <span className="font-semibold text-slate-800 ml-auto pl-2">{r.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }}
                     />
-                    {visibleOfficers.map(o => {
-                      const globalIdx = officers.findIndex(x => x.id === o.id);
-                      const color = OFFICER_COLORS[globalIdx % OFFICER_COLORS.length];
-                      return (
-                        <Bar key={o.id} dataKey={o.id} name={o.name} stackId="stack" fill={color} />
-                      );
-                    })}
-                  </BarChart>
+                    <Line type="monotone" dataKey="total" name="New Clients" stroke="#7c3aed" strokeWidth={2.5}
+                      dot={{ r: 5, fill: '#7c3aed', strokeWidth: 2, stroke: 'white' }}
+                      activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }}
+                      label={makeDotLabel('#7c3aed')}
+                    />
+                  </ComposedChart>
                 </ResponsiveContainer>
               )}
 
@@ -811,6 +881,84 @@ export default function SalesTrackerView() {
               )}
             </CardContent>
           </Card>
+
+          {/* New Clients breakdown table — visible in new_clients mode */}
+          {overviewChartType === 'new_clients' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold text-gray-900">
+                  New Clients — Onboarding Details
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    (first sale per client in selected period)
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {newClientsTableData.size === 0 ? (
+                  <p className="text-sm text-muted-foreground p-4">No new clients in the selected period.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    {[...newClientsTableData.entries()].map(([year, monthMap]) => (
+                      <div key={year}>
+                        {/* Year header */}
+                        <div className="px-4 py-2 bg-slate-50 border-y border-slate-200">
+                          <span className="text-sm font-bold text-slate-700">{year}</span>
+                        </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Month</TableHead>
+                              <TableHead>Client</TableHead>
+                              <TableHead>Branch</TableHead>
+                              <TableHead>Sales Officer</TableHead>
+                              <TableHead>Onboarding Date</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {[...monthMap.entries()].map(([monthKey, rows]) => {
+                              const [y, mo] = monthKey.split('-').map(Number);
+                              const monthName = new Date(y, mo - 1, 1).toLocaleString('default', { month: 'long' });
+                              return rows.map((row, rowIdx) => {
+                                const globalOfficerIdx = officers.findIndex(o => o.id === row.officerId);
+                                const officerColor = globalOfficerIdx >= 0 ? OFFICER_COLORS[globalOfficerIdx % OFFICER_COLORS.length] : '#94a3b8';
+                                return (
+                                  <TableRow key={`${monthKey}-${row.dealerName}-${row.branch}-${rowIdx}`}>
+                                    <TableCell className="text-sm font-medium text-slate-600 whitespace-nowrap">
+                                      {rowIdx === 0 ? (
+                                        <span className="inline-flex items-center gap-1.5">
+                                          {monthName}
+                                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">
+                                            {rows.length}
+                                          </span>
+                                        </span>
+                                      ) : null}
+                                    </TableCell>
+                                    <TableCell className="font-medium text-sm">{row.dealerName}</TableCell>
+                                    <TableCell className="text-muted-foreground text-sm">{row.branch || '—'}</TableCell>
+                                    <TableCell>
+                                      {row.officerId ? (
+                                        <span className="inline-flex items-center gap-1.5 text-sm">
+                                          <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: officerColor }} />
+                                          {row.officerName}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-sm font-mono text-slate-600">{row.first_date}</TableCell>
+                                  </TableRow>
+                                );
+                              });
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Officer performance table */}
           <Card>
