@@ -36,6 +36,7 @@ type OverviewChartType = 'new_clients' | 'cases_by_officer' | 'outstanding_by_of
 
 interface SalesOfficer { id: string; name: string; is_active: boolean; created_at: string; }
 interface ClientOfficerMapping { client_name: string; branch: string; officer_id: string; assigned_at: string; }
+interface ClientOfficerFirstSale { client_name: string; branch: string; officer_id: string; first_sale_date: string; }
 interface MomTx { transaction_date: string; quantity: number | null; customer_id: string; amount: number | null; }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────────
@@ -188,6 +189,17 @@ export default function SalesTrackerView() {
       return (data ?? []) as ClientOfficerMapping[];
     },
     staleTime: 30000,
+  });
+
+  const { data: allClientFirstSales = [] } = useQuery({
+    queryKey: ['client-officer-first-sales'],
+    queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any).rpc('get_client_officer_first_sales');
+      if (error) throw error;
+      return (data ?? []) as ClientOfficerFirstSale[];
+    },
+    staleTime: 60000,
   });
 
   const { data: receivablesData, isLoading: receivablesLoading } = useQuery({
@@ -369,15 +381,14 @@ export default function SalesTrackerView() {
   [officers, activeOfficerIds]);
 
   // Client detail lookup for tooltips: monthLabel → officerId → [{dealerName, branch}]
-  // Uses assigned_at from allMappings so the chart shows when officers onboarded clients,
-  // not the historical first-ever-sale date (which predates the sales tracker for all existing clients).
+  // Uses first_sale_date from the RPC (first dispatch date per client, not bulk-insert date).
   const newClientsDetailByLabel = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
     const result = new Map<string, Map<string, Array<{ dealerName: string; branch: string }>>>();
     for (const k of keys) result.set(monthLabel(k), new Map());
-    for (const m of allMappings) {
-      if (!m.assigned_at) continue;
-      const lbl = monthLabel(m.assigned_at.substring(0, 7));
+    for (const m of allClientFirstSales) {
+      if (!m.first_sale_date) continue;
+      const lbl = monthLabel(m.first_sale_date.substring(0, 7));
       if (!result.has(lbl)) continue;
       if (activeOfficerIds !== null && !activeOfficerIds.has(m.officer_id)) continue;
       const om = result.get(lbl)!;
@@ -385,7 +396,7 @@ export default function SalesTrackerView() {
       om.get(m.officer_id)!.push({ dealerName: m.client_name, branch: m.branch ?? '' });
     }
     return result;
-  }, [allMappings, chartPeriod, customStartDate, customEndDate, activeOfficerIds]);
+  }, [allClientFirstSales, chartPeriod, customStartDate, customEndDate, activeOfficerIds]);
 
   // Client detail lookup for outstanding tooltip: officerId → [{dealerName, branch, outstanding}]
   const officerClientsDetail = useMemo(() => {
@@ -401,7 +412,7 @@ export default function SalesTrackerView() {
   }, [officers, receivablesData, mappingByKey]);
 
   // New Clients Overall — line (total) + per-officer breakdown for tooltip
-  // Uses assigned_at from allMappings (when the officer was assigned each client).
+  // Uses first_sale_date from the RPC (first dispatch/order date, not bulk-insert date).
   const newClientsByOfficerData = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
     const data: Record<string, Record<string, number>> = {};
@@ -409,9 +420,9 @@ export default function SalesTrackerView() {
       data[k] = {};
       for (const o of visibleOfficers) data[k][o.id] = 0;
     }
-    for (const m of allMappings) {
-      if (!m.assigned_at) continue;
-      const month = m.assigned_at.substring(0, 7);
+    for (const m of allClientFirstSales) {
+      if (!m.first_sale_date) continue;
+      const month = m.first_sale_date.substring(0, 7);
       if (!(month in data) || data[month][m.officer_id] === undefined) continue;
       data[month][m.officer_id] += 1;
     }
@@ -426,29 +437,29 @@ export default function SalesTrackerView() {
       row['total'] = total;
       return row;
     });
-  }, [allMappings, chartPeriod, customStartDate, customEndDate, visibleOfficers]);
+  }, [allClientFirstSales, chartPeriod, customStartDate, customEndDate, visibleOfficers]);
 
-  // New clients table — grouped by year/month with officer and assignment date
+  // New clients table — grouped by year/month with officer and first sale date
   const newClientsTableData = useMemo(() => {
     const keySet = new Set(buildMonthKeys(chartPeriod, customStartDate, customEndDate));
 
-    const entries = allMappings
+    const entries = allClientFirstSales
       .filter(m => {
-        if (!m.assigned_at) return false;
-        if (!keySet.has(m.assigned_at.substring(0, 7))) return false;
+        if (!m.first_sale_date) return false;
+        if (!keySet.has(m.first_sale_date.substring(0, 7))) return false;
         if (activeOfficerIds !== null && !activeOfficerIds.has(m.officer_id)) return false;
         return true;
       })
       .map(m => {
         const officerName = officers.find(o => o.id === m.officer_id)?.name ?? '—';
-        const monthKey = m.assigned_at!.substring(0, 7);
+        const monthKey = m.first_sale_date.substring(0, 7);
         const [y, mo] = monthKey.split('-').map(Number);
         return {
           dealerName: m.client_name,
           branch: m.branch ?? '',
           officerName,
           officerId: m.officer_id,
-          first_date: m.assigned_at!,
+          first_date: m.first_sale_date,
           monthKey,
           year: y,
           month: mo,
@@ -464,7 +475,7 @@ export default function SalesTrackerView() {
       yg.get(e.monthKey)!.push(e);
     }
     return grouped;
-  }, [allMappings, chartPeriod, customStartDate, customEndDate, activeOfficerIds, officers]);
+  }, [allClientFirstSales, chartPeriod, customStartDate, customEndDate, activeOfficerIds, officers]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
