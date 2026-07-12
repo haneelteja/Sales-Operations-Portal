@@ -1,12 +1,10 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 const REPO = 'haneelteja/Sales-Operations-Portal';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const { target, arch, version } = req.query as Record<string, string>;
+export default async function handler(req, res) {
+  const { target, arch, version } = req.query;
 
   if (!target || !arch || !version) {
-    return res.status(400).json({ error: 'Missing params' });
+    return res.status(400).json({ error: 'Missing params: target, arch, version required' });
   }
 
   const apiRes = await fetch(
@@ -19,18 +17,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   );
 
-  if (!apiRes.ok) return res.status(500).json({ error: 'GitHub API error' });
+  if (!apiRes.ok) return res.status(500).json({ error: `GitHub API error: ${apiRes.status}` });
 
   const release = await apiRes.json();
-  const latestVersion = (release.tag_name as string).replace(/^v/, '');
+  const latestVersion = release.tag_name.replace(/^v/, '');
 
-  // Client is already on the latest version
   if (latestVersion === version) return res.status(204).end();
 
-  const assets: Array<{ name: string; browser_download_url: string }> = release.assets ?? [];
+  const assets = release.assets ?? [];
 
-  let url: string | undefined;
-  let sigUrl: string | undefined;
+  let url, sigUrl;
 
   if (target === 'windows-x86_64') {
     url    = assets.find(a => a.name.endsWith('.msi.zip'))?.browser_download_url;
