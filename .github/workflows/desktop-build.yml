@@ -1,8 +1,5 @@
 name: Desktop Build & Release
 
-# Runs on every push to main (produces draft release artifacts) and
-# on tag pushes matching v* (publishes a real GitHub Release with signed installers).
-
 on:
   push:
     branches: [main]
@@ -37,7 +34,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Vite build (produces dist/ for Tauri)
+      - name: Vite build
         run: npm run build
         env:
           VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
@@ -76,23 +73,29 @@ jobs:
           name: dist
           path: dist/
 
+      - name: Write signing key (strip any line-wrap characters)
+        shell: bash
+        run: printf '%s' "$KEY" | tr -d '[:space:]' > "$RUNNER_TEMP/signing.key"
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
       - name: Build Tauri (Windows)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          WINDOWS_CERTIFICATE:          ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          GITHUB_TOKEN:                   ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ runner.temp }}/signing.key
+          WINDOWS_CERTIFICATE:            ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD:   ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          VITE_SUPABASE_URL:              ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:         ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         with:
-          tagName:       ${{ github.ref_name }}
-          releaseName:   'Aamodha Operations Portal ${{ github.ref_name }}'
-          releaseBody:   'See CHANGELOG.md for release notes.'
-          releaseDraft:  ${{ github.ref_type != 'tag' }}
-          prerelease:    false
+          tagName:        ${{ github.ref_name }}
+          releaseName:    'Aamodha Operations Portal ${{ github.ref_name }}'
+          releaseBody:    'See CHANGELOG.md for release notes.'
+          releaseDraft:   ${{ github.ref_type != 'tag' }}
+          prerelease:     false
           includeRelease: true
-          tauriScript:   npx tauri
+          tauriScript:    npx tauri
 
   # ── 3. macOS build (universal: Intel + Apple Silicon) ────────────────────────
   build-macos:
@@ -132,24 +135,30 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
 
+      - name: Write signing key (strip any line-wrap characters)
+        shell: bash
+        run: printf '%s' "$KEY" | tr -d '[:space:]' > "$RUNNER_TEMP/signing.key"
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
       - name: Build Tauri (macOS universal)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          APPLE_CERTIFICATE:          ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID:                   ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD:             ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID:              ${{ secrets.APPLE_TEAM_ID }}
-          VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          GITHUB_TOKEN:                   ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ runner.temp }}/signing.key
+          APPLE_CERTIFICATE:              ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD:     ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID:                       ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD:                 ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID:                  ${{ secrets.APPLE_TEAM_ID }}
+          VITE_SUPABASE_URL:              ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:         ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         with:
-          tagName:       ${{ github.ref_name }}
-          releaseName:   'Aamodha Operations Portal ${{ github.ref_name }}'
-          releaseBody:   'See CHANGELOG.md for release notes.'
-          releaseDraft:  ${{ github.ref_type != 'tag' }}
-          prerelease:    false
+          tagName:        ${{ github.ref_name }}
+          releaseName:    'Aamodha Operations Portal ${{ github.ref_name }}'
+          releaseBody:    'See CHANGELOG.md for release notes.'
+          releaseDraft:   ${{ github.ref_type != 'tag' }}
+          prerelease:     false
           includeRelease: true
-          tauriScript:   npx tauri
-          args:          '--target universal-apple-darwin'
+          tauriScript:    npx tauri
+          args:           '--target universal-apple-darwin'
