@@ -110,6 +110,7 @@ supabase/.temp/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/update-signing.key
+src-tauri/update-signing.key.pub
 
 # Desktop installer artifacts (built by CI; not stored in repo)
 *.msi
