@@ -147,7 +147,8 @@ jobs:
       - name: Build Tauri (macOS universal)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: "-"
           APPLE_CERTIFICATE:              ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD:     ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_ID:                       ${{ secrets.APPLE_ID }}
