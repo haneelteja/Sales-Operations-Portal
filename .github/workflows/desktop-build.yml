@@ -73,17 +73,18 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Write signing key (strip any line-wrap characters)
+      - name: Set signing key (strip any line-wrap characters)
         shell: bash
-        run: printf '%s' "$KEY" | tr -d '[:space:]' > "$RUNNER_TEMP/signing.key"
+        run: |
+          CLEAN=$(printf '%s' "$KEY" | tr -d '[:space:]')
+          echo "TAURI_SIGNING_PRIVATE_KEY=$CLEAN" >> "$GITHUB_ENV"
         env:
           KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Build Tauri (Windows)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN:                   ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ runner.temp }}/signing.key
+          GITHUB_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
           WINDOWS_CERTIFICATE:            ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD:   ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           VITE_SUPABASE_URL:              ${{ secrets.VITE_SUPABASE_URL }}
@@ -135,17 +136,18 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
 
-      - name: Write signing key (strip any line-wrap characters)
+      - name: Set signing key (strip any line-wrap characters)
         shell: bash
-        run: printf '%s' "$KEY" | tr -d '[:space:]' > "$RUNNER_TEMP/signing.key"
+        run: |
+          CLEAN=$(printf '%s' "$KEY" | tr -d '[:space:]')
+          echo "TAURI_SIGNING_PRIVATE_KEY=$CLEAN" >> "$GITHUB_ENV"
         env:
           KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Build Tauri (macOS universal)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN:                   ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ runner.temp }}/signing.key
+          GITHUB_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE:              ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD:     ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_ID:                       ${{ secrets.APPLE_ID }}
