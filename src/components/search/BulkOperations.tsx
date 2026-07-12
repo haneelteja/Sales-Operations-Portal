@@ -171,8 +171,7 @@ export const BulkOperations: React.FC<BulkOperationsProps> = ({
   const exportRecords = async (recordIds: string[]) => {
     // Implementation would use XLSX or similar library
     // This is a placeholder
-    const selectedRecords = records.filter(r => recordIds.includes(r.id));
-    console.log('Exporting records:', selectedRecords);
+    records.filter(r => recordIds.includes(r.id));
   };
 
   const selectedCount = selectedIds.size;

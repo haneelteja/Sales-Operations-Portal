@@ -186,7 +186,7 @@ function buildCreditRiskEmail(rows: CreditRow[], date: string): string {
 
   const body = `
     <p style="font-size:13px;color:#64748b;margin-bottom:16px;">
-      Credit limit = average monthly sales per client (based on last 90 days). Warning = 75–100% of limit used.
+      Credit limit = average monthly sales per client (based on last 6 months). Warning = 75–100% of limit used. Clients with no recent sales but outstanding are shown at 999% (flagged as Over Limit).
     </p>
     <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
       ${summaryBox('Over Limit', overLimit.length, '#fee2e2', '#991b1b')}
@@ -329,17 +329,18 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
 }
 
 async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promise<CreditRow[]> {
-  const since90 = new Date(Date.now() - 90 * 86400000).toISOString();
+  // 6-month window gives a stable monthly average (90 days was too short and volatile)
+  const since180 = new Date(Date.now() - 180 * 86400000).toISOString();
 
   const [{ data: outstanding }, { data: sales }, { data: customers }] = await Promise.all([
     supabase.rpc('get_customer_outstanding'),
-    supabase.from('sales_transactions').select('customer_id, amount').eq('transaction_type', 'sale').gte('transaction_date', since90),
+    supabase.from('sales_transactions').select('customer_id, amount').eq('transaction_type', 'sale').gte('transaction_date', since180),
     supabase.from('customers').select('id, client_name, branch').eq('is_active', true),
   ]);
 
   const customerMap = new Map((customers ?? []).map((c: { id: string; client_name: string; branch: string | null }) => [c.id, c]));
 
-  // Sum sales per customer (last 90 days)
+  // Sum sales per customer (last 6 months)
   const salesMap = new Map<string, number>();
   for (const s of (sales ?? [])) {
     salesMap.set(s.customer_id, (salesMap.get(s.customer_id) ?? 0) + (s.amount ?? 0));
@@ -348,15 +349,18 @@ async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promi
   const outstandingMap = new Map((outstanding ?? []).map((r: { customer_id: string; outstanding: number }) => [r.customer_id, r.outstanding]));
 
   const rows: CreditRow[] = [];
-  for (const [customerId, totalSales90d] of salesMap.entries()) {
-    const creditLimit = totalSales90d / 3; // avg monthly
-    const out = outstandingMap.get(customerId) ?? 0;
+  // Iterate over ALL customers with outstanding (not just those with recent sales).
+  // Dormant clients with large outstanding and zero recent orders are the biggest risk.
+  for (const [customerId, out] of outstandingMap.entries()) {
     if (out <= 0) continue;
-    const usedPct = creditLimit > 0 ? (out / creditLimit) * 100 : 0;
+    const totalSales6m = salesMap.get(customerId) ?? 0;
+    const creditLimit = totalSales6m / 6; // avg monthly over 6 months
+    const usedPct = creditLimit > 0 ? (out / creditLimit) * 100 : 999; // no recent sales = treat as over limit
     const cust = customerMap.get(customerId) as { client_name: string; branch: string | null } | undefined;
+    if (!cust) continue;
     rows.push({
-      client_name: cust?.client_name ?? 'Unknown',
-      branch: cust?.branch ?? null,
+      client_name: cust.client_name,
+      branch: cust.branch ?? null,
       credit_limit: creditLimit,
       outstanding: out,
       used_pct: usedPct,

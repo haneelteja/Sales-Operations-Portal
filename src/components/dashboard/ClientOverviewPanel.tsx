@@ -348,14 +348,14 @@ export default function ClientOverviewPanel() {
       }
     }
 
-    // Credit limit = avg of last 90 days sales / 3
-    const cutoff90 = new Date(); cutoff90.setDate(cutoff90.getDate() - 90);
-    const cutoff90Str = cutoff90.toISOString().split('T')[0];
-    const recent90Sales = sales.filter(t => t.transaction_date >= cutoff90Str);
-    const creditLimit = recent90Sales.length > 0
-      ? recent90Sales.reduce((s, t) => s + (t.amount ?? 0), 0) / 3
-      : totalRevenue / Math.max(1, 3);
-    const creditUtilization = creditLimit > 0 ? Math.min(999, (outstanding / creditLimit) * 100) : 0;
+    // Credit limit = avg monthly sales over last 6 months (more stable than 90-day window)
+    const cutoff180 = new Date(); cutoff180.setDate(cutoff180.getDate() - 180);
+    const cutoff180Str = cutoff180.toISOString().split('T')[0];
+    const recent180Sales = sales.filter(t => t.transaction_date >= cutoff180Str);
+    const creditLimit = recent180Sales.length > 0
+      ? recent180Sales.reduce((s, t) => s + (t.amount ?? 0), 0) / 6
+      : 0;
+    const creditUtilization = creditLimit > 0 ? Math.min(999, (outstanding / creditLimit) * 100) : (outstanding > 0 ? 999 : 0);
 
     const paymentToRevenueRatio = totalRevenue > 0 ? (totalPaid / totalRevenue) * 100 : 0;
 
