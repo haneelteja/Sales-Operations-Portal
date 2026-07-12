@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Required for Hardened Runtime (mandatory for notarization) -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <false/>
+
+  <!-- App Sandbox -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+
+  <!-- Network access (required for Supabase API) -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+
+  <!-- File access: user-selected files only (for export dialogs) -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+
+  <!-- Downloads folder write access -->
+  <key>com.apple.security.files.downloads.read-write</key>
+  <true/>
+
+  <!-- Notifications -->
+  <key>com.apple.security.network.server</key>
+  <false/>
+</dict>
+</plist>

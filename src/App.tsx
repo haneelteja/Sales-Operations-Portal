@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,6 +9,9 @@ import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persist
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { isDesktop } from "@/lib/platform";
+import { silentUpdateCheck } from "@/lib/desktop/updater";
+import { toast } from "sonner";
 
 import PortalRouter from "@/components/PortalRouter";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -55,7 +58,31 @@ const persistOptions = {
   },
 };
 
-const App = () => (
+function useDesktopInit() {
+  useEffect(() => {
+    if (!isDesktop()) return;
+
+    // Show the main window now that React has mounted (prevents white-flash on startup).
+    import('@tauri-apps/api/core').then(({ invoke }) => invoke('show_main_window')).catch(() => {});
+
+    // Check for updates silently in the background.
+    silentUpdateCheck((info) => {
+      toast.info(`Update available: v${info.version}`, {
+        description: 'Restart the app to install.',
+        duration: 10_000,
+        action: {
+          label: 'Update now',
+          onClick: () =>
+            import('@/lib/desktop/updater').then(({ applyUpdate }) => applyUpdate()),
+        },
+      });
+    });
+  }, []);
+}
+
+const App = () => {
+  useDesktopInit();
+  return (
   <ErrorBoundary>
     <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
       <AuthProvider>
@@ -82,6 +109,7 @@ const App = () => (
     </PersistQueryClientProvider>
     {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
   </ErrorBoundary>
-);
+  );
+};
 
 export default App;

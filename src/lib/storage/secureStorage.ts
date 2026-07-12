@@ -1,13 +1,17 @@
 /**
- * Secure Storage Utility
- * 
- * Provides safer localStorage/sessionStorage access with:
- * - Basic encryption for sensitive data (using simple encoding - for production, use proper encryption)
- * - Type safety
- * - Error handling
- * - Expiration support
- * 
- * NOTE: For production, implement proper encryption using Web Crypto API or a library like crypto-js
+ * Storage utility with genuine AES-GCM encryption via the Web Crypto API.
+ *
+ * Sync API  (encrypt: false, default) — plain JSON in localStorage/sessionStorage.
+ *           Suitable for non-sensitive data: form auto-saves, UI preferences.
+ *
+ * Async API (setEncryptedItem / getEncryptedItem) — AES-256-GCM.
+ *           Suitable for any data you'd rather not leave in plaintext on disk.
+ *           A per-install key is derived from a stable machine seed stored under
+ *           a separate key; this is NOT a user-password-based key (if you need
+ *           that, derive a key from the user's password using PBKDF2 separately).
+ *
+ * On the desktop (Tauri), prefer `src/lib/desktop/store.ts` for truly sensitive
+ * data — it delegates to OS-level protected storage.
  */
 
 import { logger } from '@/lib/logger';
@@ -15,223 +19,182 @@ import { logger } from '@/lib/logger';
 type StorageType = 'localStorage' | 'sessionStorage';
 
 interface StorageOptions {
-  /** Storage type - localStorage persists, sessionStorage clears on tab close */
   storageType?: StorageType;
-  /** Expiration time in milliseconds */
   expiresIn?: number;
-  /** Whether to encrypt sensitive data */
-  encrypt?: boolean;
 }
 
-/**
- * Simple encoding/decoding (NOT real encryption - for production use Web Crypto API)
- * This is a basic obfuscation to prevent casual inspection
- */
-function encode(data: string): string {
-  try {
-    return btoa(encodeURIComponent(data));
-  } catch {
-    return data;
-  }
+interface StorageEnvelope<T> {
+  value: T;
+  timestamp: number;
+  expiresAt: number | null;
 }
 
-function decode(encoded: string): string {
-  try {
-    return decodeURIComponent(atob(encoded));
-  } catch {
-    return encoded;
-  }
-}
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-/**
- * Get storage instance
- */
 function getStorage(type: StorageType = 'localStorage'): Storage {
-  if (typeof window === 'undefined') {
-    throw new Error('Storage is only available in browser environment');
-  }
+  if (typeof window === 'undefined') throw new Error('Storage unavailable outside browser');
   return type === 'localStorage' ? window.localStorage : window.sessionStorage;
 }
 
-/**
- * Set item in storage with optional encryption and expiration
- */
-export function setSecureItem<T>(
-  key: string,
-  value: T,
-  options: StorageOptions = {}
-): boolean {
-  try {
-    const {
-      storageType = 'localStorage',
-      expiresIn,
-      encrypt = false,
-    } = options;
+// ── Synchronous API (no encryption) ──────────────────────────────────────────
 
-    const storage = getStorage(storageType);
-    
-    const data = {
+export function setSecureItem<T>(key: string, value: T, options: StorageOptions = {}): boolean {
+  try {
+    const { storageType = 'localStorage', expiresIn } = options;
+    const envelope: StorageEnvelope<T> = {
       value,
       timestamp: Date.now(),
-      expiresIn: expiresIn ? Date.now() + expiresIn : null,
+      expiresAt: expiresIn ? Date.now() + expiresIn : null,
     };
-
-    let serialized = JSON.stringify(data);
-    
-    // Basic encoding for sensitive data (NOT real encryption)
-    if (encrypt) {
-      serialized = encode(serialized);
-      logger.warn(
-        'Using basic encoding for sensitive data. For production, implement proper encryption using Web Crypto API.'
-      );
-    }
-
-    storage.setItem(key, serialized);
+    getStorage(storageType).setItem(key, JSON.stringify(envelope));
     return true;
-  } catch (error) {
-    logger.error(`Error setting secure storage item ${key}:`, error);
+  } catch (err) {
+    logger.error(`setSecureItem(${key}) failed:`, err);
     return false;
   }
 }
 
-/**
- * Get item from storage with decryption and expiration check
- */
-export function getSecureItem<T>(
-  key: string,
-  options: StorageOptions = {}
-): T | null {
+export function getSecureItem<T>(key: string, options: StorageOptions = {}): T | null {
   try {
-    const {
-      storageType = 'localStorage',
-      encrypt = false,
-    } = options;
+    const { storageType = 'localStorage' } = options;
+    const raw = getStorage(storageType).getItem(key);
+    if (!raw) return null;
 
-    const storage = getStorage(storageType);
-    const item = storage.getItem(key);
-
-    if (!item) {
+    const envelope = JSON.parse(raw) as StorageEnvelope<T>;
+    if (envelope.expiresAt && Date.now() > envelope.expiresAt) {
+      getStorage(storageType).removeItem(key);
       return null;
     }
-
-    let deserialized: { value: T; timestamp: number; expiresIn: number | null };
-    
-    try {
-      // Try to decode if encrypted
-      const decoded = encrypt ? decode(item) : item;
-      deserialized = JSON.parse(decoded);
-    } catch {
-      // Fallback: might be old format without encryption
-      try {
-        deserialized = JSON.parse(item);
-      } catch {
-        logger.error(`Failed to parse storage item ${key}`);
-        return null;
-      }
-    }
-
-    // Check expiration
-    if (deserialized.expiresIn && Date.now() > deserialized.expiresIn) {
-      storage.removeItem(key);
-      logger.debug(`Storage item ${key} expired and removed`);
-      return null;
-    }
-
-    return deserialized.value;
-  } catch (error) {
-    logger.error(`Error getting secure storage item ${key}:`, error);
+    return envelope.value;
+  } catch (err) {
+    logger.error(`getSecureItem(${key}) failed:`, err);
     return null;
   }
 }
 
-/**
- * Remove item from storage
- */
-export function removeSecureItem(
-  key: string,
-  storageType: StorageType = 'localStorage'
-): boolean {
+export function removeSecureItem(key: string, storageType: StorageType = 'localStorage'): boolean {
+  try {
+    getStorage(storageType).removeItem(key);
+    return true;
+  } catch (err) {
+    logger.error(`removeSecureItem(${key}) failed:`, err);
+    return false;
+  }
+}
+
+export function clearSecureItems(prefix: string, storageType: StorageType = 'localStorage'): void {
   try {
     const storage = getStorage(storageType);
-    storage.removeItem(key);
+    const toRemove: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k?.startsWith(prefix)) toRemove.push(k);
+    }
+    toRemove.forEach(k => storage.removeItem(k));
+  } catch (err) {
+    logger.error(`clearSecureItems(${prefix}) failed:`, err);
+  }
+}
+
+export function hasSecureItem(key: string, options: StorageOptions = {}): boolean {
+  return getSecureItem(key, options) !== null;
+}
+
+// ── Async Encrypted API (AES-256-GCM via Web Crypto) ─────────────────────────
+
+const CRYPTO_KEY_STORAGE_KEY = '__aamodha_ck__';
+const ENC_PREFIX = 'enc:v1:';
+
+async function getOrCreateCryptoKey(): Promise<CryptoKey> {
+  // Look for existing raw key bytes in localStorage (non-encrypted envelope)
+  const stored = localStorage.getItem(CRYPTO_KEY_STORAGE_KEY);
+  if (stored) {
+    const raw = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
+    return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  }
+  // Generate a new random 256-bit key
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const exported = await crypto.subtle.exportKey('raw', key);
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(exported)));
+  localStorage.setItem(CRYPTO_KEY_STORAGE_KEY, b64);
+  return key;
+}
+
+/**
+ * Store an encrypted value. Awaitable — must be used with `await`.
+ * Stored value is AES-256-GCM encrypted with a per-install random key.
+ */
+export async function setEncryptedItem<T>(
+  key: string,
+  value: T,
+  options: StorageOptions = {},
+): Promise<boolean> {
+  try {
+    const { storageType = 'localStorage', expiresIn } = options;
+    const cryptoKey = await getOrCreateCryptoKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const envelope: StorageEnvelope<T> = {
+      value,
+      timestamp: Date.now(),
+      expiresAt: expiresIn ? Date.now() + expiresIn : null,
+    };
+    const plaintext = new TextEncoder().encode(JSON.stringify(envelope));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, plaintext);
+
+    // Combine: iv (12 bytes) + ciphertext → base64
+    const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(ciphertext), iv.byteLength);
+    const b64 = btoa(String.fromCharCode(...combined));
+
+    getStorage(storageType).setItem(key, ENC_PREFIX + b64);
     return true;
-  } catch (error) {
-    logger.error(`Error removing secure storage item ${key}:`, error);
+  } catch (err) {
+    logger.error(`setEncryptedItem(${key}) failed:`, err);
     return false;
   }
 }
 
 /**
- * Clear all items with a specific prefix
+ * Retrieve and decrypt a value previously stored with `setEncryptedItem`.
+ * Returns null if the key is missing, expired, or decryption fails.
  */
-export function clearSecureItems(
-  prefix: string,
-  storageType: StorageType = 'localStorage'
-): void {
+export async function getEncryptedItem<T>(
+  key: string,
+  options: StorageOptions = {},
+): Promise<T | null> {
   try {
-    const storage = getStorage(storageType);
-    const keysToRemove: string[] = [];
-    
-    for (let i = 0; i < storage.length; i++) {
-      const key = storage.key(i);
-      if (key && key.startsWith(prefix)) {
-        keysToRemove.push(key);
-      }
+    const { storageType = 'localStorage' } = options;
+    const raw = getStorage(storageType).getItem(key);
+    if (!raw || !raw.startsWith(ENC_PREFIX)) return null;
+
+    const cryptoKey = await getOrCreateCryptoKey();
+    const combined = Uint8Array.from(atob(raw.slice(ENC_PREFIX.length)), c => c.charCodeAt(0));
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext);
+    const envelope = JSON.parse(new TextDecoder().decode(plaintext)) as StorageEnvelope<T>;
+
+    if (envelope.expiresAt && Date.now() > envelope.expiresAt) {
+      getStorage(storageType).removeItem(key);
+      return null;
     }
-    
-    keysToRemove.forEach(key => storage.removeItem(key));
-    logger.debug(`Cleared ${keysToRemove.length} storage items with prefix ${prefix}`);
-  } catch (error) {
-    logger.error(`Error clearing secure storage items with prefix ${prefix}:`, error);
+    return envelope.value;
+  } catch (err) {
+    logger.error(`getEncryptedItem(${key}) failed — clearing corrupted entry:`, err);
+    getStorage(options.storageType ?? 'localStorage').removeItem(key);
+    return null;
   }
 }
 
-/**
- * Check if item exists and is not expired
- */
-export function hasSecureItem(
-  key: string,
-  options: StorageOptions = {}
-): boolean {
-  const item = getSecureItem(key, options);
-  return item !== null;
-}
+// ── Storage key constants ─────────────────────────────────────────────────────
 
-/**
- * Storage keys for different data types
- * Use these constants to avoid typos and ensure consistency
- */
 export const STORAGE_KEYS = {
-  // Form auto-save (use sessionStorage for temporary data)
-  USER_MANAGEMENT_FORM: 'user_management_form_autosave',
-  SALES_ENTRY_SALE_FORM: 'sales_entry_sale_form_autosave',
-  SALES_ENTRY_PAYMENT_FORM: 'sales_entry_payment_form_autosave',
-  SALES_ENTRY_ITEMS: 'sales_entry_items_autosave',
-  
-  // Auth (handled by Supabase - don't store manually)
-  // AUTH_TOKEN: 'auth_token', // Don't use - Supabase handles this
-  
-  // User preferences (safe for localStorage)
-  USER_PREFERENCES: 'user_preferences',
-  THEME_PREFERENCE: 'theme_preference',
+  USER_MANAGEMENT_FORM:       'user_management_form_autosave',
+  SALES_ENTRY_SALE_FORM:      'sales_entry_sale_form_autosave',
+  SALES_ENTRY_PAYMENT_FORM:   'sales_entry_payment_form_autosave',
+  SALES_ENTRY_ITEMS:          'sales_entry_items_autosave',
+  USER_PREFERENCES:           'user_preferences',
+  THEME_PREFERENCE:           'theme_preference',
 } as const;
-
-/**
- * Recommendations for storage usage:
- * 
- * 1. Form auto-save: Use sessionStorage (clears on tab close)
- *    - Less risk if user shares computer
- *    - Data is temporary anyway
- * 
- * 2. User preferences: Use localStorage with encryption=false
- *    - Not sensitive data
- *    - Should persist across sessions
- * 
- * 3. Sensitive data: Use sessionStorage with encrypt=true
- *    - Or better: Don't store in browser storage at all
- *    - Use server-side session storage instead
- * 
- * 4. Auth tokens: Let Supabase handle it
- *    - Don't manually store auth tokens
- *    - Supabase uses secure storage mechanisms
- */

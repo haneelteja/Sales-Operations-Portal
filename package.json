@@ -22,9 +22,21 @@
     "android:run:live": "npx cap run android --livereload --external",
     "android:build:debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
     "android:build:release": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
-    "android:build:bundle": "npm run build && npx cap sync android && cd android && ./gradlew bundleRelease"
+    "android:build:bundle": "npm run build && npx cap sync android && cd android && ./gradlew bundleRelease",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:icons": "tauri icon public/icons/512x512.png",
+    "desktop:sign:keygen": "tauri signer generate -w src-tauri/update-signing.key"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-fs": "^2",
+    "@tauri-apps/plugin-notification": "^2",
+    "@tauri-apps/plugin-os": "^2",
+    "@tauri-apps/plugin-process": "^2",
+    "@tauri-apps/plugin-store": "^2",
+    "@tauri-apps/plugin-updater": "^2",
     "@azure/identity": "^4.13.0",
     "@capacitor/android": "^8.3.4",
     "@capacitor/cli": "^8.3.4",
@@ -104,6 +116,7 @@
     "@rollup/rollup-win32-x64-msvc": "4.62.2"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@tanstack/react-query-devtools": "^5.91.3",

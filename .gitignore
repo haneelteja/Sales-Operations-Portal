@@ -105,3 +105,17 @@ supabase/.temp/
 # Build outputs
 *.tsbuildinfo
 .vercel
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/
+src-tauri/update-signing.key
+
+# Desktop installer artifacts (built by CI; not stored in repo)
+*.msi
+*.exe
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.AppImage

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aamodha Operations Portal",
+  "version": "1.0.0",
+  "identifier": "com.aamodha.operations-portal",
+
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:8080",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Aamodha Operations Portal",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "center": true,
+        "decorations": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://*.supabase.co https://api.resend.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; worker-src 'self' blob:"
+    },
+    "trayIcon": {
+      "iconPath": "icons/32x32.png",
+      "iconAsTemplate": true
+    }
+  },
+
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "copyright": "© 2026 Aamodha Enterprises",
+    "category": "Business",
+    "shortDescription": "Business operations portal for Aamodha Enterprises",
+    "longDescription": "End-to-end business operations: sales, orders, factory payables, receivables, and analytics.",
+
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      },
+      "nsis": {
+        "languages": ["English"],
+        "displayLanguageSelector": false
+      }
+    },
+
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "entitlements": "entitlements.plist",
+      "exceptionDomain": "supabase.co",
+      "frameworks": []
+    },
+
+    "linux": {
+      "deb": {
+        "depends": ["webkit2gtk-4.1"]
+      }
+    }
+  },
+
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://releases.aamodha.in/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "dialog": false,
+      "headers": {}
+    }
+  }
+}

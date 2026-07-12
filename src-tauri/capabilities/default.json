@@ -1,0 +1,36 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimum required permissions for the Aamodha Operations Portal desktop app. Follow least-privilege: add permissions only as features require them.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+
+    "shell:allow-open",
+
+    "fs:allow-read-files",
+    "fs:allow-write-files",
+    "fs:allow-read-dir",
+    "fs:scope-download-folder",
+
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-ask",
+    "dialog:allow-message",
+
+    "notification:default",
+
+    "updater:default",
+
+    "process:allow-exit",
+
+    "os:allow-platform",
+    "os:allow-version",
+
+    "store:allow-load",
+    "store:allow-set",
+    "store:allow-get",
+    "store:allow-delete",
+    "store:allow-save"
+  ]
+}

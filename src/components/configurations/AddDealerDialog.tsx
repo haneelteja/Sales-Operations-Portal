@@ -238,6 +238,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const { data: existingOfficerMapping } = useQuery({
     queryKey: ['customer-sales-officer', pairKey],
     queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('customer_sales_officer')
         .select('officer_id')
@@ -529,6 +530,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
 
       // Upsert sales officer mapping if an officer is selected
       if (salesOfficerId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: officerErr } = await (supabase as any)
           .from('customer_sales_officer')
           .upsert(

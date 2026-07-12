@@ -1,0 +1,9 @@
+# Rust build output
+/target/
+
+# Tauri generated files (recreated by tauri build)
+/gen/
+
+# Cargo lock (generated from Cargo.toml — commit for binaries, gitignore for libs)
+# For a desktop app, commit Cargo.lock for reproducible builds:
+# Cargo.lock

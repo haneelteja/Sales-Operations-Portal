@@ -36,7 +36,6 @@ interface SummaryRow {
 }
 
 export async function fetchReceivablesTracking(): Promise<FetchResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [summaryResult, followupResult] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc('get_receivables_summary'),
