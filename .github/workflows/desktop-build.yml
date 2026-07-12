@@ -14,6 +14,9 @@ on:
         required: false
         default: 'false'
 
+permissions:
+  contents: write
+
 jobs:
   # ── 1. Web build + TypeScript + lint ────────────────────────────────────────
   web-check:
@@ -76,9 +79,8 @@ jobs:
       - name: Build Tauri (Windows)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # Windows Authenticode code signing (set once you have a cert)
           WINDOWS_CERTIFICATE:          ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
@@ -90,6 +92,7 @@ jobs:
           releaseDraft:  ${{ github.ref_type != 'tag' }}
           prerelease:    false
           includeRelease: true
+          tauriScript:   npx tauri
 
   # ── 3. macOS build (universal: Intel + Apple Silicon) ────────────────────────
   build-macos:
@@ -132,9 +135,8 @@ jobs:
       - name: Build Tauri (macOS universal)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # Apple notarization (set once enrolled in Apple Developer Program)
           APPLE_CERTIFICATE:          ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_ID:                   ${{ secrets.APPLE_ID }}
@@ -149,4 +151,5 @@ jobs:
           releaseDraft:  ${{ github.ref_type != 'tag' }}
           prerelease:    false
           includeRelease: true
+          tauriScript:   npx tauri
           args:          '--target universal-apple-darwin'
