@@ -8,10 +8,10 @@
 
     "shell:allow-open",
 
-    "fs:allow-read-files",
-    "fs:allow-write-files",
-    "fs:allow-read-dir",
-    "fs:scope-download-folder",
+    "fs:read-files",
+    "fs:write-files",
+    "fs:read-dirs",
+    "fs:scope-download",
 
     "dialog:allow-open",
     "dialog:allow-save",
