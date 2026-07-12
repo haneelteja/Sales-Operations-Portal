@@ -106,8 +106,8 @@ const App = () => {
           </SidebarProvider>
         </TooltipProvider>
       </AuthProvider>
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
     </PersistQueryClientProvider>
-    {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
   </ErrorBoundary>
   );
 };
