@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/:target/:arch/:version", "destination": "/api/update" }
+  ]
+}
