@@ -1,9 +1,3 @@
 {
-  "outputDirectory": "public",
-  "rewrites": [
-    {
-      "source": "/:target/:arch/:version",
-      "destination": "/api/update?target=$target&arch=$arch&version=$version"
-    }
-  ]
+  "outputDirectory": "public"
 }
