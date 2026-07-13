@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
@@ -105,9 +106,9 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-const CustomLegend = () => (
+const CustomLegend = ({ metrics }: { metrics: typeof METRIC_META[number][] }) => (
   <div className="flex flex-wrap justify-center gap-5 pt-1">
-    {METRIC_META.map(({ key, label, color }) => (
+    {metrics.map(({ key, label, color }) => (
       <span key={key} className="flex items-center gap-1.5 text-xs font-medium" style={{ color }}>
         <span className="h-3 w-3 rounded-full opacity-80" style={{ background: color }} />
         {label}
@@ -116,14 +117,16 @@ const CustomLegend = () => (
   </div>
 );
 
-const TotalsRow = ({ totals }: { totals: { cases: number; revenue: number; profit: number; collections: number } }) => (
-  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-    {[
-      { label: 'Total Cases', value: totals.cases.toLocaleString('en-IN'), meta: METRIC_META[0] },
-      { label: 'Revenue',     value: fmtMoney(totals.revenue),             meta: METRIC_META[1] },
-      { label: 'Profit',      value: fmtMoney(totals.profit),              meta: totals.profit >= 0 ? METRIC_META[2] : { ...METRIC_META[2], color: '#dc2626', pastel: '#fee2e2', text: '#991b1b' } },
-      { label: 'Collections', value: fmtMoney(totals.collections),         meta: METRIC_META[3] },
-    ].map(({ label, value, meta }) => (
+const TotalsRow = ({ totals, showProfit }: { totals: { cases: number; revenue: number; profit: number; collections: number }; showProfit: boolean }) => {
+  const items = [
+    { label: 'Total Cases', value: totals.cases.toLocaleString('en-IN'), meta: METRIC_META[0] },
+    { label: 'Revenue',     value: fmtMoney(totals.revenue),             meta: METRIC_META[1] },
+    ...(showProfit ? [{ label: 'Profit', value: fmtMoney(totals.profit), meta: totals.profit >= 0 ? METRIC_META[2] : { ...METRIC_META[2], color: '#dc2626', pastel: '#fee2e2', text: '#991b1b' } }] : []),
+    { label: 'Collections', value: fmtMoney(totals.collections),         meta: METRIC_META[3] },
+  ];
+  return (
+  <div className={`grid gap-3 ${showProfit ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
+    {items.map(({ label, value, meta }) => (
       <div key={label} className="rounded-2xl px-4 py-3 border" style={{ background: meta.pastel, borderColor: `${meta.color}25` }}>
         <div className="flex items-center gap-1.5 mb-1.5">
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
@@ -133,12 +136,23 @@ const TotalsRow = ({ totals }: { totals: { cases: number; revenue: number; profi
       </div>
     ))}
   </div>
-);
+  );
+};
 
 const BusinessAnalyticsChart: React.FC = () => {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
+
+  const visibleMetrics = useMemo(
+    () => METRIC_META.filter(m => !(isAdmin && m.key === 'profit')),
+    [isAdmin],
+  );
+
   const [selectedYear, setSelectedYear] = useState<string>(CURRENT_YEAR);
   const [selectedMonths, setSelectedMonths] = useState<Set<string> | null>(null); // null = all months
-  const [activeMetrics, setActiveMetrics] = useState<Set<string>>(new Set(['cases', 'revenue', 'profit', 'collections']));
+  const [activeMetrics, setActiveMetrics] = useState<Set<string>>(
+    () => new Set(isAdmin ? ['cases', 'revenue', 'collections'] : ['cases', 'revenue', 'profit', 'collections'])
+  );
 
   const { data: salesTxs = [] } = useQuery({
     queryKey: ['biz-analytics-sales'],
@@ -319,12 +333,12 @@ const BusinessAnalyticsChart: React.FC = () => {
           </div>
         </div>
 
-        {chartData.length > 0 && <TotalsRow totals={totals} />}
+        {chartData.length > 0 && <TotalsRow totals={totals} showProfit={!isAdmin} />}
 
         <div className="flex flex-wrap items-center gap-2 mt-1">
           {/* Metric toggles */}
           <div className="flex items-center gap-1">
-            {METRIC_META.map(({ key, label, color }) => {
+            {visibleMetrics.map(({ key, label, color }) => {
               const on = activeMetrics.has(key);
               return (
                 <button
@@ -429,7 +443,7 @@ const BusinessAnalyticsChart: React.FC = () => {
                   <YAxis yAxisId="cases" orientation="left" tickFormatter={v => v.toLocaleString('en-IN')} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={48} />
                   <YAxis yAxisId="money" orientation="right" tickFormatter={fmtMoney} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={56} />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(100,116,139,0.06)' }} />
-                  <Legend content={<CustomLegend />} />
+                  <Legend content={<CustomLegend metrics={visibleMetrics} />} />
                   {activeMetrics.has('cases') && <Line yAxisId="cases" type="monotone" dataKey="cases" name="Cases" stroke={LINE_COLORS.cases} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.cases, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.cases, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.cases, v => v.toLocaleString('en-IN'), -12)} />}
                   {activeMetrics.has('revenue') && <Line yAxisId="money" type="monotone" dataKey="revenue" name="Revenue" stroke={LINE_COLORS.revenue} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.revenue, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.revenue, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.revenue, fmtMoney, -12)} />}
                   {activeMetrics.has('profit') && <Line yAxisId="money" type="monotone" dataKey="profit" name="Profit" stroke={LINE_COLORS.profit} strokeWidth={2.5} dot={{ r: 5, fill: LINE_COLORS.profit, strokeWidth: 2, stroke: 'white' }} activeDot={{ r: 7, fill: LINE_COLORS.profit, stroke: 'white', strokeWidth: 2 }} label={makeDotLabel(LINE_COLORS.profit, fmtMoney, 20)} />}
