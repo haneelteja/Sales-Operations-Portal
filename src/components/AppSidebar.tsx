@@ -56,10 +56,10 @@ const menuItems: MenuItem[] = [
   { id: "factory", title: "Factory Transactions", icon: Factory },
   { id: "transport", title: "Transport", icon: Truck },
   { id: "labels", title: "Labels", icon: Tag },
-  { id: "reports", title: "Reports", icon: FileText },
-  { id: "profitability", title: "Profitability", icon: TrendingUp },
-  { id: "sales-tracker", title: "Sales Tracker", icon: ChartBar },
-  { id: "receivables-management", title: "Client Analysis", icon: Wallet },
+  { id: "reports", title: "Reports", icon: FileText, roles: ['manager'] },
+  { id: "profitability", title: "Profitability", icon: TrendingUp, roles: ['manager'] },
+  { id: "sales-tracker", title: "Sales Tracker", icon: ChartBar, roles: ['manager'] },
+  { id: "receivables-management", title: "Client Analysis", icon: Wallet, roles: ['manager'] },
   { id: "audit-logs", title: "Audit Logs", icon: ScrollText, roles: ['manager'] },
   { id: "user-management", title: "User Management", icon: Shield, roles: ['manager'] }, // Only visible to managers
   { id: "application-configuration", title: "Application Configuration", icon: Settings, roles: ['manager'] }, // Only visible to managers

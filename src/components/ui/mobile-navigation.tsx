@@ -51,7 +51,7 @@ const navigationItems: NavigationItem[] = [
   { id: 'transport', title: 'Transport', icon: Truck },
   { id: 'labels', title: 'Labels', icon: Tag },
   { id: 'configurations', title: 'Settings', icon: Cog },
-  { id: 'reports', title: 'Reports', icon: FileText },
+  { id: 'reports', title: 'Reports', icon: FileText, roles: ['manager'] },
   { id: 'user-management', title: 'Users', icon: Shield, roles: ['manager'] }, // Only visible to managers
   { id: 'application-configuration', title: 'App Config', icon: Settings, roles: ['manager', 'admin'] }, // Only visible to managers and admins
   { id: 'whatsapp-configuration', title: 'WhatsApp Config', icon: MessageSquare, roles: ['manager', 'admin'] }, // Only visible to managers and admins
