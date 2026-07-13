@@ -723,6 +723,10 @@ const Dashboard = memo(() => {
         </div>
       </div>
 
+      <BusinessAnalyticsChart />
+
+      <ClientOverviewPanel />
+
       {/* Stock at Plant — always rendered to avoid CLS from conditional mount */}
       {(plantStockLoading || plantStockCurrent.length > 0) && (
         <Card>
@@ -963,9 +967,6 @@ const Dashboard = memo(() => {
         );
       })()}
 
-      <BusinessAnalyticsChart />
-
-      <ClientOverviewPanel />
     </div>
   );
 });
