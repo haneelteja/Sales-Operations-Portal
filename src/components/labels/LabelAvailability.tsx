@@ -176,11 +176,14 @@ const LabelAvailability = () => {
   const clientSkuSummaries: ClientSkuLabelSummary[] = React.useMemo(() => {
     if (!labelPurchases?.length) return [];
 
+    // customer_id → { client_name, is_deprecated }
     const customerMap = new Map(
       customers?.map(c => [c.id, { client_name: c.client_name, is_deprecated: c.is_deprecated ?? false }]) ?? []
     );
     const bottlesPerCase = (sku: string) => skuConfigs?.get(sku) ?? 1;
 
+    // Key is client_name__sku (not client_id) so duplicate customer records
+    // for the same client collapse into a single row.
     const summaryMap = new Map<string, ClientSkuLabelSummary>();
 
     labelPurchases.forEach(p => {
@@ -188,7 +191,7 @@ const LabelAvailability = () => {
       const customerInfo = customerMap.get(p.client_id);
       if (!customerInfo) return;
 
-      const key = `${p.client_id}__${p.sku}`;
+      const key = `${customerInfo.client_name}__${p.sku}`;
       const isAdj = (p.record_type as string) === 'adjustment';
       const qty = p.quantity || 0;
 
@@ -202,6 +205,11 @@ const LabelAvailability = () => {
           if (p.purchase_date && p.purchase_date > existing.last_purchase_date) {
             existing.last_purchase_date = p.purchase_date;
           }
+        }
+        // Prefer the non-deprecated client_id for the Adjust button
+        if (!customerInfo.is_deprecated && existing.is_deprecated) {
+          existing.client_id = p.client_id;
+          existing.is_deprecated = false;
         }
       } else {
         summaryMap.set(key, {
@@ -222,15 +230,21 @@ const LabelAvailability = () => {
       }
     });
 
+    // Production and sales are looked up by client_name (via customer_id → name map)
+    // so they correctly merge across multiple customer records for the same client.
     productionData?.forEach(prod => {
       if (!prod.customer_id || !prod.sku) return;
-      const entry = summaryMap.get(`${prod.customer_id}__${prod.sku}`);
+      const clientName = customerMap.get(prod.customer_id)?.client_name;
+      if (!clientName) return;
+      const entry = summaryMap.get(`${clientName}__${prod.sku}`);
       if (entry) entry.production_labels += (prod.quantity || 0) * bottlesPerCase(prod.sku);
     });
 
     salesTransactions?.forEach(sale => {
       if (!sale.customer_id || !sale.sku) return;
-      const entry = summaryMap.get(`${sale.customer_id}__${sale.sku}`);
+      const clientName = customerMap.get(sale.customer_id)?.client_name;
+      if (!clientName) return;
+      const entry = summaryMap.get(`${clientName}__${sale.sku}`);
       if (entry) entry.sales_labels += (sale.quantity || 0) * bottlesPerCase(sale.sku);
     });
 
