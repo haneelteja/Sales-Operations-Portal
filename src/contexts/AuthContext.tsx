@@ -117,14 +117,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
-        
+
         // Check if user requires password reset
         if (session?.user) {
           setRequiresPasswordReset(shouldRequirePasswordReset(session.user));
         } else {
           setRequiresPasswordReset(false);
         }
-        
+
+        // Record login timestamp on explicit sign-in
+        if (event === 'SIGNED_IN' && session?.user) {
+          supabase
+            .from('user_management')
+            .update({ last_login: new Date().toISOString() })
+            .eq('user_id', session.user.id)
+            .then(({ error }) => {
+              if (error) logger.warn('Failed to update last_login:', error);
+            });
+        }
+
         // Fetch user profile when user signs in
         if (session?.user) {
           // Use requestAnimationFrame instead of setTimeout for better cleanup handling
