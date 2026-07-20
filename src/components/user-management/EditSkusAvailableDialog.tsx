@@ -74,7 +74,7 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const { data: initialRows, isLoading, isFetching } = useQuery({
-    queryKey: ['sku-configurations'],
+    queryKey: ['sku-configurations-full'],
     queryFn: fetchSkuConfigurations,
     enabled: open,
   });
@@ -251,6 +251,8 @@ export const EditSkusAvailableDialog: React.FC<EditSkusAvailableDialogProps> = (
     onSuccess: () => {
       log({ action: 'UPDATE', entityType: 'sku_configuration', description: 'SKU configurations saved' });
       queryClient.invalidateQueries({ queryKey: ['sku-configurations'] });
+      queryClient.invalidateQueries({ queryKey: ['sku-configurations-full'] });
+      queryClient.invalidateQueries({ queryKey: ['sku-names-only'] });
       toast({ title: 'Success', description: 'SKU configurations saved.' });
       onSuccess?.();
       onOpenChange(false);

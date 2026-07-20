@@ -81,7 +81,7 @@ const CommissionConfig = () => {
   });
 
   const { data: skuConfigs = [] } = useQuery({
-    queryKey: ["sku-configurations"],
+    queryKey: ["sku-names-only"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("sku_configurations")

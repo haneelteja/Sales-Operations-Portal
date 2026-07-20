@@ -553,32 +553,6 @@ const SalesEntry = () => {
   };
 
 
-  // Fetch SKU configurations
-  const { data: skuConfigurations, isLoading: skuConfigurationsLoading, error: skuConfigurationsError } = useQuery({
-    queryKey: ["sku-configurations"],
-    queryFn: async () => {
-      try {
-        const { data, error } = await supabase
-          .from("sku_configurations")
-          .select("sku, bottles_per_case")
-          .order("sku", { ascending: true });
-        
-        if (error) {
-          logger.error('Error fetching SKU configurations:', error);
-          throw new Error(`Failed to fetch SKU configurations: ${error.message}`);
-        }
-        
-        return data || [];
-      } catch (error) {
-        logger.error('Critical error in SKU configurations query:', error);
-        throw error;
-      }
-    },
-    staleTime: 300000, // 5 minutes
-    gcTime: 600000, // 10 minutes
-    retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-  });
 
   const handleSaleSuccess = useCallback(() => {
     resetSaleForm();
