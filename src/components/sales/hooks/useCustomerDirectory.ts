@@ -176,10 +176,11 @@ export function useCustomerDirectory(customers: CustomerDirectoryRecord[] | unde
     }));
   }, [customers, findCustomerById, getCustomerBranch, getCustomerName]);
 
-  const resolveCustomerIdForBranch = useCallback((customerId?: string, branch?: string) => {
-    if (!customerId || !branch) return customerId;
-    return findCustomerRecord({ customerId, branch })?.id || customerId;
-  }, [findCustomerRecord]);
+  const resolveCustomerIdForBranch = useCallback((customerId?: string, _branch?: string) => {
+    // Return customerId unchanged — re-resolving by name+branch would silently switch to
+    // a different pricing-date UUID, splitting sales and payments across UUIDs in receivables.
+    return customerId;
+  }, []);
 
   const buildTransportDescription = useCallback((
     customer?: CustomerDirectoryRecord | null,
