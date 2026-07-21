@@ -50,6 +50,7 @@ export interface SkuPricingRow {
   id: string;
   sku: string;
   price_per_bottle: string;
+  mrp_per_bottle: string;
   bottles_per_case: number;
   price_per_case: number;
 }
@@ -153,6 +154,7 @@ const getInitialRow = (): SkuPricingRow => ({
   id: crypto.randomUUID(),
   sku: "",
   price_per_bottle: "",
+  mrp_per_bottle: "",
   bottles_per_case: 0,
   price_per_case: 0,
 });
@@ -177,11 +179,9 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const [requiresBackLabel, setRequiresBackLabel] = useState(false);
   const [skuRows, setSkuRows] = useState<SkuPricingRow[]>([getInitialRow()]);
   const [salesOfficerId, setSalesOfficerId] = useState<string>('');
-  const [mrpPerBottle, setMrpPerBottle] = useState('');
-  const initialMrpRef = useRef<number | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  /** After loading an existing client+branch, baseline prices per SKU - inserts only when price changes or SKU is new */
-  const initialPricesBySkuRef = useRef<Record<string, number>>({});
+  /** Baseline price+MRP per SKU when loading an existing client+branch — inserts only when something changed */
+  const initialPricesBySkuRef = useRef<Record<string, { price: number; mrp: number | null }>>({});
 
   const { data: skuOptions = [], isLoading: skusLoading } = useQuery({
     ...getQueryConfig('sku-configurations-options'),
@@ -305,8 +305,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setWhatsappNumber("");
     setRequiresBackLabel(false);
     setSalesOfficerId('');
-    setMrpPerBottle('');
-    initialMrpRef.current = null;
     setSkuRows(updateRowPricePerCase([getInitialRow()]));
     setFieldErrors({});
     initialPricesBySkuRef.current = {};
@@ -323,7 +321,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     if (!sampleContact) return;
     setGstNumber(sampleContact.gst_number || "");
     setWhatsappNumber(sampleContact.whatsapp_number || "");
-    setMrpPerBottle(sampleContact.mrp_per_bottle != null ? String(sampleContact.mrp_per_bottle) : '');
   }, [open, isExistingClient, selectedExistingClient, isExistingBranch, selectedExistingBranch, sampleContact]);
 
   // Populate sales officer when an existing client+branch mapping is found
@@ -344,18 +341,20 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       return;
     }
     const latest = latestRowPerSku(rowsForPair);
-    const prices: Record<string, number> = {};
+    const prices: Record<string, { price: number; mrp: number | null }> = {};
     const rows: SkuPricingRow[] = [];
     latest.forEach((cust) => {
       if (!cust.sku) return;
       const sku = cust.sku.trim();
       const ppb = cust.price_per_bottle ?? 0;
-      prices[sku] = ppb;
+      const mrp = (cust as { mrp_per_bottle?: number | null }).mrp_per_bottle ?? null;
+      prices[sku] = { price: ppb, mrp };
       const opt = skuOptions.find((o) => o.sku === sku);
       rows.push({
         id: crypto.randomUUID(),
         sku,
         price_per_bottle: String(ppb),
+        mrp_per_bottle: mrp != null ? String(mrp) : '',
         bottles_per_case: opt?.bottles_per_case ?? cust.bottles_per_case ?? 0,
         price_per_case: cust.price_per_case ?? 0,
       });
@@ -370,9 +369,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     // Always set GST/WA; fall back to client-level data if branch rows have none
     setGstNumber(one?.gst_number ?? sampleContact?.gst_number ?? "");
     setWhatsappNumber(one?.whatsapp_number ?? sampleContact?.whatsapp_number ?? "");
-    const existingMrp = (one as { mrp_per_bottle?: number | null })?.mrp_per_bottle ?? null;
-    initialMrpRef.current = existingMrp;
-    setMrpPerBottle(existingMrp != null ? String(existingMrp) : '');
   }, [open, pairKey, rowsForPair, pairRowsLoading, skuOptions, sampleContact, updateRowPricePerCase]);
 
   const resolvedDealerName = isExistingClient ? selectedExistingClient.trim() : dealerNameInput.trim();
@@ -407,11 +403,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     const waResult = indiaWhatsAppSchema.safeParse(whatsappNumber?.trim());
     if (!waResult.success) errors.whatsapp_number = waResult.error.errors[0]?.message ?? "Invalid WhatsApp Number";
 
-    const mrpVal = parseFloat(mrpPerBottle);
-    if (!mrpPerBottle.trim() || isNaN(mrpVal) || mrpVal < 0) {
-      errors.mrp_per_bottle = "MRP per bottle is required and must be a non-negative number";
-    }
-
     const filledRows = skuRows.filter(
       (r) => r.sku && r.price_per_bottle !== "" && parseFloat(r.price_per_bottle) >= 0
     );
@@ -421,24 +412,33 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         errors[`sku_${i}`] = "Select SKU";
       if (row.sku && (row.price_per_bottle === "" || parseFloat(row.price_per_bottle) < 0))
         errors[`price_${i}`] = "Enter a valid price per bottle";
+      if (row.sku && row.price_per_bottle !== "" && (!row.mrp_per_bottle.trim() || isNaN(parseFloat(row.mrp_per_bottle)) || parseFloat(row.mrp_per_bottle) < 0))
+        errors[`mrp_${i}`] = "MRP is required";
     });
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const priceChangedOrNew = (sku: string, pricePerBottleStr: string): boolean => {
+  const priceChangedOrNew = (sku: string, pricePerBottleStr: string, mrpStr: string): boolean => {
     const skuKey = sku.trim();
     // New pricing date for this SKU → always allow insert
     const dateAlreadyExists = rowsForPair.some(
       (r) => r.sku?.trim() === skuKey && r.pricing_date === date
     );
     if (!dateAlreadyExists) return true;
-    // Same date already exists — only insert if price actually changed
     const prev = initialPricesBySkuRef.current[skuKey];
     if (prev === undefined) return true;
+    // Price changed?
     const cur = parseFloat(pricePerBottleStr);
-    if (Number.isNaN(cur)) return false;
-    return Math.abs(cur - prev) > 1e-4;
+    if (!Number.isNaN(cur) && Math.abs(cur - prev.price) > 1e-4) return true;
+    // MRP changed?
+    const curMrp = mrpStr.trim() ? parseFloat(mrpStr) : null;
+    const prevMrp = prev.mrp;
+    if (curMrp !== prevMrp) {
+      if (curMrp === null || prevMrp === null) return true;
+      if (Math.abs(curMrp - prevMrp) > 1e-4) return true;
+    }
+    return false;
   };
 
   const saveMutation = useMutation({
@@ -458,10 +458,8 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
 
       let rowsToInsert = rowsToConsider;
       if (isPairHistoryMode) {
-        rowsToInsert = rowsToConsider.filter((r) => priceChangedOrNew(r.sku, r.price_per_bottle));
-        const mrpVal = parseFloat(mrpPerBottle);
-        const mrpChanged = !isNaN(mrpVal) && mrpVal !== initialMrpRef.current;
-        if (rowsToInsert.length === 0 && !mrpChanged) {
+        rowsToInsert = rowsToConsider.filter((r) => priceChangedOrNew(r.sku, r.price_per_bottle, r.mrp_per_bottle));
+        if (rowsToInsert.length === 0) {
           throw new Error(
             "No changes to save. Change a price, add a SKU, update the MRP, or use a different pricing date."
           );
@@ -479,7 +477,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         sku: row.sku.trim(),
         price_per_bottle: parseFloat(row.price_per_bottle),
         bottles_per_case: row.bottles_per_case,
-        mrp_per_bottle: parseFloat(mrpPerBottle) || null,
+        mrp_per_bottle: row.mrp_per_bottle.trim() ? parseFloat(row.mrp_per_bottle) : null,
       }));
       // Insert pricing rows in parallel; on unique conflict (same date+SKU), update price fields
       await Promise.all(inserts.map(async (row) => {
@@ -492,6 +490,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               .update({
                 price_per_bottle: row.price_per_bottle,
                 bottles_per_case: row.bottles_per_case,
+                mrp_per_bottle: row.mrp_per_bottle,
               })
               .eq("client_name", row.client_name)
               .eq("branch", row.branch)
@@ -506,6 +505,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                 .update({
                   price_per_bottle: row.price_per_bottle,
                   bottles_per_case: row.bottles_per_case,
+                  mrp_per_bottle: row.mrp_per_bottle,
                   pricing_date: row.pricing_date,
                 })
                 .eq("client_name", row.client_name)
@@ -519,10 +519,10 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         }
       }));
 
-      // Sync updated GST / WhatsApp / MRP across all existing rows for this client+branch
+      // Sync GST / WhatsApp across all existing rows for this client+branch (MRP is per-SKU, not synced globally)
       const { error: syncErr } = await supabase
         .from("customers")
-        .update({ gst_number: gst || null, whatsapp_number: wa || null, mrp_per_bottle: parseFloat(mrpPerBottle) || null })
+        .update({ gst_number: gst || null, whatsapp_number: wa || null })
         .eq("client_name", resolvedDealerName)
         .eq("branch", resolvedArea);
       if (syncErr) throw new Error(handleSupabaseError(syncErr));
@@ -721,21 +721,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               />
               {fieldErrors.gst_number && <p className="text-sm text-destructive">{fieldErrors.gst_number}</p>}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="dealer-mrp">MRP per Bottle (₹) *</Label>
-              <Input
-                id="dealer-mrp"
-                type="number"
-                min={0}
-                step="0.01"
-                value={mrpPerBottle}
-                onChange={(e) => setMrpPerBottle(e.target.value)}
-                placeholder="0.00"
-              />
-              {fieldErrors.mrp_per_bottle && (
-                <p className="text-sm text-destructive">{fieldErrors.mrp_per_bottle}</p>
-              )}
-            </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="dealer-whatsapp">WhatsApp Number *</Label>
               <Input
@@ -801,9 +786,10 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[40%]">SKU</TableHead>
-                    <TableHead className="w-[30%]">Price per Bottle (INR)</TableHead>
-                    <TableHead className="w-[30%]">Price per Case (INR)</TableHead>
+                    <TableHead className="w-[35%]">SKU</TableHead>
+                    <TableHead className="w-[22%]">Price / Bottle (₹)</TableHead>
+                    <TableHead className="w-[20%]">MRP / Bottle (₹) *</TableHead>
+                    <TableHead className="w-[20%]">Price / Case (₹)</TableHead>
                     <TableHead className="w-[40px]" />
                   </TableRow>
                 </TableHeader>
@@ -845,6 +831,20 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                             placeholder="0.00"
                             className="h-9"
                           />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={row.mrp_per_bottle}
+                            onChange={(e) => setRow(index, { mrp_per_bottle: e.target.value })}
+                            placeholder="0.00"
+                            className={`h-9 ${fieldErrors[`mrp_${index}`] ? 'border-destructive' : ''}`}
+                          />
+                          {fieldErrors[`mrp_${index}`] && (
+                            <p className="text-xs text-destructive mt-1">{fieldErrors[`mrp_${index}`]}</p>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Input

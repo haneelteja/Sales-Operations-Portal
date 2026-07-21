@@ -200,15 +200,6 @@ const ConfigurationManagement = () => {
         throw error;
       }
 
-      // Sync MRP across all rows for this client+branch
-      if (data.mrp_per_bottle !== undefined && data.client_name && data.branch) {
-        await supabase
-          .from("customers")
-          .update({ mrp_per_bottle: data.mrp_per_bottle ? parseFloat(data.mrp_per_bottle) : null })
-          .eq("client_name", data.client_name)
-          .eq("branch", data.branch)
-          .neq("id", data.id);
-      }
     },
     onSuccess: (_result, variables) => {
       log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables.id, description: `Client configuration updated: ${variables.client_name} — ${variables.branch}`, newValues: { client_name: variables.client_name, branch: variables.branch, sku: variables.sku, price_per_case: variables.price_per_case } });
@@ -535,34 +526,38 @@ const ConfigurationManagement = () => {
   const exportMrpToCsv = () => {
     if (!customers) return;
 
-    // Latest row per (client_name, branch), excluding deprecated
-    const latestByPair = new Map<string, typeof customers[0]>();
+    // Latest row per (client_name, branch, sku), excluding deprecated
+    const latestByKey = new Map<string, typeof customers[0]>();
     customers
-      .filter((c) => !c.is_deprecated)
+      .filter((c) => !c.is_deprecated && !!c.sku?.trim())
       .forEach((c) => {
-        const key = `${c.client_name}|||${c.branch ?? ''}`;
-        const existing = latestByPair.get(key);
+        const key = `${c.client_name}|||${c.branch ?? ''}|||${c.sku ?? ''}`;
+        const existing = latestByKey.get(key);
         if (!existing) {
-          latestByPair.set(key, c);
+          latestByKey.set(key, c);
         } else {
           const dNew = new Date((c as { pricing_date?: string | null }).pricing_date || 0).getTime();
           const dOld = new Date((existing as { pricing_date?: string | null }).pricing_date || 0).getTime();
-          if (dNew >= dOld) latestByPair.set(key, c);
+          if (dNew >= dOld) latestByKey.set(key, c);
         }
       });
 
-    const rows = Array.from(latestByPair.values()).sort((a, b) => {
+    const rows = Array.from(latestByKey.values()).sort((a, b) => {
       const n = (a.client_name || '').localeCompare(b.client_name || '');
-      return n !== 0 ? n : (a.branch || '').localeCompare(b.branch || '');
+      if (n !== 0) return n;
+      const b2 = (a.branch || '').localeCompare(b.branch || '');
+      if (b2 !== 0) return b2;
+      return (a.sku || '').localeCompare(b.sku || '');
     });
 
-    const headers = ['Client', 'Branch', 'MRP per Bottle (INR)', 'Pricing Date'];
+    const headers = ['Client', 'Branch', 'SKU', 'MRP per Bottle (₹)', 'Pricing Date'];
     const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const csvLines = [
       headers.join(','),
       ...rows.map((r) => [
         escape(r.client_name || ''),
         escape(r.branch || ''),
+        escape(r.sku || ''),
         (r as { mrp_per_bottle?: number | null }).mrp_per_bottle != null
           ? String((r as { mrp_per_bottle?: number | null }).mrp_per_bottle)
           : '',
