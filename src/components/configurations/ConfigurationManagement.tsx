@@ -38,6 +38,7 @@ const ConfigurationManagement = () => {
     sku: "",
     price_per_case: "",
     price_per_bottle: "",
+    mrp_per_bottle: "",
     whatsapp_number: "",
     pricing_date: "",
   });
@@ -93,7 +94,7 @@ const ConfigurationManagement = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, client_name, branch, sku, price_per_case, price_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, is_deprecated, created_at, updated_at")
+          .select("id, client_name, branch, sku, price_per_case, price_per_bottle, mrp_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, is_deprecated, created_at, updated_at")
           .order("client_name", { ascending: true });
 
         if (error) {
@@ -161,6 +162,7 @@ const ConfigurationManagement = () => {
         branch: string;
         sku: string | null;
         price_per_bottle: number | null;
+        mrp_per_bottle: number | null;
         whatsapp_number: string | null;
         pricing_date: string | null;
       }> = {};
@@ -175,6 +177,9 @@ const ConfigurationManagement = () => {
       }
       if (data.whatsapp_number !== undefined) {
         updateData.whatsapp_number = data.whatsapp_number || null;
+      }
+      if (data.mrp_per_bottle !== undefined) {
+        (updateData as Record<string, unknown>).mrp_per_bottle = data.mrp_per_bottle ? parseFloat(data.mrp_per_bottle) : null;
       }
       if (data.pricing_date) updateData.pricing_date = data.pricing_date;
 
@@ -193,6 +198,16 @@ const ConfigurationManagement = () => {
         }
 
         throw error;
+      }
+
+      // Sync MRP across all rows for this client+branch
+      if (data.mrp_per_bottle !== undefined && data.client_name && data.branch) {
+        await supabase
+          .from("customers")
+          .update({ mrp_per_bottle: data.mrp_per_bottle ? parseFloat(data.mrp_per_bottle) : null })
+          .eq("client_name", data.client_name)
+          .eq("branch", data.branch)
+          .neq("id", data.id);
       }
     },
     onSuccess: (_result, variables) => {
@@ -517,6 +532,57 @@ const ConfigurationManagement = () => {
     await exportJsonToExcel(exportData, 'Customers', `customers_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  const exportMrpToCsv = () => {
+    if (!customers) return;
+
+    // Latest row per (client_name, branch), excluding deprecated
+    const latestByPair = new Map<string, typeof customers[0]>();
+    customers
+      .filter((c) => !c.is_deprecated)
+      .forEach((c) => {
+        const key = `${c.client_name}|||${c.branch ?? ''}`;
+        const existing = latestByPair.get(key);
+        if (!existing) {
+          latestByPair.set(key, c);
+        } else {
+          const dNew = new Date((c as { pricing_date?: string | null }).pricing_date || 0).getTime();
+          const dOld = new Date((existing as { pricing_date?: string | null }).pricing_date || 0).getTime();
+          if (dNew >= dOld) latestByPair.set(key, c);
+        }
+      });
+
+    const rows = Array.from(latestByPair.values()).sort((a, b) => {
+      const n = (a.client_name || '').localeCompare(b.client_name || '');
+      return n !== 0 ? n : (a.branch || '').localeCompare(b.branch || '');
+    });
+
+    const headers = ['Client', 'Branch', 'MRP per Bottle (INR)', 'Pricing Date'];
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const csvLines = [
+      headers.join(','),
+      ...rows.map((r) => [
+        escape(r.client_name || ''),
+        escape(r.branch || ''),
+        (r as { mrp_per_bottle?: number | null }).mrp_per_bottle != null
+          ? String((r as { mrp_per_bottle?: number | null }).mrp_per_bottle)
+          : '',
+        (r as { pricing_date?: string | null }).pricing_date
+          ? new Date((r as { pricing_date?: string | null }).pricing_date!).toLocaleDateString('en-IN')
+          : '',
+      ].join(',')),
+    ];
+
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `MRP_List_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Handler functions for advanced customer management
   const handleEditClick = (customer: Customer) => {
     setEditingCustomer(customer);
@@ -526,6 +592,7 @@ const ConfigurationManagement = () => {
       sku: customer.sku || "",
       price_per_case: customer.price_per_case?.toString() || "",
       price_per_bottle: customer.price_per_bottle?.toString() || "",
+      mrp_per_bottle: (customer as { mrp_per_bottle?: number | null }).mrp_per_bottle?.toString() || "",
       whatsapp_number: customer.whatsapp_number || "",
       pricing_date: customer.pricing_date || new Date().toISOString().split('T')[0],
     });
@@ -580,6 +647,14 @@ const ConfigurationManagement = () => {
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Export Excel
+                  </Button>
+                  <Button
+                    onClick={exportMrpToCsv}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export MRP
                   </Button>
                 </div>
               </div>
@@ -924,6 +999,19 @@ const ConfigurationManagement = () => {
                   value={editForm.whatsapp_number}
                   onChange={(e) => setEditForm({...editForm, whatsapp_number: e.target.value})}
                   placeholder="+919876543210"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-mrp-per-bottle">MRP per Bottle (₹)</Label>
+                <Input
+                  id="edit-mrp-per-bottle"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={editForm.mrp_per_bottle}
+                  onChange={(e) => setEditForm({ ...editForm, mrp_per_bottle: e.target.value })}
+                  placeholder="0.00"
                 />
               </div>
             </div>
