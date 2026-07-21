@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, memo, useEffect } from "react";
+import { Switch } from "@/components/ui/switch";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -42,6 +43,8 @@ const ConfigurationManagement = () => {
     whatsapp_number: "",
     pricing_date: "",
   });
+
+  const [showLatestOnly, setShowLatestOnly] = useState(true);
 
   // Filtering and sorting state for customers
   const [searchTerm, setSearchTerm] = useState("");
@@ -423,6 +426,20 @@ const ConfigurationManagement = () => {
     });
   }, [customers, debouncedSearchTerm, columnFilters, columnSorts]);
 
+  // When showLatestOnly is on, keep only the latest pricing_date per (client_name, branch, sku)
+  const displayedCustomers = useMemo(() => {
+    if (!showLatestOnly) return filteredAndSortedCustomers;
+    const latestIds = new Map<string, { id: string; date: number }>();
+    filteredAndSortedCustomers.forEach((c) => {
+      const key = `${c.client_name}|||${c.branch ?? ''}|||${c.sku ?? ''}`;
+      const d = new Date(c.pricing_date || 0).getTime();
+      const cur = latestIds.get(key);
+      if (!cur || d > cur.date) latestIds.set(key, { id: c.id, date: d });
+    });
+    const ids = new Set(Array.from(latestIds.values()).map((v) => v.id));
+    return filteredAndSortedCustomers.filter((c) => ids.has(c.id));
+  }, [filteredAndSortedCustomers, showLatestOnly]);
+
   // Handle column filter changes
   const handleColumnFilterChange = (columnKey: string, value: string) => {
     setColumnFilters(prev => ({
@@ -511,7 +528,7 @@ const ConfigurationManagement = () => {
 
   // Export filtered data to Excel
   const exportCustomersToExcel = async () => {
-    const exportData = filteredAndSortedCustomers?.map((customer) => ({
+    const exportData = displayedCustomers.map((customer) => ({
       'Client name': customer.client_name || '',
       'Branch': customer.branch || '',
       'SKU': customer.sku || '',
@@ -633,7 +650,12 @@ const ConfigurationManagement = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">
-                    {filteredAndSortedCustomers?.length || 0} of {customers?.length || 0} rows
+                    {displayedCustomers.length} of {customers?.length || 0} rows
+                    {showLatestOnly && filteredAndSortedCustomers.length !== displayedCustomers.length && (
+                      <span className="ml-1 text-xs text-muted-foreground/70">
+                        ({filteredAndSortedCustomers.length - displayedCustomers.length} older hidden)
+                      </span>
+                    )}
                   </span>
                   <Button
                     onClick={exportCustomersToExcel}
@@ -665,6 +687,16 @@ const ConfigurationManagement = () => {
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="max-w-sm"
                     />
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Switch
+                      id="latest-only"
+                      checked={showLatestOnly}
+                      onCheckedChange={setShowLatestOnly}
+                    />
+                    <Label htmlFor="latest-only" className="text-sm cursor-pointer whitespace-nowrap">
+                      Latest prices only
+                    </Label>
                   </div>
                   <Button
                     onClick={clearAllFilters}
@@ -767,8 +799,8 @@ const ConfigurationManagement = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAndSortedCustomers?.length > 0 ? (
-                      filteredAndSortedCustomers.map((customer) => (
+                    {displayedCustomers.length > 0 ? (
+                      displayedCustomers.map((customer) => (
                       <TableRow key={customer.id}>
                         <TableCell className="font-medium">{customer.client_name}</TableCell>
                         <TableCell>{customer.branch}</TableCell>
@@ -862,8 +894,8 @@ const ConfigurationManagement = () => {
                   ) : (
                     <TableRow key="no-customers">
                       <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        {searchTerm || Object.values(columnFilters).some(filter => filter !== '') 
-                          ? "No customers found matching your filters" 
+                        {searchTerm || Object.values(columnFilters).some(filter => filter !== '')
+                          ? "No customers found matching your filters"
                           : "No customers found"}
                       </TableCell>
                     </TableRow>
