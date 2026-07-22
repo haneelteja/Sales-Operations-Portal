@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useEffect, useRef } from "react";
+import React, { useMemo, useCallback, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getQueryConfig } from "@/lib/query-configs";
@@ -72,10 +72,6 @@ const OrderManagement: React.FC = () => {
     { id: crypto.randomUUID(), sku: "", number_of_cases: "" },
   ]);
 
-  // Client autocomplete
-  const [clientSearch, setClientSearch] = useState("");
-  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
-  const clientInputRef = useRef<HTMLDivElement>(null);
 
   // Filter and sort states for Current Orders table
   const [ordersSearchTerm, setOrdersSearchTerm] = useState("");
@@ -632,19 +628,12 @@ const OrderManagement: React.FC = () => {
     if (!clientId || clientId === "") {
       setOrderForm({ ...orderForm, client_id: "", branch: "" });
       setSkuRows([{ id: crypto.randomUUID(), sku: "", number_of_cases: "" }]);
-      setClientSearch("");
       return;
     }
     const availableBranches = getAvailableBranches(clientId);
     const autoBranch = availableBranches.length === 1 ? availableBranches[0] : "";
     setOrderForm({ ...orderForm, client_id: clientId, branch: autoBranch });
     setSkuRows([{ sku: "", number_of_cases: "" }]);
-  };
-
-  const handleClientSelect = (clientId: string, clientName: string) => {
-    setClientSearch(clientName);
-    setClientDropdownOpen(false);
-    handleClientChange(clientId);
   };
 
   const handleBranchChange = (branchValue: string) => {
@@ -743,23 +732,6 @@ const OrderManagement: React.FC = () => {
     return unique.sort((a, b) => a.client_name.localeCompare(b.client_name));
   }, [customers]);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (clientInputRef.current && !clientInputRef.current.contains(e.target as Node)) {
-        setClientDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const filteredCustomers = useMemo(() => {
-    const unique = getUniqueCustomers();
-    if (!clientSearch.trim()) return unique;
-    return unique.filter(c =>
-      c.client_name.toLowerCase().includes(clientSearch.toLowerCase())
-    );
-  }, [getUniqueCustomers, clientSearch]);
 
   const availableOrderMonths = useMemo(() => {
     const months = new Set<string>();
@@ -1054,47 +1026,15 @@ const OrderManagement: React.FC = () => {
                   required
                 />
               </div>
-              <div className="space-y-1" ref={clientInputRef}>
-                <Label htmlFor="order-client-search" className="text-xs">Client *</Label>
-                <div className="relative">
-                  <Input
-                    id="order-client-search"
-                    placeholder="Search client..."
-                    value={clientSearch}
-                    autoComplete="off"
-                    onChange={(e) => {
-                      setClientSearch(e.target.value);
-                      setClientDropdownOpen(true);
-                      if (!e.target.value) handleClientChange("");
-                    }}
-                    onFocus={() => setClientDropdownOpen(true)}
-                  />
-                  {clientDropdownOpen && filteredCustomers.length > 0 && (
-                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg max-h-60 overflow-y-auto">
-                      {filteredCustomers.map((customer) => (
-                        <button
-                          key={customer.id}
-                          type="button"
-                          className={[
-                            "w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground",
-                            orderForm.client_id === customer.id ? "bg-accent/50 font-medium" : "",
-                          ].join(" ")}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            handleClientSelect(customer.id, customer.client_name);
-                          }}
-                        >
-                          {customer.client_name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {clientDropdownOpen && clientSearch.trim() && filteredCustomers.length === 0 && (
-                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg px-3 py-2 text-sm text-muted-foreground">
-                      No clients found
-                    </div>
-                  )}
-                </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Client *</Label>
+                <SearchableSelect
+                  options={getUniqueCustomers().map(c => ({ value: c.id, label: c.client_name }))}
+                  value={orderForm.client_id || ""}
+                  onValueChange={handleClientChange}
+                  placeholder="Search client..."
+                  clearable
+                />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="order-branch" className="text-xs">Branch *</Label>
