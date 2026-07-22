@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, memo, useEffect } from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,89 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Edit, Trash2, ArrowUpDown, Search, X, Download } from "lucide-react";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { exportJsonToExcel } from '@/services/export/excelExport';
-import { cn } from "@/lib/utils";
 import { PageSizeSelector } from '@/components/ui/page-size-selector';
 
-// ─── Client Autocomplete ──────────────────────────────────────────────────────
-interface ComboboxOption { id: string; label: string; }
-
-const ClientCombobox = ({
-  options,
-  value,
-  onChange,
-  placeholder,
-  disabled,
-}: {
-  options: ComboboxOption[];
-  value: string;
-  onChange: (id: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}) => {
-  const [inputValue, setInputValue] = useState('');
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const selectedLabel = useMemo(() => options.find(o => o.id === value)?.label || '', [options, value]);
-
-  useEffect(() => {
-    setInputValue(selectedLabel);
-  }, [selectedLabel]);
-
-  const filtered = useMemo(() => {
-    if (!inputValue.trim()) return options;
-    const q = inputValue.toLowerCase();
-    return options.filter(o => o.label.toLowerCase().includes(q));
-  }, [options, inputValue]);
-
-  const handleSelect = (option: ComboboxOption) => {
-    onChange(option.id);
-    setInputValue(option.label);
-    setOpen(false);
-  };
-
-  const handleBlur = () => {
-    // Restore label of currently selected value if input doesn't match any option
-    setTimeout(() => {
-      setOpen(false);
-      setInputValue(selectedLabel);
-    }, 150);
-  };
-
-  return (
-    <div className="relative" ref={containerRef}>
-      <Input
-        value={inputValue}
-        disabled={disabled}
-        onChange={e => { setInputValue(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={handleBlur}
-        placeholder={placeholder}
-      />
-      {open && !disabled && filtered.length > 0 && (
-        <div className="absolute z-50 w-full bg-white border rounded-md shadow-md max-h-48 overflow-y-auto mt-1">
-          {filtered.map(option => (
-            <div
-              key={option.id}
-              className={cn(
-                "px-3 py-2 cursor-pointer hover:bg-slate-100 text-sm",
-                option.id === value && "bg-slate-50 font-medium"
-              )}
-              onMouseDown={() => handleSelect(option)}
-            >
-              {option.label}
-            </div>
-          ))}
-        </div>
-      )}
-      {open && !disabled && filtered.length === 0 && inputValue.trim() && (
-        <div className="absolute z-50 w-full bg-white border rounded-md shadow-md mt-1 px-3 py-2 text-sm text-muted-foreground">
-          No clients found
-        </div>
-      )}
-    </div>
-  );
-};
 
 // ─── Vendor pricing entry type (mirrors EditVendorPricingDialog) ──────────────
 interface VendorPricingEntry {
@@ -504,10 +423,10 @@ const LabelPurchases = () => {
   const handleDelete = (id: string) => deleteMutation.mutate(id);
 
   // Unique customers list for combobox
-  const uniqueCustomerOptions = useMemo((): ComboboxOption[] => {
+  const uniqueCustomerOptions = useMemo(() => {
     if (!customers) return [];
     const seen = new Set<string>();
-    const result: ComboboxOption[] = [];
+    const result: { value: string; label: string }[] = [];
     [...customers]
       .sort((a, b) => a.client_name.localeCompare(b.client_name))
       .forEach(c => {
@@ -515,7 +434,7 @@ const LabelPurchases = () => {
           const key = c.client_name.trim().toLowerCase();
           if (!seen.has(key)) {
             seen.add(key);
-            result.push({ id: c.id, label: c.client_name.trim() });
+            result.push({ value: c.id, label: c.client_name.trim() });
           }
         }
       });
@@ -696,11 +615,12 @@ const LabelPurchases = () => {
 
           <div className="space-y-2">
             <Label htmlFor="client">Client *</Label>
-            <ClientCombobox
+            <SearchableSelect
               options={uniqueCustomerOptions}
               value={form.client_id}
-              onChange={(id) => setForm(prev => ({ ...prev, client_id: id, sku: "" }))}
+              onValueChange={(id) => setForm(prev => ({ ...prev, client_id: id, sku: "" }))}
               placeholder="Search client..."
+              clearable
             />
           </div>
 
@@ -969,11 +889,12 @@ const LabelPurchases = () => {
                                 </div>
                                 <div className="space-y-2">
                                   <Label>Client *</Label>
-                                  <ClientCombobox
+                                  <SearchableSelect
                                     options={uniqueCustomerOptions}
                                     value={editForm.client_id}
-                                    onChange={(id) => setEditForm(prev => ({ ...prev, client_id: id, sku: "" }))}
+                                    onValueChange={(id) => setEditForm(prev => ({ ...prev, client_id: id, sku: "" }))}
                                     placeholder="Search client..."
+                                    clearable
                                   />
                                 </div>
                                 <div className="space-y-2">
