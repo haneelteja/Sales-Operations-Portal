@@ -809,7 +809,7 @@ const OrderManagement: React.FC = () => {
       if (!sortKey) {
         const dateA = new Date(a.expense_date || a.created_at).getTime();
         const dateB = new Date(b.expense_date || b.created_at).getTime();
-        return dateB - dateA;
+        return dateA - dateB;
       }
 
       const direction = ordersColumnSorts[sortKey];
