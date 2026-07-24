@@ -546,7 +546,7 @@ const ConfigurationManagement = () => {
     // Latest row per (client_name, branch, sku), excluding deprecated
     const latestByKey = new Map<string, typeof customers[0]>();
     customers
-      .filter((c) => !c.is_deprecated && !!c.sku?.trim())
+      .filter((c) => !c.is_deprecated && c.is_active && !!c.sku?.trim())
       .forEach((c) => {
         const key = `${c.client_name}|||${c.branch ?? ''}|||${c.sku ?? ''}`;
         const existing = latestByKey.get(key);
