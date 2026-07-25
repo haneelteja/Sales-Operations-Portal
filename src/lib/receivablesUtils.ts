@@ -191,14 +191,15 @@ export async function insertFollowupNote(
 }
 
 export async function fetchLedgerRows(
-  customerId: string,
+  customerIdOrIds: string | string[],
   from: string,
   to: string,
 ): Promise<{ openingBalance: number; rows: LedgerRow[] }> {
+  const ids = Array.isArray(customerIdOrIds) ? customerIdOrIds : [customerIdOrIds];
   const { data, error } = await supabase
     .from('sales_transactions')
     .select('transaction_date, transaction_type, sku, quantity, amount, description')
-    .eq('customer_id', customerId)
+    .in('customer_id', ids)
     .in('transaction_type', ['sale', 'payment'])
     .lte('transaction_date', to)
     .order('transaction_date', { ascending: true })

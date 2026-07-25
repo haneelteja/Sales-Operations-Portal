@@ -22,27 +22,45 @@ export function LedgerDrawer({ open, onClose, customerId, dealerName, branch }: 
   const [dateFrom, setDateFrom] = useState(defaultFY.from);
   const [dateTo, setDateTo] = useState(defaultFY.to);
 
+  // Fetch ALL customer IDs for this (client_name, branch) so the ledger includes
+  // transactions that may have been recorded against sibling UUIDs (split-UUID issue).
+  const { data: allCustomerIds } = useQuery({
+    queryKey: ['customer-ids-for-branch', dealerName, branch],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('client_name', dealerName)
+        .eq('branch', branch || '');
+      return (data ?? []).map(c => c.id as string);
+    },
+    enabled: open && !!dealerName,
+    staleTime: 300000,
+  });
+
+  const effectiveIds = allCustomerIds && allCustomerIds.length > 0 ? allCustomerIds : [customerId];
+
   const { data: firstTxDate } = useQuery({
-    queryKey: ['customer-ledger-first-date', customerId],
+    queryKey: ['customer-ledger-first-date', ...effectiveIds],
     queryFn: async () => {
       const { data } = await supabase
         .from('sales_transactions')
         .select('transaction_date')
-        .eq('customer_id', customerId)
+        .in('customer_id', effectiveIds)
         .order('transaction_date', { ascending: true })
         .limit(1);
       return (data?.[0]?.transaction_date as string | undefined) ?? null;
     },
-    enabled: open && !!customerId,
+    enabled: open && effectiveIds.length > 0,
     staleTime: 60000,
   });
 
   const today = new Date().toISOString().split('T')[0];
 
   const { data: ledgerData, isLoading } = useQuery({
-    queryKey: ['customer-ledger', customerId, dateFrom, dateTo],
-    queryFn: () => fetchLedgerRows(customerId, dateFrom, dateTo),
-    enabled: open && !!customerId,
+    queryKey: ['customer-ledger', effectiveIds, dateFrom, dateTo],
+    queryFn: () => fetchLedgerRows(effectiveIds, dateFrom, dateTo),
+    enabled: open && effectiveIds.length > 0,
     staleTime: 30000,
   });
 
