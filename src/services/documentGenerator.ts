@@ -175,6 +175,12 @@ async function loadHTMLTemplate(): Promise<string> {
   }
 }
 
+/** Escape user-supplied strings before inserting into HTML to prevent XSS. */
+function escHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 /**
  * Replace template placeholders with actual data
  */
@@ -186,29 +192,30 @@ function replaceTemplatePlaceholders(template: string, data: InvoiceData): strin
   const itemRows = allItems.map((item, i) => `
                     <tr>
                         <td>${i + 1}.</td>
-                        <td>${item.description || item.sku || ''}</td>
-                        <td>${item.sku ?? ''}</td>
+                        <td>${escHtml(item.description || item.sku || '')}</td>
+                        <td>${escHtml(item.sku ?? '')}</td>
                         <td>${item.quantity ?? 0} cases</td>
                         <td>${formatCurrency(item.pricePerCase)}</td>
                         <td class="amount-cell">${formatCurrency(item.amount)}</td>
                     </tr>`).join('\n');
 
   const replacements: Record<string, string> = {
-    companyName: data.companyName ?? '',
-    companyAddress: (data.companyAddress ?? '').replace(/\n/g, '<br>'),
-    dealerName: data.dealerName ?? '',
-    clientName: data.dealerName ?? '',
-    area: data.area ?? '',
-    branch: data.area ?? '',
-    invoiceNumber: data.invoiceNumber ?? '',
+    companyName: escHtml(data.companyName ?? ''),
+    // escape first, then convert newlines to <br> — order matters
+    companyAddress: escHtml(data.companyAddress ?? '').replace(/\n/g, '<br>'),
+    dealerName: escHtml(data.dealerName ?? ''),
+    clientName: escHtml(data.dealerName ?? ''),
+    area: escHtml(data.area ?? ''),
+    branch: escHtml(data.area ?? ''),
+    invoiceNumber: escHtml(data.invoiceNumber ?? ''),
     invoiceDate: formatDate(data.invoiceDate),
     itemRows,
-    sku: data.sku ?? '',
+    sku: escHtml(data.sku ?? ''),
     quantity: String(data.quantity ?? 0),
     unitPrice: formatCurrency(data.pricePerCase),
     amount: formatCurrency(data.amount),
     totalAmount: formatCurrency(data.grandTotal),
-    amountInWords: data.amountInWords ?? '',
+    amountInWords: escHtml(data.amountInWords ?? ''),
   };
 
   let html = template;

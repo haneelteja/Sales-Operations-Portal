@@ -1,37 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-}
+import { buildCorsHeaders, requireAdmin } from '../_shared/auth.ts'
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req)
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { 
+    return new Response(null, {
       status: 204,
-      headers: corsHeaders 
+      headers: corsHeaders
     })
   }
 
   try {
     console.log('Create user function called')
-    console.log('Request method:', req.method)
-    console.log('Request headers:', Object.fromEntries(req.headers.entries()))
-    
-    // Get the authorization header
-    const authHeader = req.headers.get('authorization')
-    console.log('Authorization header:', authHeader ? 'Present' : 'Missing')
-    
-    // In development, allow requests without auth header or with anon key
-    // The function uses service role key internally, so it doesn't need client auth
-    if (!authHeader) {
-      console.log('No authorization header found - allowing in development mode')
-      // Continue - the function uses service role key internally
-    }
+
+    // Verify caller is an authenticated admin before proceeding.
+    const authError = await requireAdmin(req, corsHeaders)
+    if (authError) return authError
     
     let requestData;
     try {
