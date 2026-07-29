@@ -5,6 +5,44 @@
 
 import { z } from 'zod';
 
+// ── Reusable primitives ────────────────────────────────────────────────────────
+
+/** Validates a rupee amount string: positive, max ₹99,99,999, max 2 decimal places. */
+const rupeeAmount = (label = 'Amount') =>
+  z
+    .string()
+    .min(1, `${label} is required`)
+    .refine((v) => { const n = parseFloat(v); return !isNaN(n) && n > 0; },
+      { message: `${label} must be a positive number` })
+    .refine((v) => parseFloat(v) <= 9_999_999.99,
+      { message: `${label} cannot exceed ₹99,99,999.99` })
+    .refine((v) => { const [, d] = v.split('.'); return !d || d.length <= 2; },
+      { message: `${label} must have at most 2 decimal places` });
+
+/** Validates a non-negative rupee amount (allows 0). */
+const rupeeAmountNonNeg = (label = 'Amount') =>
+  z
+    .string()
+    .min(1, `${label} is required`)
+    .refine((v) => { const n = parseFloat(v); return !isNaN(n) && n >= 0; },
+      { message: `${label} must be a non-negative number` })
+    .refine((v) => parseFloat(v) <= 9_999_999.99,
+      { message: `${label} cannot exceed ₹99,99,999.99` })
+    .refine((v) => { const [, d] = v.split('.'); return !d || d.length <= 2; },
+      { message: `${label} must have at most 2 decimal places` });
+
+/** Validates a case/unit quantity: positive integer, max 100,000. */
+const caseQuantity = (label = 'Quantity') =>
+  z
+    .string()
+    .min(1, `${label} is required`)
+    .refine((v) => { const n = parseInt(v, 10); return !isNaN(n) && n > 0; },
+      { message: `${label} must be a positive whole number` })
+    .refine((v) => parseInt(v, 10) <= 100_000,
+      { message: `${label} cannot exceed 100,000` })
+    .refine((v) => !v.includes('.'),
+      { message: `${label} must be a whole number` });
+
 /**
  * Email validation schema
  */
@@ -61,27 +99,8 @@ export type UserFormInput = z.infer<typeof userFormSchema>;
  */
 export const saleFormSchema = z.object({
   customer_id: z.string().min(1, 'Customer is required'),
-  amount: z
-    .string()
-    .min(1, 'Amount is required')
-    .refine(
-      (val) => {
-        const num = parseFloat(val);
-        return !isNaN(num) && num > 0;
-      },
-      { message: 'Amount must be a positive number' }
-    ),
-  quantity: z
-    .string()
-    .optional()
-    .refine(
-      (val) => {
-        if (!val || val === '') return true;
-        const num = parseFloat(val);
-        return !isNaN(num) && num > 0;
-      },
-      { message: 'Quantity must be a positive number' }
-    ),
+  amount: rupeeAmount('Amount'),
+  quantity: caseQuantity('Quantity').optional().or(z.literal('')),
   sku: z.string().min(1, 'SKU is required').max(100, 'SKU must be less than 100 characters'),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   transaction_date: z
@@ -99,16 +118,7 @@ export type SaleFormInput = z.infer<typeof saleFormSchema>;
 export const paymentFormSchema = z.object({
   customer_id: z.string().min(1, 'Customer is required'),
   area: z.string().min(1, 'Area is required').max(100, 'Area must be less than 100 characters'),
-  amount: z
-    .string()
-    .min(1, 'Amount is required')
-    .refine(
-      (val) => {
-        const num = parseFloat(val);
-        return !isNaN(num) && num > 0;
-      },
-      { message: 'Amount must be a positive number' }
-    ),
+  amount: rupeeAmount('Amount'),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   transaction_date: z
     .string()
@@ -124,36 +134,9 @@ export type PaymentFormInput = z.infer<typeof paymentFormSchema>;
 export const salesItemSchema = z.object({
   id: z.string().optional(),
   sku: z.string().min(1, 'SKU is required').max(100, 'SKU must be less than 100 characters'),
-  quantity: z
-    .string()
-    .min(1, 'Quantity is required')
-    .refine(
-      (val) => {
-        const num = parseFloat(val);
-        return !isNaN(num) && num > 0;
-      },
-      { message: 'Quantity must be a positive number' }
-    ),
-  price_per_case: z
-    .string()
-    .min(1, 'Price per case is required')
-    .refine(
-      (val) => {
-        const num = parseFloat(val);
-        return !isNaN(num) && num >= 0;
-      },
-      { message: 'Price per case must be a non-negative number' }
-    ),
-  amount: z
-    .string()
-    .min(1, 'Amount is required')
-    .refine(
-      (val) => {
-        const num = parseFloat(val);
-        return !isNaN(num) && num >= 0;
-      },
-      { message: 'Amount must be a non-negative number' }
-    ),
+  quantity: caseQuantity('Quantity'),
+  price_per_case: rupeeAmountNonNeg('Price per case'),
+  amount: rupeeAmountNonNeg('Amount'),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
 });
 
@@ -239,11 +222,8 @@ export const indiaWhatsAppSchema = z
 /** Single SKU pricing row for add-client form */
 export const dealerSkuPricingRowSchema = z.object({
   sku: z.string().min(1, 'SKU is required'),
-  price_per_bottle: z
-    .string()
-    .min(1, 'Price per bottle is required')
-    .refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) >= 0, 'Must be a non-negative number'),
-  bottles_per_case: z.number().int().positive(),
+  price_per_bottle: rupeeAmountNonNeg('Price per bottle'),
+  bottles_per_case: z.number().int().positive().max(10_000, 'Bottles per case cannot exceed 10,000'),
 });
 
 /** Add-client form: main fields + at least one SKU pricing row */
