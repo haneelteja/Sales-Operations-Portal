@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { logAction, AuditAction } from '@/lib/auditLogger';
 
 interface LogParams {
@@ -11,17 +10,11 @@ interface LogParams {
   newValues?: Record<string, unknown> | null;
 }
 
-// Hook that wires user context into logAction so callers don't repeat themselves
+// Hook that delegates to logAction — identity is always read from the live session inside logAction
 export function useAuditLog() {
-  const { profile } = useAuth();
-
   const log = useCallback((params: LogParams) => {
-    logAction({
-      ...params,
-      userId: profile?.user_id,
-      username: profile?.username ?? profile?.email,
-    });
-  }, [profile]);
+    logAction(params);
+  }, []);
 
   return log;
 }

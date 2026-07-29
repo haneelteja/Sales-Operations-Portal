@@ -1,13 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Max-Age': '86400',
-};
+import { buildCorsHeaders } from '../_shared/auth.ts';
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -43,29 +38,9 @@ serve(async (req) => {
     if (!tokenResponse.ok) {
       const error = await tokenResponse.json().catch(() => ({ error: 'Unknown error' }));
 
-      // Enhanced debugging for unauthorized_client error
-      const debugInfo: Record<string, string | number | boolean | null | object> = {
-        status: tokenResponse.status,
-        statusText: tokenResponse.statusText,
-        error,
-        clientIdExists: !!clientId,
-        clientIdPreview: clientId ? `${clientId.substring(0, 20)}...` : 'MISSING',
-        clientSecretExists: !!clientSecret,
-        clientSecretLength: clientSecret?.length || 0,
-        clientSecretPreview: clientSecret
-          ? `${clientSecret.substring(0, 8)}...${clientSecret.substring(clientSecret.length - 4)}`
-          : 'MISSING',
-        refreshTokenExists: !!storedRefreshToken,
-        refreshTokenPreview: storedRefreshToken ? `${storedRefreshToken.substring(0, 10)}...` : 'MISSING',
-        refreshTokenLength: storedRefreshToken?.length || 0,
-      };
-
-      console.error('Token refresh error:', debugInfo);
+      console.error('Token refresh error:', { status: tokenResponse.status, oauthError: error.error });
 
       if (error.error === 'unauthorized_client') {
-        const actualClientSecretPrefix = clientSecret?.substring(0, 7) || 'MISSING';
-        const actualClientSecretSuffix = clientSecret?.substring(clientSecret.length - 4) || 'MISSING';
-
         return new Response(
           JSON.stringify({
             error: 'Token refresh failed: Unauthorized',
@@ -76,14 +51,6 @@ serve(async (req) => {
               'Google OAuth credentials and refresh token do not belong to the same OAuth client, or the refresh token is no longer valid.',
             explanation:
               'Refresh tokens are bound to the exact Google OAuth Client ID and Client Secret that created them. If any one of those three values changes, token refresh will fail.',
-            clientIdExists: !!clientId,
-            clientIdPreview: clientId ? `${clientId.substring(0, 20)}...` : 'MISSING',
-            clientSecretExists: !!clientSecret,
-            clientSecretLength: clientSecret?.length || 0,
-            clientSecretPreview: clientSecret ? `${actualClientSecretPrefix}...${actualClientSecretSuffix}` : 'MISSING',
-            refreshTokenExists: !!storedRefreshToken,
-            refreshTokenPreview: storedRefreshToken ? `${storedRefreshToken.substring(0, 20)}...` : 'MISSING',
-            refreshTokenLength: storedRefreshToken?.length || 0,
             troubleshooting: [
               '1. Open Google Cloud Console and confirm the OAuth Client ID and Client Secret you intend to use.',
               '2. Generate a new refresh token using that exact same OAuth client.',

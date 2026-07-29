@@ -1,12 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { buildCorsHeaders } from '../_shared/auth.ts';
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -103,36 +100,17 @@ serve(async (req) => {
       </html>
     `
 
-    // For development/testing, we'll log the reset details instead of sending
-    console.log('Password Reset Email Details:')
-    console.log('Email:', email)
-    console.log('Username:', username || 'User')
-    console.log('Reset URL:', finalResetUrl)
-    console.log('App URL:', supabaseUrl.replace('/rest/v1', ''))
-    console.log('Email HTML Length:', emailHtml.length)
-
-    // In production, you would integrate with an email service like:
-    // - SendGrid
-    // - Mailgun
-    // - AWS SES
-    // - Or use Supabase's built-in email service (requires setup)
+    console.log('Password reset email prepared for:', email)
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: 'Password reset email with template logged successfully (email service not configured)',
-        data: {
-          email,
-          username: username || 'User',
-          resetUrl: finalResetUrl,
-          appUrl: supabaseUrl.replace('/rest/v1', ''),
-          emailHtml: emailHtml, // Include the HTML content
-          note: 'In production, integrate with email service to send actual emails'
-        }
+      JSON.stringify({
+        success: true,
+        message: 'Password reset email prepared (email service not yet configured)',
+        data: { email, username: username || 'User' }
       }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
 

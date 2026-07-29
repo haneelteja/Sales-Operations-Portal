@@ -11,11 +11,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { buildCorsHeaders } from '../_shared/auth.ts';
 
 /** Convert HH:MM IST string to { hour, minute } in UTC */
 function istToUtc(timeIST: string): { hour: number; minute: number } {
@@ -28,6 +24,7 @@ function istToUtc(timeIST: string): { hour: number; minute: number } {
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

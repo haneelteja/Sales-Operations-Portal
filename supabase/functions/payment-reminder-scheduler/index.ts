@@ -19,11 +19,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-reminder-cron-secret',
-};
+import { buildCorsHeaders } from '../_shared/auth.ts';
 
 /** Returns current IST time as HH:MM */
 function getCurrentISTTime(): string {
@@ -56,8 +52,15 @@ function isTimeInCurrentWindow(configuredTime: string, windowMinutes = 15): bool
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', {
+      headers: {
+        ...corsHeaders,
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-reminder-cron-secret',
+      },
+    });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');

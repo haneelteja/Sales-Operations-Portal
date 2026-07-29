@@ -9,22 +9,16 @@ export interface AuditLogParams {
   description: string;
   oldValues?: Record<string, unknown> | null;
   newValues?: Record<string, unknown> | null;
-  username?: string;
-  userId?: string;
 }
 
 // Fire-and-forget: never awaited, never blocks the caller
 export function logAction(params: AuditLogParams): void {
   (async () => {
     try {
-      let userId = params.userId;
-      let username = params.username;
-
-      if (!userId || !username) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!userId) userId = session?.user?.id;
-        if (!username) username = session?.user?.email ?? 'Unknown';
-      }
+      // Always read identity from the live session — never trust caller-supplied values.
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      const username = session?.user?.email ?? 'Unknown';
 
       await supabase.from('audit_logs').insert({
         user_id: userId ?? null,
