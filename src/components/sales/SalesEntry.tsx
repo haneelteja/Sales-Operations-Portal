@@ -1665,11 +1665,17 @@ const SalesEntry = () => {
             isPending={paymentMutation.isPending}
             onSubmit={handlePaymentSubmit}
             onCustomerChange={handlePaymentCustomerChange}
-            onBranchChange={(area) => setPaymentForm((prev) => ({
-              ...prev,
-              area,
-              customer_id: resolveCustomerIdForBranch(prev.customer_id, area) || prev.customer_id,
-            }))}
+            onBranchChange={(area) => {
+              setPaymentForm((prev) => {
+                const clientName = getCustomerName(findCustomerById(prev.customer_id));
+                const correctCustomer = findCustomerRecord({ customerName: clientName, branch: area });
+                return {
+                  ...prev,
+                  area,
+                  customer_id: correctCustomer?.id || prev.customer_id,
+                };
+              });
+            }}
             onFormChange={(updates) => setPaymentForm((prev) => ({ ...prev, ...updates }))}
             safeNumValue={safeNumValue}
           />
