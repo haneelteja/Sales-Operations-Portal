@@ -92,18 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return best as UserProfile;
       }
 
-      // Fall back to profiles table
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, user_id, username, email, associated_clients, associated_branches, status, role, created_by, last_login, created_at, updated_at')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (!profileError && profileData) {
-        return profileData as UserProfile;
-      }
-
-      logger.error('Error fetching profile:', userError || profileError);
+      logger.error('Error fetching profile:', userError ?? 'No user_management record found');
       return null;
     } catch (error) {
       logger.error('Error fetching user profile:', error);

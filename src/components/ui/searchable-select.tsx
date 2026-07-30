@@ -43,7 +43,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     if (open) {
       const currentIndex = filtered.findIndex(o => o.value === value);
       setHighlightedIndex(currentIndex >= 0 ? currentIndex : -1);
-      setTimeout(() => inputRef.current?.focus(), 0);
+      const raf = requestAnimationFrame(() => inputRef.current?.focus());
+      return () => cancelAnimationFrame(raf);
     } else {
       setSearch('');
       setHighlightedIndex(-1);
