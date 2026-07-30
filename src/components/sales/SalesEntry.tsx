@@ -541,7 +541,7 @@ const SalesEntry = () => {
     if (customerSKURecord && quantity) {
       const qty = parseInt(quantity);
       if (qty && customerSKURecord.price_per_case) {
-        calculatedAmount = (qty * customerSKURecord.price_per_case).toString();
+        calculatedAmount = (qty * customerSKURecord.price_per_case).toFixed(2);
       }
     }
     
