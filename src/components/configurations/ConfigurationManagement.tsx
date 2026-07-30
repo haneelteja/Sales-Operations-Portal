@@ -245,7 +245,22 @@ const ConfigurationManagement = () => {
     },
   });
 
-  // Delete functionality removed - using soft delete (deactivate) only
+  // Hard delete for pricing rows (configuration data only — no financial records affected)
+  const deletePricingRowMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("customers").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_result, variables) => {
+      log({ action: 'DELETE', entityType: 'client_configuration', entityId: variables, description: `Pricing row deleted (ID: ${variables})` });
+      toast({ title: "Deleted", description: "Pricing row deleted successfully." });
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["customers-management"] });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: "Failed to delete pricing row: " + error.message, variant: "destructive" });
+    },
+  });
 
   // Reactivate customer mutation
   const reactivateCustomerMutation = useMutation({
@@ -886,6 +901,34 @@ const ConfigurationManagement = () => {
                                 Mark as Deprecated
                               </DropdownMenuItem>
                             )}
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <DropdownMenuItem
+                                  className="text-red-700 font-medium"
+                                  onSelect={(e) => e.preventDefault()}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete pricing row
+                                </DropdownMenuItem>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete pricing row?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This permanently removes the pricing row for <strong>{customer.client_name} – {customer.branch} – {customer.sku}</strong> dated {customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '—'}. This only affects pricing configuration — no sales transactions will be changed.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="bg-red-600 hover:bg-red-700"
+                                    onClick={() => deletePricingRowMutation.mutate(customer.id)}
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
