@@ -262,13 +262,14 @@ const Profitability: React.FC = () => {
     },
   });
 
+  // All label purchases up to period end — no startDate filter so historical stock
+  // carries forward: avg_cost_per_label is a running weighted average across all time.
   const { data: labelsRaw = [], isLoading: loadingLabels } = useQuery({
-    queryKey: ["prof-labels", startDate, endDate],
+    queryKey: ["prof-labels-avg", endDate],
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
         .select("client_id, total_amount, purchase_date, sku, quantity")
-        .gte("purchase_date", startDate)
         .lte("purchase_date", endDate)
         .limit(10000);
       return (data ?? []) as Array<{
@@ -519,10 +520,11 @@ const Profitability: React.FC = () => {
     }
 
     // Front labels: consumption-based — cases × bottles_per_case × avg_cost_per_label.
-    // avg = sum(total_amount) / sum(quantity) from purchases in this period for the client.
+    // avg = sum(total_amount) / sum(quantity) across ALL purchases up to period end —
+    // labels bought in prior periods carry forward as stock at their historical avg price.
     // label_purchases has no FK to customers in DB, so resolve via custKeyMap.
     const frontLabelTotals = new Map<string, { amount: number; qty: number }>();
-    for (const l of labels) {
+    for (const l of labelsRaw) {
       if ((l.total_amount ?? 0) <= 0) continue;
       if (!l.client_id) continue;
       const qty = l.quantity ?? 0;
