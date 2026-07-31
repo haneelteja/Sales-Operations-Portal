@@ -174,6 +174,7 @@ export default function SalesTrackerView() {
   const [tableBranchFilter, setTableBranchFilter] = useState('');
   const [collapsedYears, setCollapsedYears] = useState<Set<number>>(new Set());
   const [showNewClientsDetail, setShowNewClientsDetail] = useState(false);
+  const newClientsChartWidthRef = React.useRef(800);
   const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
 
   // Per-officer chart metric
@@ -807,11 +808,14 @@ export default function SalesTrackerView() {
                     {showNewClientsDetail ? 'Hide details' : 'Show details'}
                   </button>
                 </div>
-                <ResponsiveContainer width="100%" height={showNewClientsDetail ? 460 : 260}>
+                <div className="[&_svg]:overflow-visible">
+                <ResponsiveContainer width="100%" height={showNewClientsDetail ? 460 : 260}
+                  onResize={(w) => { newClientsChartWidthRef.current = w; }}
+                >
                   <ComposedChart
                     data={newClientsByOfficerData}
                     margin={showNewClientsDetail
-                      ? { top: 220, right: 16, left: 4, bottom: 4 }
+                      ? { top: 220, right: 80, left: 4, bottom: 4 }
                       : { top: 28, right: 16, left: 4, bottom: 4 }
                     }
                   >
@@ -889,16 +893,17 @@ export default function SalesTrackerView() {
                             const cardW = 152;
                             const cardTop = 4;
                             const cardH = Math.max(40, y - 24 - cardTop);
-                            const cardX = Math.max(4, x - cardW / 2);
+                            const chartW = newClientsChartWidthRef.current;
+                            const cardX = Math.max(4, Math.min(x - cardW / 2, chartW - cardW - 4));
                             return (
                               <g>
                                 <line x1={x} y1={cardTop + cardH + 2} x2={x} y2={y - 7}
                                   stroke="#c4b5fd" strokeWidth={1.5} strokeDasharray="3 3" />
-                                <foreignObject x={cardX} y={cardTop} width={cardW} height={cardH} style={{ overflow: 'visible' }}>
+                                <foreignObject x={cardX} y={cardTop} width={cardW} height={cardH} overflow="visible">
                                   <div style={{
                                     background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px',
                                     padding: '8px', fontSize: '11px', boxShadow: '0 2px 8px rgba(0,0,0,0.09)',
-                                    height: '100%', overflow: 'hidden', boxSizing: 'border-box',
+                                    overflow: 'visible', boxSizing: 'border-box',
                                   }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px' }}>
                                       <span style={{ fontWeight: 600, color: '#334155', fontSize: '11px' }}>{monthLabel}</span>
@@ -937,6 +942,7 @@ export default function SalesTrackerView() {
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
+                </div>
                 </>
               )}
 
