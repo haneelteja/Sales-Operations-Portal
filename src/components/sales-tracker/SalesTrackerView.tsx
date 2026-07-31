@@ -60,8 +60,10 @@ function buildMonthKeys(period: ChartPeriod, customStart?: string, customEnd?: s
   const n = period === '3m' ? 3 : period === '6m' ? 6 : 12;
   const keys: string[] = [];
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(); d.setMonth(d.getMonth() - i);
-    keys.push(d.toISOString().substring(0, 7));
+    const d = new Date();
+    d.setDate(1); // avoid month overflow when current day > target month's length
+    d.setMonth(d.getMonth() - i);
+    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
   return keys;
 }
