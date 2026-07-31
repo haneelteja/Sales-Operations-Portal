@@ -269,15 +269,15 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
-        .select("client_id, total_amount, purchase_date, sku, quantity")
+        .select("client_id, cost_per_label, purchase_date, sku")
         .lte("purchase_date", endDate)
+        .order("purchase_date", { ascending: false })
         .limit(10000);
       return (data ?? []) as Array<{
         client_id: string | null;
-        total_amount: number;
+        cost_per_label: number;
         purchase_date: string;
         sku: string | null;
-        quantity: number;
       }>;
     },
   });
@@ -519,22 +519,19 @@ const Profitability: React.FC = () => {
       commissionMap.set(clientBranchKey, (commissionMap.get(clientBranchKey) ?? 0) + commCases * c.amount_per_case);
     }
 
-    // Front labels: consumption-based — cases × bottles_per_case × avg_cost_per_label.
-    // avg = sum(total_amount) / sum(quantity) across ALL purchases up to period end —
-    // labels bought in prior periods carry forward as stock at their historical avg price.
-    // label_purchases has no FK to customers in DB, so resolve via custKeyMap.
-    const frontLabelTotals = new Map<string, { amount: number; qty: number }>();
+    // Front labels: most recent cost_per_label per client on or before period end.
+    // labelsRaw is ordered by purchase_date DESC, so the first match per client is the latest.
+    // Mirrors back labels which also use the most recent cost_per_label (not a purchase sum).
+    // label_purchases has no FK to customers in DB — resolve via custKeyMap.
+    const frontLabelPriceMap = new Map<string, number>(); // clientBranchKey → cost_per_label
     for (const l of labelsRaw) {
-      if ((l.total_amount ?? 0) <= 0) continue;
+      if ((l.cost_per_label ?? 0) <= 0) continue;
       if (!l.client_id) continue;
-      const qty = l.quantity ?? 0;
-      if (qty <= 0) continue;
       const mapKey = custKeyMap.get(l.client_id);
       if (!mapKey) continue;
-      const cur = frontLabelTotals.get(mapKey) ?? { amount: 0, qty: 0 };
-      cur.amount += l.total_amount;
-      cur.qty += qty;
-      frontLabelTotals.set(mapKey, cur);
+      if (!frontLabelPriceMap.has(mapKey)) {
+        frontLabelPriceMap.set(mapKey, l.cost_per_label);
+      }
     }
 
     const totalCases = [...clientMap.values()].reduce((s, v) => s + v.cases, 0);
@@ -596,12 +593,8 @@ const Profitability: React.FC = () => {
 
       // Front labels: consumption-based. EL SKUs have labels pre-applied — no cost.
       const isELSku = sku?.startsWith('EL') ?? false;
-      const frontLabelData = frontLabelTotals.get(clientBranchKey);
-      const avgFrontLabelCostPerLabel =
-        frontLabelData && frontLabelData.qty > 0
-          ? frontLabelData.amount / frontLabelData.qty
-          : 0;
-      const labelsCost = isELSku ? 0 : cases * bottlesPerCase * avgFrontLabelCostPerLabel;
+      const frontLabelCostPerLabel = frontLabelPriceMap.get(clientBranchKey) ?? 0;
+      const labelsCost = isELSku ? 0 : cases * bottlesPerCase * frontLabelCostPerLabel;
 
       // Back labels: use formula if client is configured, else ₹0.
       const hasBackLabel = backLabelConfigMap.get(clientName.toLowerCase()) ?? false;
