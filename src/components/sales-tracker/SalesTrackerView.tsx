@@ -36,7 +36,7 @@ type OverviewChartType = 'new_clients' | 'cases_by_officer' | 'outstanding_by_of
 
 interface SalesOfficer { id: string; name: string; is_active: boolean; created_at: string; }
 interface ClientOfficerMapping { client_name: string; branch: string; officer_id: string; assigned_at: string; }
-interface ClientOfficerFirstSale { client_name: string; branch: string; officer_id: string; first_sale_date: string; }
+interface ClientOfficerFirstSale { client_name: string; branch: string; officer_id: string; first_sale_date: string | null; assigned_at: string | null; }
 interface MomTx { transaction_date: string; quantity: number | null; customer_id: string; amount: number | null; }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────────
@@ -163,6 +163,11 @@ export default function SalesTrackerView() {
   const [overviewChartType, setOverviewChartType] = useState<OverviewChartType>('new_clients');
   // null = all officers visible
   const [activeOfficerIds, setActiveOfficerIds] = useState<Set<string> | null>(null);
+
+  // Assignment Details table independent filters
+  const [tableFromDate, setTableFromDate] = useState('');
+  const [tableToDate, setTableToDate] = useState('');
+  const [tableOfficerFilter, setTableOfficerFilter] = useState('');
 
   // Per-officer chart metric
   const [chartMetric, setChartMetric] = useState<ChartMetric>('new_clients');
@@ -439,27 +444,29 @@ export default function SalesTrackerView() {
     });
   }, [allClientFirstSales, chartPeriod, customStartDate, customEndDate, visibleOfficers]);
 
-  // New clients table — grouped by year/month with officer and first sale date
+  // New clients table — grouped by year/month using assigned_at with independent filters
   const newClientsTableData = useMemo(() => {
-    const keySet = new Set(buildMonthKeys(chartPeriod, customStartDate, customEndDate));
-
     const entries = allClientFirstSales
       .filter(m => {
-        if (!m.first_sale_date) return false;
-        if (!keySet.has(m.first_sale_date.substring(0, 7))) return false;
-        if (activeOfficerIds !== null && !activeOfficerIds.has(m.officer_id)) return false;
+        const date = m.assigned_at;
+        if (!date) return false;
+        if (tableFromDate && date < tableFromDate) return false;
+        if (tableToDate && date > tableToDate) return false;
+        if (tableOfficerFilter && m.officer_id !== tableOfficerFilter) return false;
         return true;
       })
       .map(m => {
         const officerName = officers.find(o => o.id === m.officer_id)?.name ?? '—';
-        const monthKey = m.first_sale_date.substring(0, 7);
+        const dateKey = m.assigned_at!;
+        const monthKey = dateKey.substring(0, 7);
         const [y, mo] = monthKey.split('-').map(Number);
         return {
           dealerName: m.client_name,
           branch: m.branch ?? '',
           officerName,
           officerId: m.officer_id,
-          first_date: m.first_sale_date,
+          first_date: dateKey,
+          hasFirstSale: !!m.first_sale_date,
           monthKey,
           year: y,
           month: mo,
@@ -475,7 +482,7 @@ export default function SalesTrackerView() {
       yg.get(e.monthKey)!.push(e);
     }
     return grouped;
-  }, [allClientFirstSales, chartPeriod, customStartDate, customEndDate, activeOfficerIds, officers]);
+  }, [allClientFirstSales, tableFromDate, tableToDate, tableOfficerFilter, officers]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
@@ -971,22 +978,62 @@ export default function SalesTrackerView() {
           {/* New Clients breakdown table — visible in new_clients mode */}
           {overviewChartType === 'new_clients' && (
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold text-gray-900">
-                  New Clients — Assignment Details
-                  <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    (clients assigned to officers in selected period)
-                  </span>
-                </CardTitle>
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <CardTitle className="text-base font-semibold text-gray-900">
+                    New Clients — Assignment Details
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">
+                      (clients assigned to officers in selected period)
+                    </span>
+                  </CardTitle>
+                </div>
+                {/* Independent filters */}
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs text-muted-foreground whitespace-nowrap">From</label>
+                    <input
+                      type="date"
+                      value={tableFromDate}
+                      onChange={e => setTableFromDate(e.target.value)}
+                      className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs text-muted-foreground whitespace-nowrap">To</label>
+                    <input
+                      type="date"
+                      value={tableToDate}
+                      onChange={e => setTableToDate(e.target.value)}
+                      className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                  <select
+                    value={tableOfficerFilter}
+                    onChange={e => setTableOfficerFilter(e.target.value)}
+                    className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="">All Officers</option>
+                    {officers.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                  {(tableFromDate || tableToDate || tableOfficerFilter) && (
+                    <button
+                      onClick={() => { setTableFromDate(''); setTableToDate(''); setTableOfficerFilter(''); }}
+                      className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 border border-border rounded-md bg-background"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 {newClientsTableData.size === 0 ? (
-                  <p className="text-sm text-muted-foreground p-4">No new clients in the selected period.</p>
+                  <p className="text-sm text-muted-foreground p-4">No assignments found for the selected filters.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     {[...newClientsTableData.entries()].map(([year, monthMap]) => (
                       <div key={year}>
-                        {/* Year header */}
                         <div className="px-4 py-2 bg-slate-50 border-y border-slate-200">
                           <span className="text-sm font-bold text-slate-700">{year}</span>
                         </div>
@@ -998,6 +1045,7 @@ export default function SalesTrackerView() {
                               <TableHead>Branch</TableHead>
                               <TableHead>Sales Officer</TableHead>
                               <TableHead>Assigned Date</TableHead>
+                              <TableHead>First Delivery</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1032,6 +1080,13 @@ export default function SalesTrackerView() {
                                       )}
                                     </TableCell>
                                     <TableCell className="text-sm font-mono text-slate-600">{row.first_date}</TableCell>
+                                    <TableCell>
+                                      {row.hasFirstSale ? (
+                                        <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full font-medium">✓ Delivered</span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full font-medium">Pending</span>
+                                      )}
+                                    </TableCell>
                                   </TableRow>
                                 );
                               });
