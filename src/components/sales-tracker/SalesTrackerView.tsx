@@ -173,6 +173,7 @@ export default function SalesTrackerView() {
   const [tableClientFilter, setTableClientFilter] = useState('');
   const [tableBranchFilter, setTableBranchFilter] = useState('');
   const [collapsedYears, setCollapsedYears] = useState<Set<number>>(new Set());
+  const [showNewClientsDetail, setShowNewClientsDetail] = useState(false);
   const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
 
   // Per-officer chart metric
@@ -791,6 +792,21 @@ export default function SalesTrackerView() {
             <CardContent>
               {/* NEW CLIENTS — line (total) with per-officer tooltip breakdown */}
               {overviewChartType === 'new_clients' && (
+                <>
+                <div className="flex justify-end mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewClientsDetail(p => !p)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                      showNewClientsDetail
+                        ? 'bg-violet-100 border-violet-300 text-violet-700'
+                        : 'bg-transparent border-slate-200 text-slate-500 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: showNewClientsDetail ? '#7c3aed' : '#cbd5e1' }} />
+                    {showNewClientsDetail ? 'Hide details' : 'Show details'}
+                  </button>
+                </div>
                 <ResponsiveContainer width="100%" height={260}>
                   <ComposedChart data={newClientsByOfficerData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
@@ -851,6 +867,57 @@ export default function SalesTrackerView() {
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
+
+                {/* Persistent detail panel — same content as tooltip, shown for all months at once */}
+                {showNewClientsDetail && (
+                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                    {newClientsByOfficerData.map(row => {
+                      const detailMap = newClientsDetailByLabel.get(row.month as string);
+                      const officerBreakdown = visibleOfficers
+                        .map(o => ({
+                          id: o.id,
+                          name: o.name,
+                          value: (row[o.id] as number) ?? 0,
+                          color: OFFICER_COLORS[officers.findIndex(x => x.id === o.id) % OFFICER_COLORS.length],
+                          clients: detailMap?.get(o.id) ?? [],
+                        }))
+                        .filter(r => r.value > 0);
+                      const total = row['total'] as number;
+                      return (
+                        <div key={row.month as string} className="flex-shrink-0 w-44 bg-white border border-slate-200 rounded-lg p-2.5 text-xs shadow-sm">
+                          <div className="flex items-center justify-between mb-1.5 border-b border-slate-100 pb-1.5">
+                            <span className="font-semibold text-slate-700">{row.month as string}</span>
+                            <span className="font-bold text-violet-700 text-sm">{total}</span>
+                          </div>
+                          {officerBreakdown.length === 0 ? (
+                            <span className="text-slate-400">No new clients</span>
+                          ) : (
+                            <div className="space-y-2">
+                              {officerBreakdown.map(r => (
+                                <div key={r.id}>
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                                    <span className="font-medium text-slate-600 truncate">{r.name.split(' ')[0]}</span>
+                                    <span className="ml-auto font-bold text-slate-800">{r.value}</span>
+                                  </div>
+                                  {r.clients.map((c, ci) => (
+                                    <div key={ci} className="flex items-start gap-1 pl-3 mb-0.5">
+                                      <span className="text-slate-300 mt-px leading-tight">·</span>
+                                      <span className="text-slate-500 leading-tight truncate">
+                                        {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                </>
               )}
 
               {/* CASES BY OFFICER — multi-line */}
