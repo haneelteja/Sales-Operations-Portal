@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -170,6 +170,10 @@ export default function SalesTrackerView() {
   const [tableFromDate, setTableFromDate] = useState('');
   const [tableToDate, setTableToDate] = useState('');
   const [tableOfficerFilter, setTableOfficerFilter] = useState('');
+  const [tableClientFilter, setTableClientFilter] = useState('');
+  const [tableBranchFilter, setTableBranchFilter] = useState('');
+  const [collapsedYears, setCollapsedYears] = useState<Set<number>>(new Set());
+  const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
 
   // Per-officer chart metric
   const [chartMetric, setChartMetric] = useState<ChartMetric>('new_clients');
@@ -455,6 +459,8 @@ export default function SalesTrackerView() {
         if (tableFromDate && date < tableFromDate) return false;
         if (tableToDate && date > tableToDate) return false;
         if (tableOfficerFilter && m.officer_id !== tableOfficerFilter) return false;
+        if (tableClientFilter && !m.client_name.toLowerCase().includes(tableClientFilter.toLowerCase())) return false;
+        if (tableBranchFilter && !(m.branch ?? '').toLowerCase().includes(tableBranchFilter.toLowerCase())) return false;
         return true;
       })
       .map(m => {
@@ -484,7 +490,7 @@ export default function SalesTrackerView() {
       yg.get(e.monthKey)!.push(e);
     }
     return grouped;
-  }, [allClientFirstSales, tableFromDate, tableToDate, tableOfficerFilter, officers]);
+  }, [allClientFirstSales, tableFromDate, tableToDate, tableOfficerFilter, tableClientFilter, tableBranchFilter, officers]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
@@ -981,16 +987,38 @@ export default function SalesTrackerView() {
           {overviewChartType === 'new_clients' && (
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <CardTitle className="text-base font-semibold text-gray-900">
-                    New Clients — Assignment Details
-                    <span className="ml-2 text-sm font-normal text-muted-foreground">
-                      (clients assigned to officers in selected period)
-                    </span>
-                  </CardTitle>
-                </div>
-                {/* Independent filters */}
-                <div className="flex flex-wrap gap-2 mt-2">
+                <CardTitle className="text-base font-semibold text-gray-900">
+                  New Clients — Assignment Details
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    (clients assigned to officers in selected period)
+                  </span>
+                </CardTitle>
+                {/* Filters */}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <input
+                    type="text"
+                    placeholder="Filter by client..."
+                    value={tableClientFilter}
+                    onChange={e => setTableClientFilter(e.target.value)}
+                    className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring min-w-[140px]"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Filter by branch..."
+                    value={tableBranchFilter}
+                    onChange={e => setTableBranchFilter(e.target.value)}
+                    className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring min-w-[140px]"
+                  />
+                  <select
+                    value={tableOfficerFilter}
+                    onChange={e => setTableOfficerFilter(e.target.value)}
+                    className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="">All Officers</option>
+                    {officers.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
                   <div className="flex items-center gap-1.5">
                     <label className="text-xs text-muted-foreground whitespace-nowrap">From</label>
                     <input
@@ -1009,22 +1037,12 @@ export default function SalesTrackerView() {
                       className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                     />
                   </div>
-                  <select
-                    value={tableOfficerFilter}
-                    onChange={e => setTableOfficerFilter(e.target.value)}
-                    className="text-xs border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="">All Officers</option>
-                    {officers.map(o => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </select>
-                  {(tableFromDate || tableToDate || tableOfficerFilter) && (
+                  {(tableClientFilter || tableBranchFilter || tableOfficerFilter || tableFromDate || tableToDate) && (
                     <button
-                      onClick={() => { setTableFromDate(''); setTableToDate(''); setTableOfficerFilter(''); }}
+                      onClick={() => { setTableClientFilter(''); setTableBranchFilter(''); setTableOfficerFilter(''); setTableFromDate(''); setTableToDate(''); }}
                       className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 border border-border rounded-md bg-background"
                     >
-                      Clear
+                      Clear all
                     </button>
                   )}
                 </div>
@@ -1034,69 +1052,104 @@ export default function SalesTrackerView() {
                   <p className="text-sm text-muted-foreground p-4">No assignments found for the selected filters.</p>
                 ) : (
                   <div className="overflow-x-auto">
-                    {[...newClientsTableData.entries()].map(([year, monthMap]) => (
-                      <div key={year}>
-                        <div className="px-4 py-2 bg-slate-50 border-y border-slate-200">
-                          <span className="text-sm font-bold text-slate-700">{year}</span>
-                        </div>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Month</TableHead>
-                              <TableHead>Client</TableHead>
-                              <TableHead>Branch</TableHead>
-                              <TableHead>Sales Officer</TableHead>
-                              <TableHead>Assigned Date</TableHead>
-                              <TableHead>First Delivery</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {[...monthMap.entries()].map(([monthKey, rows]) => {
-                              const [y, mo] = monthKey.split('-').map(Number);
-                              const monthName = new Date(y, mo - 1, 1).toLocaleString('default', { month: 'long' });
-                              return rows.map((row, rowIdx) => {
-                                const globalOfficerIdx = officers.findIndex(o => o.id === row.officerId);
-                                const officerColor = globalOfficerIdx >= 0 ? OFFICER_COLORS[globalOfficerIdx % OFFICER_COLORS.length] : '#94a3b8';
-                                return (
-                                  <TableRow key={`${monthKey}-${row.dealerName}-${row.branch}-${rowIdx}`}>
-                                    <TableCell className="text-sm font-medium text-slate-600 whitespace-nowrap">
-                                      {rowIdx === 0 ? (
-                                        <span className="inline-flex items-center gap-1.5">
-                                          {monthName}
-                                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">
-                                            {rows.length}
+                    {[...newClientsTableData.entries()].map(([year, monthMap]) => {
+                      const yearCollapsed = collapsedYears.has(year);
+                      const toggleYear = () => setCollapsedYears(prev => {
+                        const next = new Set(prev);
+                        next.has(year) ? next.delete(year) : next.add(year);
+                        return next;
+                      });
+                      const yearTotal = [...monthMap.values()].reduce((s, rows) => s + rows.length, 0);
+                      return (
+                        <div key={year}>
+                          {/* Collapsible year header */}
+                          <button
+                            onClick={toggleYear}
+                            className="w-full flex items-center gap-2 px-4 py-2 bg-slate-100 border-y border-slate-200 hover:bg-slate-200 transition-colors text-left"
+                          >
+                            <span className={`text-slate-400 transition-transform ${yearCollapsed ? '-rotate-90' : ''}`}>▾</span>
+                            <span className="text-sm font-bold text-slate-700">{year}</span>
+                            <span className="ml-1 text-xs text-slate-500">({yearTotal} clients)</span>
+                          </button>
+
+                          {!yearCollapsed && (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-36">Month</TableHead>
+                                  <TableHead>Client</TableHead>
+                                  <TableHead>Branch</TableHead>
+                                  <TableHead>Sales Officer</TableHead>
+                                  <TableHead>Assigned Date</TableHead>
+                                  <TableHead>First Delivery</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {[...monthMap.entries()].map(([monthKey, rows]) => {
+                                  const [y, mo] = monthKey.split('-').map(Number);
+                                  const monthName = new Date(y, mo - 1, 1).toLocaleString('default', { month: 'long' });
+                                  const monthCollapsed = collapsedMonths.has(monthKey);
+                                  const toggleMonth = () => setCollapsedMonths(prev => {
+                                    const next = new Set(prev);
+                                    next.has(monthKey) ? next.delete(monthKey) : next.add(monthKey);
+                                    return next;
+                                  });
+                                  return (
+                                    <React.Fragment key={monthKey}>
+                                      {/* Collapsible month header row */}
+                                      <TableRow
+                                        className="bg-slate-50 hover:bg-slate-100 cursor-pointer select-none"
+                                        onClick={toggleMonth}
+                                      >
+                                        <TableCell colSpan={6} className="py-2">
+                                          <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                            <span className={`text-slate-400 transition-transform text-xs ${monthCollapsed ? '-rotate-90' : ''}`}>▾</span>
+                                            {monthName}
+                                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">
+                                              {rows.length}
+                                            </span>
                                           </span>
-                                        </span>
-                                      ) : null}
-                                    </TableCell>
-                                    <TableCell className="font-medium text-sm">{row.dealerName}</TableCell>
-                                    <TableCell className="text-muted-foreground text-sm">{row.branch || '—'}</TableCell>
-                                    <TableCell>
-                                      {row.officerId ? (
-                                        <span className="inline-flex items-center gap-1.5 text-sm">
-                                          <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: officerColor }} />
-                                          {row.officerName}
-                                        </span>
-                                      ) : (
-                                        <span className="text-sm text-muted-foreground">—</span>
-                                      )}
-                                    </TableCell>
-                                    <TableCell className="text-sm font-mono text-slate-600">{row.first_date}</TableCell>
-                                    <TableCell>
-                                      {row.hasFirstSale ? (
-                                        <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full font-medium">✓ Delivered</span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full font-medium">Pending</span>
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              });
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    ))}
+                                        </TableCell>
+                                      </TableRow>
+                                      {/* Data rows — hidden when month collapsed */}
+                                      {!monthCollapsed && rows.map((row, rowIdx) => {
+                                        const globalOfficerIdx = officers.findIndex(o => o.id === row.officerId);
+                                        const officerColor = globalOfficerIdx >= 0 ? OFFICER_COLORS[globalOfficerIdx % OFFICER_COLORS.length] : '#94a3b8';
+                                        return (
+                                          <TableRow key={`${monthKey}-${row.dealerName}-${row.branch}-${rowIdx}`}>
+                                            <TableCell />
+                                            <TableCell className="font-medium text-sm">{row.dealerName}</TableCell>
+                                            <TableCell className="text-muted-foreground text-sm">{row.branch || '—'}</TableCell>
+                                            <TableCell>
+                                              {row.officerId ? (
+                                                <span className="inline-flex items-center gap-1.5 text-sm">
+                                                  <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: officerColor }} />
+                                                  {row.officerName}
+                                                </span>
+                                              ) : (
+                                                <span className="text-sm text-muted-foreground">—</span>
+                                              )}
+                                            </TableCell>
+                                            <TableCell className="text-sm font-mono text-slate-600">{row.first_date}</TableCell>
+                                            <TableCell>
+                                              {row.hasFirstSale ? (
+                                                <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full font-medium">✓ Delivered</span>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full font-medium">Pending</span>
+                                              )}
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </React.Fragment>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
