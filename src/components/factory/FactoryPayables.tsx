@@ -645,19 +645,11 @@ const FactoryPayables = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredAndSortedTransactions, toast, factoryPricing]);
 
-  // Calculate summary with proper amount calculation
+  // Calculate summary using stored amounts — recalculating from current pricing
+  // would reprice historical entries and diverge from what was agreed with Elma.
   const summary = transactions?.reduce(
     (acc, transaction) => {
-      let amount = transaction.amount || 0;
-      
-      // For production transactions, calculate amount based on date-aware factory pricing
-      if (transaction.transaction_type === 'production' && transaction.quantity && transaction.sku) {
-        const pricePerCase = getPricePerCase(transaction.sku, transaction.transaction_date);
-        if (pricePerCase) {
-          amount = transaction.quantity * pricePerCase;
-        }
-      }
-      
+      const amount = transaction.amount || 0;
       if (transaction.transaction_type === 'production') {
         acc.totalProduction += amount;
       } else if (transaction.transaction_type === 'payment') {
