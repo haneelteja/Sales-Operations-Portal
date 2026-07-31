@@ -454,8 +454,8 @@ export default function SalesTrackerView() {
   const newClientsTableData = useMemo(() => {
     const entries = allClientFirstSales
       .filter(m => {
-        const date = m.assigned_at;
-        if (!date) return false;
+        if (!m.first_sale_date) return false; // pending — handled separately
+        const date = m.first_sale_date;
         if (tableFromDate && date < tableFromDate) return false;
         if (tableToDate && date > tableToDate) return false;
         if (tableOfficerFilter && m.officer_id !== tableOfficerFilter) return false;
@@ -465,7 +465,7 @@ export default function SalesTrackerView() {
       })
       .map(m => {
         const officerName = officers.find(o => o.id === m.officer_id)?.name ?? '—';
-        const dateKey = m.assigned_at!;
+        const dateKey = m.first_sale_date!;
         const monthKey = dateKey.substring(0, 7);
         const [y, mo] = monthKey.split('-').map(Number);
         return {
@@ -474,7 +474,6 @@ export default function SalesTrackerView() {
           officerName,
           officerId: m.officer_id,
           first_date: dateKey,
-          hasFirstSale: !!m.first_sale_date,
           monthKey,
           year: y,
           month: mo,
@@ -491,6 +490,22 @@ export default function SalesTrackerView() {
     }
     return grouped;
   }, [allClientFirstSales, tableFromDate, tableToDate, tableOfficerFilter, tableClientFilter, tableBranchFilter, officers]);
+
+  const pendingClients = useMemo(() => allClientFirstSales
+    .filter(m => {
+      if (m.first_sale_date) return false;
+      if (tableOfficerFilter && m.officer_id !== tableOfficerFilter) return false;
+      if (tableClientFilter && !m.client_name.toLowerCase().includes(tableClientFilter.toLowerCase())) return false;
+      if (tableBranchFilter && !(m.branch ?? '').toLowerCase().includes(tableBranchFilter.toLowerCase())) return false;
+      return true;
+    })
+    .map(m => ({
+      dealerName: m.client_name,
+      branch: m.branch ?? '',
+      officerName: officers.find(o => o.id === m.officer_id)?.name ?? '—',
+      officerId: m.officer_id,
+    })),
+  [allClientFirstSales, tableOfficerFilter, tableClientFilter, tableBranchFilter, officers]);
 
   // Cases by Officer — multi-line
   const casesByOfficerChartData = useMemo(() => {
@@ -988,9 +1003,9 @@ export default function SalesTrackerView() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold text-gray-900">
-                  New Clients — Assignment Details
+                  New Clients — First Delivery Details
                   <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    (clients assigned to officers in selected period)
+                    (grouped by first delivery date)
                   </span>
                 </CardTitle>
                 {/* Filters */}
@@ -1020,7 +1035,7 @@ export default function SalesTrackerView() {
                     ))}
                   </select>
                   <div className="flex items-center gap-1.5">
-                    <label className="text-xs text-muted-foreground whitespace-nowrap">From</label>
+                    <label className="text-xs text-muted-foreground whitespace-nowrap">Delivery from</label>
                     <input
                       type="date"
                       value={tableFromDate}
@@ -1029,7 +1044,7 @@ export default function SalesTrackerView() {
                     />
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <label className="text-xs text-muted-foreground whitespace-nowrap">To</label>
+                    <label className="text-xs text-muted-foreground whitespace-nowrap">to</label>
                     <input
                       type="date"
                       value={tableToDate}
@@ -1048,8 +1063,8 @@ export default function SalesTrackerView() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {newClientsTableData.size === 0 ? (
-                  <p className="text-sm text-muted-foreground p-4">No assignments found for the selected filters.</p>
+                {newClientsTableData.size === 0 && pendingClients.length === 0 ? (
+                  <p className="text-sm text-muted-foreground p-4">No clients found for the selected filters.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     {[...newClientsTableData.entries()].map(([year, monthMap]) => {
@@ -1080,8 +1095,7 @@ export default function SalesTrackerView() {
                                   <TableHead>Client</TableHead>
                                   <TableHead>Branch</TableHead>
                                   <TableHead>Sales Officer</TableHead>
-                                  <TableHead>Assigned Date</TableHead>
-                                  <TableHead>First Delivery</TableHead>
+                                  <TableHead>First Delivery Date</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -1101,7 +1115,7 @@ export default function SalesTrackerView() {
                                         className="bg-slate-50 hover:bg-slate-100 cursor-pointer select-none"
                                         onClick={toggleMonth}
                                       >
-                                        <TableCell colSpan={6} className="py-2">
+                                        <TableCell colSpan={5} className="py-2">
                                           <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
                                             <span className={`text-slate-400 transition-transform text-xs ${monthCollapsed ? '-rotate-90' : ''}`}>▾</span>
                                             {monthName}
@@ -1131,13 +1145,6 @@ export default function SalesTrackerView() {
                                               )}
                                             </TableCell>
                                             <TableCell className="text-sm font-mono text-slate-600">{row.first_date}</TableCell>
-                                            <TableCell>
-                                              {row.hasFirstSale ? (
-                                                <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full font-medium">✓ Delivered</span>
-                                              ) : (
-                                                <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full font-medium">Pending</span>
-                                              )}
-                                            </TableCell>
                                           </TableRow>
                                         );
                                       })}
@@ -1150,6 +1157,63 @@ export default function SalesTrackerView() {
                         </div>
                       );
                     })}
+
+                    {/* Pending section — clients with no first delivery yet */}
+                    {pendingClients.length > 0 && (
+                      <div>
+                        <button
+                          onClick={() => setCollapsedYears(prev => {
+                            const next = new Set(prev);
+                            next.has(0) ? next.delete(0) : next.add(0);
+                            return next;
+                          })}
+                          className="w-full flex items-center gap-2 px-4 py-2 bg-amber-50 border-y border-amber-200 hover:bg-amber-100 transition-colors text-left"
+                        >
+                          <span className={`text-amber-400 transition-transform ${collapsedYears.has(0) ? '-rotate-90' : ''}`}>▾</span>
+                          <span className="text-sm font-bold text-amber-700">Pending Delivery</span>
+                          <span className="ml-1 text-xs text-amber-500">({pendingClients.length} clients, no stock dispatched yet)</span>
+                        </button>
+                        {!collapsedYears.has(0) && (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-36" />
+                                <TableHead>Client</TableHead>
+                                <TableHead>Branch</TableHead>
+                                <TableHead>Sales Officer</TableHead>
+                                <TableHead>First Delivery Date</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {pendingClients.map((row, rowIdx) => {
+                                const globalOfficerIdx = officers.findIndex(o => o.id === row.officerId);
+                                const officerColor = globalOfficerIdx >= 0 ? OFFICER_COLORS[globalOfficerIdx % OFFICER_COLORS.length] : '#94a3b8';
+                                return (
+                                  <TableRow key={`pending-${row.dealerName}-${row.branch}-${rowIdx}`} className="bg-amber-50/50">
+                                    <TableCell />
+                                    <TableCell className="font-medium text-sm">{row.dealerName}</TableCell>
+                                    <TableCell className="text-muted-foreground text-sm">{row.branch || '—'}</TableCell>
+                                    <TableCell>
+                                      {row.officerId ? (
+                                        <span className="inline-flex items-center gap-1.5 text-sm">
+                                          <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: officerColor }} />
+                                          {row.officerName}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full font-medium">Pending</span>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
