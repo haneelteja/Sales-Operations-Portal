@@ -31,7 +31,6 @@ interface ProfitRow {
   labelsCost: number;
   backLabelsCost: number;
   commissionCost: number;
-  overheadTransportCost: number;
   miscExpensesCost: number;
   transportCost: number;
   totalExpense: number;
@@ -48,7 +47,6 @@ interface ColFilters {
   labelsCost: string;
   backLabelsCost: string;
   commissionCost: string;
-  overheadTransportCost: string;
   miscExpensesCost: string;
   transportCost: string;
   totalExpense: string;
@@ -65,7 +63,6 @@ const EMPTY_FILTERS: ColFilters = {
   labelsCost: "",
   backLabelsCost: "",
   commissionCost: "",
-  overheadTransportCost: "",
   miscExpensesCost: "",
   transportCost: "",
   totalExpense: "",
@@ -82,7 +79,6 @@ const SORT_COLS = [
   "labelsCost",
   "backLabelsCost",
   "commissionCost",
-  "overheadTransportCost",
   "miscExpensesCost",
   "transportCost",
   "totalExpense",
@@ -101,7 +97,6 @@ const EMPTY_SORTS: Record<SortCol, "asc" | "desc" | null> = {
   labelsCost: null,
   backLabelsCost: null,
   commissionCost: null,
-  overheadTransportCost: null,
   miscExpensesCost: null,
   transportCost: null,
   totalExpense: null,
@@ -272,7 +267,7 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
-        .select("client_id, total_amount, purchase_date, record_type, customers(client_name, branch)")
+        .select("client_id, total_amount, purchase_date, sku")
         .gte("purchase_date", startDate)
         .lte("purchase_date", endDate)
         .limit(10000);
@@ -280,8 +275,7 @@ const Profitability: React.FC = () => {
         client_id: string | null;
         total_amount: number;
         purchase_date: string;
-        record_type: string | null;
-        customers: { client_name: string; branch: string | null } | null;
+        sku: string | null;
       }>;
     },
   });
@@ -424,7 +418,7 @@ const Profitability: React.FC = () => {
 
   // ── Core computation (period rows, unfiltered) ────────────────────────────
 
-  const { rows, summary } = useMemo(() => {
+  const { rows, summary, miscTransportTotal } = useMemo(() => {
     const sales = salesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
     const factoryPayables = factoryPayablesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
     const labels = labelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
@@ -466,18 +460,6 @@ const Profitability: React.FC = () => {
     const skuBottlesMap = new Map<string, number>();
     for (const s of skuConfigRaw) {
       skuBottlesMap.set(s.sku, s.bottles_per_case);
-    }
-
-    // Front labels: direct per client. Only count record_type='purchase' with positive amount.
-    // Keyed by "clientName|||branch" — same composite key used for sales rows.
-    const directLabelsMap = new Map<string, number>();
-    for (const l of labels) {
-      if ((l.record_type ?? "purchase") !== "purchase") continue;
-      if ((l.total_amount ?? 0) <= 0) continue;
-      const cust = l.customers;
-      if (!cust?.client_name) continue;
-      const mapKey = `${cust.client_name}|||${cust.branch ?? ""}`;
-      directLabelsMap.set(mapKey, (directLabelsMap.get(mapKey) ?? 0) + (l.total_amount ?? 0));
     }
 
     // Aggregate revenue + cases (qty) per client+branch from sales_transactions.
@@ -535,6 +517,16 @@ const Profitability: React.FC = () => {
       commissionMap.set(clientBranchKey, (commissionMap.get(clientBranchKey) ?? 0) + commCases * c.amount_per_case);
     }
 
+    // Front labels: label_purchases has no FK to customers in DB, so use custKeyMap to resolve.
+    const directLabelsMap = new Map<string, number>();
+    for (const l of labels) {
+      if ((l.total_amount ?? 0) <= 0) continue;
+      if (!l.client_id) continue;
+      const mapKey = custKeyMap.get(l.client_id);
+      if (!mapKey) continue;
+      directLabelsMap.set(mapKey, (directLabelsMap.get(mapKey) ?? 0) + (l.total_amount ?? 0));
+    }
+
     const totalCases = [...clientMap.values()].reduce((s, v) => s + v.cases, 0);
 
     // Factory cost: keyed by client+branch so all SKUs for the same client+branch are summed.
@@ -557,14 +549,14 @@ const Profitability: React.FC = () => {
     // into factory cost and allocated proportionally by cases, just like unlinked factory payables.
     unlinkedFactory += factoryOverheadFromMisc;
 
-    // Transport: entries with no client go into a global overhead pool (all groups:
-    // labels, general, labor, etc.) allocated proportionally by cases.
-    // Entries linked to a specific client are attributed directly to that client.
-    let totalOverheadTransport = 0;
+    // Transport: entries with a client_id are attributed to that client directly.
+    // Entries with no client_id (labels pickup, general overhead, etc.) go into miscTransportTotal
+    // and are shown as a single reconciliation row at the bottom of the table.
+    let unlinkedTransport = 0;
     const directTransportMap = new Map<string, number>();
     for (const t of transport) {
       if (!t.client_id) {
-        totalOverheadTransport += t.amount ?? 0;
+        unlinkedTransport += t.amount ?? 0;
       } else if (t.customers?.client_name) {
         const mapKey = `${t.customers.client_name}|||${t.customers.branch ?? ""}`;
         directTransportMap.set(mapKey, (directTransportMap.get(mapKey) ?? 0) + (t.amount ?? 0));
@@ -597,18 +589,22 @@ const Profitability: React.FC = () => {
         (sku ? (skuBottlesMap.get(sku) ?? 0) : 0);
       const backLabelsCost = hasBackLabel ? cases * bottlesPerCase * avgBackLabelPrice : 0;
 
-      const overheadTransportCost = totalOverheadTransport * caseFraction;
       const miscExpensesCost = totalMiscExpenses * caseFraction;
 
       const transportCost = directTransportMap.get(clientBranchKey) ?? 0;
       const commissionCost = commissionMap.get(clientBranchKey) ?? 0;
 
-      const totalExpense = factoryCost + labelsCost + backLabelsCost + commissionCost + overheadTransportCost + miscExpensesCost + transportCost;
+      const totalExpense = factoryCost + labelsCost + backLabelsCost + commissionCost + miscExpensesCost + transportCost;
       const profit = invoiceValue - totalExpense;
       const margin = invoiceValue !== 0 ? (profit / invoiceValue) * 100 : 0;
 
-      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, backLabelsCost, commissionCost, overheadTransportCost, miscExpensesCost, transportCost, totalExpense, profit, margin });
+      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, backLabelsCost, commissionCost, miscExpensesCost, transportCost, totalExpense, profit, margin });
     }
+
+    // Misc transport = unlinked (no client_id) + direct transport for clients not active this period
+    const usedDirectTransport = result.reduce((s, r) => s + r.transportCost, 0);
+    const totalDirectTransport = [...directTransportMap.values()].reduce((s, v) => s + v, 0);
+    const miscTransportTotal = unlinkedTransport + (totalDirectTransport - usedDirectTransport);
 
     const summary = {
       clients: result.length,
@@ -618,14 +614,13 @@ const Profitability: React.FC = () => {
       labelsCost: result.reduce((s, r) => s + r.labelsCost, 0),
       backLabelsCost: result.reduce((s, r) => s + r.backLabelsCost, 0),
       commissionCost: result.reduce((s, r) => s + r.commissionCost, 0),
-      overheadTransportCost: totalOverheadTransport,
       miscExpensesCost: totalMiscExpenses,
-      transportCost: result.reduce((s, r) => s + r.transportCost, 0),
+      transportCost: result.reduce((s, r) => s + r.transportCost, 0) + miscTransportTotal,
       totalExpense: result.reduce((s, r) => s + r.totalExpense, 0),
       profit: result.reduce((s, r) => s + r.profit, 0),
     };
 
-    return { rows: result, summary };
+    return { rows: result, summary, miscTransportTotal };
   }, [salesRaw, factoryPayablesRaw, labelsRaw, backLabelsRaw, backLabelConfigRaw, skuConfigRaw, commissionsRaw, transportRaw, miscRaw, year, months, startDate, endDate]);
 
   // ── Filter option lists (derived from unfiltered rows) ────────────────────
@@ -670,7 +665,6 @@ const Profitability: React.FC = () => {
       { key: "labelsCost",             field: "labelsCost" },
       { key: "backLabelsCost",         field: "backLabelsCost" },
       { key: "commissionCost",         field: "commissionCost" },
-      { key: "overheadTransportCost",  field: "overheadTransportCost" },
       { key: "miscExpensesCost",       field: "miscExpensesCost" },
       { key: "transportCost",          field: "transportCost" },
       { key: "totalExpense",           field: "totalExpense" },
@@ -758,7 +752,6 @@ const Profitability: React.FC = () => {
       "Labels Cost (₹)": Math.round(r.labelsCost),
       "Back Labels Cost (₹)": Math.round(r.backLabelsCost),
       "Commission (₹)": Math.round(r.commissionCost),
-      "Overhead Transport (₹)": Math.round(r.overheadTransportCost),
       "Misc Expenses (₹)": Math.round(r.miscExpensesCost),
       "Transport Cost (₹)": Math.round(r.transportCost),
       "Total Expense (₹)": Math.round(r.totalExpense),
@@ -891,7 +884,7 @@ const Profitability: React.FC = () => {
         <SummaryCard title="Labels Cost" value={fmtINR(summary.labelsCost)} />
         <SummaryCard title="Back Labels Cost" value={fmtINR(summary.backLabelsCost)} />
         <SummaryCard title="Commission" value={fmtINR(summary.commissionCost)} />
-        <SummaryCard title="Overhead Transport" value={fmtINR(summary.overheadTransportCost)} />
+        <SummaryCard title="Misc Transport" value={fmtINR(miscTransportTotal)} />
         <SummaryCard title="Misc Expenses" value={fmtINR(summary.miscExpensesCost)} />
         <SummaryCard title="Transport Cost" value={fmtINR(summary.transportCost)} />
         <SummaryCard title="Total Expense" value={fmtINR(summary.totalExpense)} accent="red" />
@@ -1002,11 +995,11 @@ const Profitability: React.FC = () => {
       <div className="flex items-start gap-2 text-xs text-muted-foreground bg-slate-50 border rounded-md px-3 py-2">
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
-          Labels cost is direct per client (sum of their actual label purchases in the period).
-          Back labels cost is per client: cases × bottles/case × avg cost/label — only for clients enabled in back label configuration.
-          Commission is per client: cases dispatched × ₹/case from active commission configs (Configurations → Commissions).
-          Overhead transport and misc expenses are allocated proportionally by cases.
-          Factory and transport costs show only direct entries linked to each client.
+          Labels cost is direct per client (sum of actual label purchases linked to that client in the period).
+          Back labels: cases × bottles/case × avg cost/label — only for clients in back label config.
+          Commission: cases dispatched × ₹/case from active commission configs.
+          Misc expenses are allocated proportionally by cases.
+          Transport shows only direct entries linked to each client. Unallocated transport (no client link) appears as a separate "Transport Expenses (Misc)" row at the bottom — included in the Transport column total so it reconciles with the month's total transport expense.
           Numeric column filters show rows where the value is ≥ the entered threshold.
         </span>
       </div>
@@ -1177,23 +1170,6 @@ const Profitability: React.FC = () => {
                     </div>
                   </TableHead>
 
-                  {/* Overhead Transport */}
-                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
-                    <div className="flex items-center justify-end gap-0.5">
-                      Overhead Transport
-                      <ColumnFilter
-                        columnKey="overheadTransportCost"
-                        columnName="Overhead Transport"
-                        filterValue={colFilters.overheadTransportCost}
-                        onFilterChange={(v) => handleFilterChange("overheadTransportCost", v as string)}
-                        onClearFilter={() => handleClearFilter("overheadTransportCost")}
-                        sortDirection={colSorts.overheadTransportCost}
-                        onSortChange={(d) => handleSortChange("overheadTransportCost", d)}
-                        dataType="number"
-                      />
-                    </div>
-                  </TableHead>
-
                   {/* Misc Expenses */}
                   <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-0.5">
@@ -1301,13 +1277,13 @@ const Profitability: React.FC = () => {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={14} className="text-center text-muted-foreground py-12">
+                    <TableCell colSpan={13} className="text-center text-muted-foreground py-12">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : displayRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={14} className="text-center text-muted-foreground py-12">
+                    <TableCell colSpan={13} className="text-center text-muted-foreground py-12">
                       {hasActiveFilters ? "No clients match the current filters" : "No data for the selected period"}
                     </TableCell>
                   </TableRow>
@@ -1337,9 +1313,6 @@ const Profitability: React.FC = () => {
                         {r.commissionCost > 0 ? fmtINR(r.commissionCost) : "—"}
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
-                        {r.overheadTransportCost > 0 ? fmtINR(r.overheadTransportCost) : "—"}
-                      </TableCell>
-                      <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {r.miscExpensesCost > 0 ? fmtINR(r.miscExpensesCost) : "—"}
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
@@ -1362,6 +1335,28 @@ const Profitability: React.FC = () => {
                       </TableCell>
                     </TableRow>
                   ))
+                )}
+                {/* Misc / unallocated transport reconciliation row */}
+                {miscTransportTotal > 0 && (
+                  <TableRow className="bg-blue-50 border-t-2 border-blue-200">
+                    <TableCell className="font-medium py-2.5 pl-4 pr-2 whitespace-nowrap text-blue-700 text-sm italic">
+                      Transport Expenses (Misc)
+                    </TableCell>
+                    <TableCell className="py-2.5 px-2 text-xs text-blue-500 italic">unallocated</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right font-mono text-blue-700 font-medium">
+                      {fmtINR(miscTransportTotal)}
+                    </TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 px-2 text-right text-blue-500">—</TableCell>
+                    <TableCell className="py-2.5 pl-2 pr-4 text-right text-blue-500">—</TableCell>
+                  </TableRow>
                 )}
               </TableBody>
             </Table>
