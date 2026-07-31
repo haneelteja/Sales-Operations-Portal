@@ -267,7 +267,7 @@ const Profitability: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
-        .select("client_id, total_amount, purchase_date, sku")
+        .select("client_id, total_amount, purchase_date, sku, quantity")
         .gte("purchase_date", startDate)
         .lte("purchase_date", endDate)
         .limit(10000);
@@ -276,6 +276,7 @@ const Profitability: React.FC = () => {
         total_amount: number;
         purchase_date: string;
         sku: string | null;
+        quantity: number;
       }>;
     },
   });
@@ -517,14 +518,21 @@ const Profitability: React.FC = () => {
       commissionMap.set(clientBranchKey, (commissionMap.get(clientBranchKey) ?? 0) + commCases * c.amount_per_case);
     }
 
-    // Front labels: label_purchases has no FK to customers in DB, so use custKeyMap to resolve.
-    const directLabelsMap = new Map<string, number>();
+    // Front labels: consumption-based — cases × bottles_per_case × avg_cost_per_label.
+    // avg = sum(total_amount) / sum(quantity) from purchases in this period for the client.
+    // label_purchases has no FK to customers in DB, so resolve via custKeyMap.
+    const frontLabelTotals = new Map<string, { amount: number; qty: number }>();
     for (const l of labels) {
       if ((l.total_amount ?? 0) <= 0) continue;
       if (!l.client_id) continue;
+      const qty = l.quantity ?? 0;
+      if (qty <= 0) continue;
       const mapKey = custKeyMap.get(l.client_id);
       if (!mapKey) continue;
-      directLabelsMap.set(mapKey, (directLabelsMap.get(mapKey) ?? 0) + (l.total_amount ?? 0));
+      const cur = frontLabelTotals.get(mapKey) ?? { amount: 0, qty: 0 };
+      cur.amount += l.total_amount;
+      cur.qty += qty;
+      frontLabelTotals.set(mapKey, cur);
     }
 
     const totalCases = [...clientMap.values()].reduce((s, v) => s + v.cases, 0);
@@ -576,17 +584,25 @@ const Profitability: React.FC = () => {
       const factoryCost =
         (directFactoryMap.get(clientBranchKey) ?? 0) +
         unlinkedFactory * caseFraction;
-      const labelsCost = directLabelsMap.get(clientBranchKey) ?? 0;
 
-      // Back labels: use formula if client is configured, else ₹0.
-      // backLabelsCost = cases × bottles_per_case[sku] × avg_cost_per_label_for_period
-      // BACK_LABEL_BOTTLES_OVERRIDE: clients whose DB SKU differs from their actual back-label SKU.
-      // "Alley 91" sells P 500ml (20 bottles/case) but is recorded under 250 EC in the DB.
+      // Bottles per case — shared by both front and back label calculations.
+      // BACK_LABEL_BOTTLES_OVERRIDE: "Alley 91" sells P 500ml (20 b/case) but DB SKU is 250 EC.
       const BACK_LABEL_BOTTLES_OVERRIDE: Record<string, number> = { 'alley 91': 20 };
-      const hasBackLabel = backLabelConfigMap.get(clientName.toLowerCase()) ?? false;
       const bottlesPerCase =
         BACK_LABEL_BOTTLES_OVERRIDE[clientName.toLowerCase()] ??
         (sku ? (skuBottlesMap.get(sku) ?? 0) : 0);
+
+      // Front labels: consumption-based. EL SKUs have labels pre-applied — no cost.
+      const isELSku = sku?.startsWith('EL') ?? false;
+      const frontLabelData = frontLabelTotals.get(clientBranchKey);
+      const avgFrontLabelCostPerLabel =
+        frontLabelData && frontLabelData.qty > 0
+          ? frontLabelData.amount / frontLabelData.qty
+          : 0;
+      const labelsCost = isELSku ? 0 : cases * bottlesPerCase * avgFrontLabelCostPerLabel;
+
+      // Back labels: use formula if client is configured, else ₹0.
+      const hasBackLabel = backLabelConfigMap.get(clientName.toLowerCase()) ?? false;
       const backLabelsCost = hasBackLabel ? cases * bottlesPerCase * avgBackLabelPrice : 0;
 
       const miscExpensesCost = totalMiscExpenses * caseFraction;
