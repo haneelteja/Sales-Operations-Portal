@@ -263,13 +263,13 @@ const Profitability: React.FC = () => {
   });
 
   const { data: labelsRaw = [], isLoading: loadingLabels } = useQuery({
-    queryKey: ["prof-labels", startDate, endDate],
+    queryKey: ["prof-labels", endDate],
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
         .select("client_id, total_amount, purchase_date, sku")
-        .gte("purchase_date", startDate)
         .lte("purchase_date", endDate)
+        .order("purchase_date", { ascending: false })
         .limit(10000);
       return (data ?? []) as Array<{
         client_id: string | null;
@@ -421,7 +421,6 @@ const Profitability: React.FC = () => {
   const { rows, summary, miscTransportTotal } = useMemo(() => {
     const sales = salesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
     const factoryPayables = factoryPayablesRaw.filter((r) => inPeriod(r.transaction_date, year, months));
-    const labels = labelsRaw.filter((r) => inPeriod(r.purchase_date, year, months));
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
     const miscExpenses = miscRaw.filter((r) => inPeriod(r.expense_date, year, months));
 
@@ -517,16 +516,24 @@ const Profitability: React.FC = () => {
       commissionMap.set(clientBranchKey, (commissionMap.get(clientBranchKey) ?? 0) + commCases * c.amount_per_case);
     }
 
-    // Front labels: sum total_amount per client for the period.
-    // label_purchases records store total_amount = pre-computed period label cost.
+    // Front labels: sum total_amount for period records; fall back to most recent historical total.
+    // labelsRaw is ordered purchase_date DESC, so first hit per client = most recent.
     // label_purchases has no FK to customers in DB — resolve via custKeyMap.
-    const frontLabelTotalMap = new Map<string, number>(); // clientBranchKey → total label cost for period
-    for (const l of labels) {
+    const frontLabelPeriodMap = new Map<string, number>(); // clientBranchKey → sum for period
+    const frontLabelFallbackMap = new Map<string, number>(); // clientBranchKey → most recent total_amount
+    for (const l of labelsRaw) {
       if ((l.total_amount ?? 0) <= 0) continue;
       if (!l.client_id) continue;
       const mapKey = custKeyMap.get(l.client_id);
       if (!mapKey) continue;
-      frontLabelTotalMap.set(mapKey, (frontLabelTotalMap.get(mapKey) ?? 0) + (l.total_amount ?? 0));
+      const inPeriodRecord = l.purchase_date >= startDate && l.purchase_date <= endDate;
+      if (inPeriodRecord) {
+        frontLabelPeriodMap.set(mapKey, (frontLabelPeriodMap.get(mapKey) ?? 0) + (l.total_amount ?? 0));
+      }
+      // First hit per client (most recent due to DESC order) → fallback
+      if (!frontLabelFallbackMap.has(mapKey)) {
+        frontLabelFallbackMap.set(mapKey, l.total_amount ?? 0);
+      }
     }
 
     const totalCases = [...clientMap.values()].reduce((s, v) => s + v.cases, 0);
@@ -586,9 +593,11 @@ const Profitability: React.FC = () => {
         BACK_LABEL_BOTTLES_OVERRIDE[clientName.toLowerCase()] ??
         (sku ? (skuBottlesMap.get(sku) ?? 0) : 0);
 
-      // Front labels: sum of total_amount for the period. EL SKUs have labels pre-applied — no cost.
+      // Front labels: period sum if available, else most recent historical record as proxy.
+      // EL SKUs have labels pre-applied — no cost.
       const isELSku = sku?.startsWith('EL') ?? false;
-      const labelsCost = isELSku ? 0 : (frontLabelTotalMap.get(clientBranchKey) ?? 0);
+      const labelsCost = isELSku ? 0 :
+        (frontLabelPeriodMap.get(clientBranchKey) ?? frontLabelFallbackMap.get(clientBranchKey) ?? 0);
 
       // Back labels: use formula if client is configured, else ₹0.
       const hasBackLabel = backLabelConfigMap.get(clientName.toLowerCase()) ?? false;
