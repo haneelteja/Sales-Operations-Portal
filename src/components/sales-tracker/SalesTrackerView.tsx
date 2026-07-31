@@ -807,8 +807,14 @@ export default function SalesTrackerView() {
                     {showNewClientsDetail ? 'Hide details' : 'Show details'}
                   </button>
                 </div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <ComposedChart data={newClientsByOfficerData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
+                <ResponsiveContainer width="100%" height={showNewClientsDetail ? 460 : 260}>
+                  <ComposedChart
+                    data={newClientsByOfficerData}
+                    margin={showNewClientsDetail
+                      ? { top: 220, right: 16, left: 4, bottom: 4 }
+                      : { top: 28, right: 16, left: 4, bottom: 4 }
+                    }
+                  >
                     <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
@@ -820,7 +826,7 @@ export default function SalesTrackerView() {
                         if (!row) return null;
                         const detailMap = newClientsDetailByLabel.get(label);
                         const officerBreakdown = visibleOfficers
-                          .map((o, idx) => ({
+                          .map((o) => ({
                             id: o.id,
                             name: o.name,
                             value: (row[o.id] as number) ?? 0,
@@ -863,60 +869,74 @@ export default function SalesTrackerView() {
                     <Line type="monotone" dataKey="total" name="New Clients" stroke="#7c3aed" strokeWidth={2.5}
                       dot={{ r: 5, fill: '#7c3aed', strokeWidth: 2, stroke: 'white' }}
                       activeDot={{ r: 7, stroke: 'white', strokeWidth: 2 }}
-                      label={makeDotLabel('#7c3aed')}
+                      label={showNewClientsDetail
+                        ? (props: { x?: number; y?: number; index?: number; value?: number }) => {
+                            const { x, y, index, value } = props;
+                            if (x == null || y == null || index == null || value == null || value === 0) return null;
+                            const row = newClientsByOfficerData[index];
+                            if (!row) return null;
+                            const monthLabel = row.month as string;
+                            const detailMap = newClientsDetailByLabel.get(monthLabel);
+                            const officerBreakdown = visibleOfficers
+                              .map(o => ({
+                                id: o.id,
+                                name: o.name,
+                                value: (row[o.id] as number) ?? 0,
+                                color: OFFICER_COLORS[officers.findIndex(ox => ox.id === o.id) % OFFICER_COLORS.length],
+                                clients: detailMap?.get(o.id) ?? [],
+                              }))
+                              .filter(r => r.value > 0);
+                            const cardW = 152;
+                            const cardTop = 4;
+                            const cardH = Math.max(40, y - 24 - cardTop);
+                            const cardX = Math.max(4, x - cardW / 2);
+                            return (
+                              <g>
+                                <line x1={x} y1={cardTop + cardH + 2} x2={x} y2={y - 7}
+                                  stroke="#c4b5fd" strokeWidth={1.5} strokeDasharray="3 3" />
+                                <foreignObject x={cardX} y={cardTop} width={cardW} height={cardH} style={{ overflow: 'visible' }}>
+                                  <div style={{
+                                    background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px',
+                                    padding: '8px', fontSize: '11px', boxShadow: '0 2px 8px rgba(0,0,0,0.09)',
+                                    height: '100%', overflow: 'hidden', boxSizing: 'border-box',
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px' }}>
+                                      <span style={{ fontWeight: 600, color: '#334155', fontSize: '11px' }}>{monthLabel}</span>
+                                      <span style={{ fontWeight: 700, color: '#6d28d9', fontSize: '13px' }}>{value}</span>
+                                    </div>
+                                    {officerBreakdown.length === 0 ? (
+                                      <span style={{ color: '#94a3b8', fontSize: '10px' }}>No new clients</span>
+                                    ) : (
+                                      <div>
+                                        {officerBreakdown.map(r => (
+                                          <div key={r.id} style={{ marginBottom: '5px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                              <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: r.color, flexShrink: 0 }} />
+                                              <span style={{ fontWeight: 600, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{r.name.split(' ')[0]}</span>
+                                              <span style={{ fontWeight: 700, color: '#1e293b', flexShrink: 0 }}>{r.value}</span>
+                                            </div>
+                                            {r.clients.map((c, ci) => (
+                                              <div key={ci} style={{ display: 'flex', alignItems: 'flex-start', gap: '3px', paddingLeft: '10px', marginBottom: '1px' }}>
+                                                <span style={{ color: '#cbd5e1', lineHeight: 1.4, flexShrink: 0 }}>·</span>
+                                                <span style={{ color: '#64748b', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px' }}>
+                                                  {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </foreignObject>
+                              </g>
+                            );
+                          }
+                        : makeDotLabel('#7c3aed')
+                      }
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
-
-                {/* Persistent detail panel — same content as tooltip, shown for all months at once */}
-                {showNewClientsDetail && (
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
-                    {newClientsByOfficerData.map(row => {
-                      const detailMap = newClientsDetailByLabel.get(row.month as string);
-                      const officerBreakdown = visibleOfficers
-                        .map(o => ({
-                          id: o.id,
-                          name: o.name,
-                          value: (row[o.id] as number) ?? 0,
-                          color: OFFICER_COLORS[officers.findIndex(x => x.id === o.id) % OFFICER_COLORS.length],
-                          clients: detailMap?.get(o.id) ?? [],
-                        }))
-                        .filter(r => r.value > 0);
-                      const total = row['total'] as number;
-                      return (
-                        <div key={row.month as string} className="flex-shrink-0 w-44 bg-white border border-slate-200 rounded-lg p-2.5 text-xs shadow-sm">
-                          <div className="flex items-center justify-between mb-1.5 border-b border-slate-100 pb-1.5">
-                            <span className="font-semibold text-slate-700">{row.month as string}</span>
-                            <span className="font-bold text-violet-700 text-sm">{total}</span>
-                          </div>
-                          {officerBreakdown.length === 0 ? (
-                            <span className="text-slate-400">No new clients</span>
-                          ) : (
-                            <div className="space-y-2">
-                              {officerBreakdown.map(r => (
-                                <div key={r.id}>
-                                  <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: r.color }} />
-                                    <span className="font-medium text-slate-600 truncate">{r.name.split(' ')[0]}</span>
-                                    <span className="ml-auto font-bold text-slate-800">{r.value}</span>
-                                  </div>
-                                  {r.clients.map((c, ci) => (
-                                    <div key={ci} className="flex items-start gap-1 pl-3 mb-0.5">
-                                      <span className="text-slate-300 mt-px leading-tight">·</span>
-                                      <span className="text-slate-500 leading-tight truncate">
-                                        {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
                 </>
               )}
 
