@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ColumnFilter } from "@/components/ui/column-filter";
-import { Download, TrendingUp, TrendingDown, Info, Search, Plus, Trash2 } from "lucide-react";
+import { Download, TrendingUp, TrendingDown, Info, Search, Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { exportJsonToExcel } from "@/services/export/excelExport";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -210,6 +210,8 @@ const Profitability: React.FC = () => {
 
   // Misc expense form state
   const [miscForm, setMiscForm] = useState({ category: MISC_CATEGORIES[0], amount: "", description: "" });
+  const [editingMiscId, setEditingMiscId] = useState<string | null>(null);
+  const [editMiscForm, setEditMiscForm] = useState({ category: MISC_CATEGORIES[0], amount: "", description: "" });
 
   // Table interaction state
   const [searchTerm, setSearchTerm] = useState("");
@@ -414,6 +416,20 @@ const Profitability: React.FC = () => {
       toast({ title: "Expense removed" });
     },
     onError: () => toast({ title: "Failed to remove expense", variant: "destructive" }),
+  });
+
+  const updateMiscMutation = useMutation({
+    mutationFn: async ({ id, category, amount, description }: { id: string; category: string; amount: number; description: string }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from("misc_expenses").update({ category, amount, description }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prof-misc"] });
+      setEditingMiscId(null);
+      toast({ title: "Expense updated" });
+    },
+    onError: () => toast({ title: "Failed to update expense", variant: "destructive" }),
   });
 
   // ── Core computation (period rows, unfiltered) ────────────────────────────
@@ -974,28 +990,97 @@ const Profitability: React.FC = () => {
                     <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Category</th>
                     <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Description</th>
                     <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Amount</th>
-                    <th className="w-8" aria-label="Actions" />
+                    <th className="w-16" aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody>
-                  {miscRaw.map((e) => (
-                    <tr key={e.id} className="border-t">
-                      <td className="px-3 py-2">{e.category}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{e.description || "—"}</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtINR(e.amount)}</td>
-                      <td className="px-2 py-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
-                          disabled={deleteMiscMutation.isPending}
-                          onClick={() => deleteMiscMutation.mutate(e.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {miscRaw.map((e) => {
+                    const isEditing = editingMiscId === e.id;
+                    return (
+                      <tr key={e.id} className="border-t">
+                        {isEditing ? (
+                          <>
+                            <td className="px-2 py-1.5">
+                              <select
+                                value={editMiscForm.category}
+                                onChange={(ev) => setEditMiscForm((p) => ({ ...p, category: ev.target.value }))}
+                                className="h-7 rounded border border-input bg-background px-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-ring"
+                              >
+                                {MISC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <Input
+                                value={editMiscForm.description}
+                                onChange={(ev) => setEditMiscForm((p) => ({ ...p, description: ev.target.value }))}
+                                className="h-7 text-xs"
+                                placeholder="Description"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <Input
+                                type="number"
+                                value={editMiscForm.amount}
+                                onChange={(ev) => setEditMiscForm((p) => ({ ...p, amount: ev.target.value }))}
+                                className="h-7 text-xs text-right w-24 ml-auto"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <div className="flex gap-1 justify-end">
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
+                                  disabled={updateMiscMutation.isPending}
+                                  onClick={() => {
+                                    const amt = parseFloat(editMiscForm.amount);
+                                    if (isNaN(amt) || amt <= 0) return;
+                                    updateMiscMutation.mutate({ id: e.id, category: editMiscForm.category, amount: amt, description: editMiscForm.description });
+                                  }}
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                  onClick={() => setEditingMiscId(null)}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-3 py-2">{e.category}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{e.description || "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono">{fmtINR(e.amount)}</td>
+                            <td className="px-2 py-2">
+                              <div className="flex gap-1 justify-end">
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-blue-600"
+                                  onClick={() => {
+                                    setEditingMiscId(e.id);
+                                    setEditMiscForm({ category: e.category, amount: String(e.amount), description: e.description ?? "" });
+                                  }}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
+                                  disabled={deleteMiscMutation.isPending}
+                                  onClick={() => deleteMiscMutation.mutate(e.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
