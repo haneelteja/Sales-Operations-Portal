@@ -538,9 +538,10 @@ const Profitability: React.FC = () => {
 
     // Front labels: price_per_label from label_price_history (most recent on or before period end).
     // labelPricesRaw ordered effective_from DESC → first hit per SKU = most recent.
+    // Allow 0 prices (e.g. 250 EC) so intentional zero entries aren't skipped in favour of older non-zero ones.
     const labelPriceMap = new Map<string, number>(); // sku → price_per_label
     for (const lp of labelPricesRaw) {
-      if ((lp.price_per_label ?? 0) <= 0) continue;
+      if ((lp.price_per_label ?? 0) < 0) continue;
       if (!labelPriceMap.has(lp.sku)) {
         labelPriceMap.set(lp.sku, lp.price_per_label);
       }
@@ -586,6 +587,10 @@ const Profitability: React.FC = () => {
     }
 
     // Build result rows
+    // "Alley 91" sells P 500ml (20 b/case) but their customers.sku is "250 EC" (10 b/case) —
+    // override bottles/case so label and back-label costs use the correct bottle count.
+    const BACK_LABEL_BOTTLES_OVERRIDE: Record<string, number> = { 'alley 91': 20 };
+
     const result: ProfitRow[] = [];
 
     for (const [clientBranchKey, entry] of clientMap.entries()) {
@@ -597,8 +602,6 @@ const Profitability: React.FC = () => {
         unlinkedFactory * caseFraction;
 
       // Bottles per case — shared by both front and back label calculations.
-      // BACK_LABEL_BOTTLES_OVERRIDE: "Alley 91" sells P 500ml (20 b/case) but DB SKU is 250 EC.
-      const BACK_LABEL_BOTTLES_OVERRIDE: Record<string, number> = { 'alley 91': 20 };
       const bottlesPerCase =
         BACK_LABEL_BOTTLES_OVERRIDE[clientName.toLowerCase()] ??
         (sku ? (skuBottlesMap.get(sku) ?? 0) : 0);
