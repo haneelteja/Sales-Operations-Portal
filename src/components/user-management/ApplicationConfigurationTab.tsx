@@ -32,6 +32,7 @@ import { EditSkusAvailableDialog } from './EditSkusAvailableDialog';
 import { EditListConfigDialog } from './EditListConfigDialog';
 import { DeprecatedClientsDialog } from './DeprecatedClientsDialog';
 import { EditVendorPricingDialog } from './EditVendorPricingDialog';
+import { EditLabelPricesDialog } from '../configurations/EditLabelPricesDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
 import { EditPaymentFollowupDaysDialog } from './EditPaymentFollowupDaysDialog';
 import { triggerManualBackup, getBackupConfig, getBackupLogs, formatDateInIST, formatFileSize, formatDuration, type BackupConfig, type BackupLog } from '@/services/backupService';
@@ -54,6 +55,7 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isTentativeDeliveryDaysDialogOpen, setIsTentativeDeliveryDaysDialogOpen] = useState(false);
   const [isPaymentFollowupDaysDialogOpen, setIsPaymentFollowupDaysDialogOpen] = useState(false);
   const [isLabelVendorsDialogOpen, setIsLabelVendorsDialogOpen] = useState(false);
+  const [isLabelPricesDialogOpen, setIsLabelPricesDialogOpen] = useState(false);
   const [isAssigneeListDialogOpen, setIsAssigneeListDialogOpen] = useState(false);
   const [isDeprecatedClientsDialogOpen, setIsDeprecatedClientsDialogOpen] = useState(false);
   const [isInvoiceFormatOpen, setIsInvoiceFormatOpen] = useState(false);
@@ -241,6 +243,21 @@ const ApplicationConfigurationTab: React.FC = () => {
       isCustom: true,
       customKey: 'sku_configurations',
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
+
+    // Row 8: Label price history (per-SKU pricing for profitability label cost calculations)
+    result.push({
+      id: '',
+      config_key: 'label_price_history',
+      config_value: '',
+      config_type: 'json',
+      description: 'Label Prices — per-SKU effective-dated price history used to calculate label cost in Profitability (cases × bottles/case × ₹/label)',
+      updated_by: null,
+      updated_at: '',
+      created_at: '',
+      isCustom: true,
+      customKey: 'label_price_history',
+    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
+    seen.add('label_price_history');
 
     // Add any remaining configs not in order (excluding invoice-related ones saved for section below)
     const invoiceKeySet = new Set(invoiceOrder);
@@ -619,6 +636,16 @@ const ApplicationConfigurationTab: React.FC = () => {
                             <Edit className="h-4 w-4" />
                             Edit
                           </Button>
+                        ) : config.config_key === 'label_price_history' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsLabelPricesDialogOpen(true)}
+                            className="flex items-center gap-2"
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit
+                          </Button>
                         ) : config.config_key === 'invoice_number_format' ? (
                           <Button
                             variant="outline"
@@ -925,6 +952,12 @@ const ApplicationConfigurationTab: React.FC = () => {
       <DeprecatedClientsDialog
         open={isDeprecatedClientsDialogOpen}
         onOpenChange={setIsDeprecatedClientsDialogOpen}
+      />
+
+      {/* Label Price History Dialog */}
+      <EditLabelPricesDialog
+        open={isLabelPricesDialogOpen}
+        onOpenChange={setIsLabelPricesDialogOpen}
       />
 
       {/* Invoice Number Format Dialog */}

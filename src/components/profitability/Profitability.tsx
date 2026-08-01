@@ -122,8 +122,6 @@ const MISC_CATEGORIES = [
   "WhatsApp Subscription",
 ];
 
-const LABEL_SKUS = ["P 500 ml", "P 1000 ml", "P 750 ml", "P 250 ml", "AL 750 ml", "AL 500 ml", "250 EC"];
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -214,11 +212,6 @@ const Profitability: React.FC = () => {
   const [miscForm, setMiscForm] = useState({ category: MISC_CATEGORIES[0], amount: "", description: "" });
   const [editingMiscId, setEditingMiscId] = useState<string | null>(null);
   const [editMiscForm, setEditMiscForm] = useState({ category: MISC_CATEGORIES[0], amount: "", description: "" });
-
-  // Label price history form state
-  const [labelPriceForm, setLabelPriceForm] = useState({ sku: LABEL_SKUS[0], effective_from: "", price_per_label: "", gst_rate: "18", notes: "" });
-  const [editingLabelPriceId, setEditingLabelPriceId] = useState<string | null>(null);
-  const [editLabelPriceForm, setEditLabelPriceForm] = useState({ sku: LABEL_SKUS[0], effective_from: "", price_per_label: "", gst_rate: "18", notes: "" });
 
   // Table interaction state
   const [searchTerm, setSearchTerm] = useState("");
@@ -441,47 +434,6 @@ const Profitability: React.FC = () => {
       toast({ title: "Expense updated" });
     },
     onError: () => toast({ title: "Failed to update expense", variant: "destructive" }),
-  });
-
-  const addLabelPriceMutation = useMutation({
-    mutationFn: async (payload: { sku: string; effective_from: string; price_per_label: number; gst_rate: number; notes: string }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).from("label_price_history").insert([payload]);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["prof-label-prices"] });
-      setLabelPriceForm({ sku: LABEL_SKUS[0], effective_from: "", price_per_label: "", gst_rate: "18", notes: "" });
-      toast({ title: "Label price added" });
-    },
-    onError: (e: Error) => toast({ title: e.message.includes("unique") ? "Entry already exists for this SKU + date" : "Failed to add label price", variant: "destructive" }),
-  });
-
-  const updateLabelPriceMutation = useMutation({
-    mutationFn: async ({ id, sku, effective_from, price_per_label, gst_rate, notes }: { id: string; sku: string; effective_from: string; price_per_label: number; gst_rate: number; notes: string }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).from("label_price_history").update({ sku, effective_from, price_per_label, gst_rate, notes }).eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["prof-label-prices"] });
-      setEditingLabelPriceId(null);
-      toast({ title: "Label price updated" });
-    },
-    onError: () => toast({ title: "Failed to update label price", variant: "destructive" }),
-  });
-
-  const deleteLabelPriceMutation = useMutation({
-    mutationFn: async (id: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).from("label_price_history").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["prof-label-prices"] });
-      toast({ title: "Label price removed" });
-    },
-    onError: () => toast({ title: "Failed to remove label price", variant: "destructive" }),
   });
 
   // ── Core computation (period rows, unfiltered) ────────────────────────────
@@ -1128,167 +1080,6 @@ const Profitability: React.FC = () => {
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">No misc expenses recorded for this period.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Label Price History */}
-      <Card>
-        <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Label Prices (per label, ex-GST)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-3">
-          {/* Add form */}
-          <div className="flex flex-wrap gap-2 items-end">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">SKU</label>
-              <select
-                value={labelPriceForm.sku}
-                onChange={(e) => setLabelPriceForm((p) => ({ ...p, sku: e.target.value }))}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                {LABEL_SKUS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Effective From</label>
-              <Input type="date" value={labelPriceForm.effective_from} onChange={(e) => setLabelPriceForm((p) => ({ ...p, effective_from: e.target.value }))} className="h-8 w-36 text-sm" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">₹ / label</label>
-              <Input
-                type="number" step="0.0001" placeholder="0.9440"
-                value={labelPriceForm.price_per_label}
-                onChange={(e) => setLabelPriceForm((p) => ({ ...p, price_per_label: e.target.value }))}
-                className="h-8 w-24 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">GST %</label>
-              <Input
-                type="number" step="0.01" placeholder="18"
-                value={labelPriceForm.gst_rate}
-                onChange={(e) => setLabelPriceForm((p) => ({ ...p, gst_rate: e.target.value }))}
-                className="h-8 w-16 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Total / label (incl. GST)</label>
-              <Input
-                readOnly
-                value={
-                  labelPriceForm.price_per_label && labelPriceForm.gst_rate
-                    ? `₹${(parseFloat(labelPriceForm.price_per_label) * (1 + parseFloat(labelPriceForm.gst_rate) / 100)).toFixed(4)}`
-                    : "—"
-                }
-                className="h-8 w-32 text-sm bg-muted text-muted-foreground"
-              />
-            </div>
-            <div className="space-y-1 flex-1 min-w-[120px]">
-              <label className="text-xs text-muted-foreground">Notes (optional)</label>
-              <Input placeholder="e.g. Morya labels batch" value={labelPriceForm.notes} onChange={(e) => setLabelPriceForm((p) => ({ ...p, notes: e.target.value }))} className="h-8 text-sm" />
-            </div>
-            <Button
-              size="sm" className="h-8"
-              disabled={!labelPriceForm.price_per_label || !labelPriceForm.effective_from || addLabelPriceMutation.isPending}
-              onClick={() => {
-                const price = parseFloat(labelPriceForm.price_per_label);
-                const gst = parseFloat(labelPriceForm.gst_rate);
-                if (isNaN(price) || price <= 0 || isNaN(gst)) return;
-                addLabelPriceMutation.mutate({ sku: labelPriceForm.sku, effective_from: labelPriceForm.effective_from, price_per_label: price, gst_rate: gst, notes: labelPriceForm.notes });
-              }}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" />Add
-            </Button>
-          </div>
-
-          {/* Table */}
-          {labelPricesRaw.length > 0 ? (
-            <div className="rounded-md border overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">SKU</th>
-                    <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Effective From</th>
-                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">₹/label</th>
-                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">GST %</th>
-                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Total/label</th>
-                    <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Notes</th>
-                    <th className="w-16" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...labelPricesRaw].sort((a, b) => a.sku.localeCompare(b.sku) || b.effective_from.localeCompare(a.effective_from)).map((lp) => {
-                    const isEdit = editingLabelPriceId === lp.id;
-                    const totalPerLabel = lp.price_per_label * (1 + lp.gst_rate / 100);
-                    return (
-                      <tr key={lp.id} className="border-t">
-                        {isEdit ? (
-                          <>
-                            <td className="px-2 py-1.5">
-                              <select value={editLabelPriceForm.sku} onChange={(e) => setEditLabelPriceForm((p) => ({ ...p, sku: e.target.value }))}
-                                className="h-7 rounded border border-input bg-background px-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-ring">
-                                {LABEL_SKUS.map((s) => <option key={s} value={s}>{s}</option>)}
-                              </select>
-                            </td>
-                            <td className="px-2 py-1.5"><Input type="date" value={editLabelPriceForm.effective_from} onChange={(e) => setEditLabelPriceForm((p) => ({ ...p, effective_from: e.target.value }))} className="h-7 text-xs w-32" /></td>
-                            <td className="px-2 py-1.5"><Input type="number" step="0.0001" value={editLabelPriceForm.price_per_label} onChange={(e) => setEditLabelPriceForm((p) => ({ ...p, price_per_label: e.target.value }))} className="h-7 text-xs w-20 ml-auto text-right" /></td>
-                            <td className="px-2 py-1.5"><Input type="number" step="0.01" value={editLabelPriceForm.gst_rate} onChange={(e) => setEditLabelPriceForm((p) => ({ ...p, gst_rate: e.target.value }))} className="h-7 text-xs w-14 ml-auto text-right" /></td>
-                            <td className="px-3 py-1.5 text-right text-muted-foreground text-xs">
-                              {editLabelPriceForm.price_per_label && editLabelPriceForm.gst_rate
-                                ? `₹${(parseFloat(editLabelPriceForm.price_per_label) * (1 + parseFloat(editLabelPriceForm.gst_rate) / 100)).toFixed(4)}`
-                                : "—"}
-                            </td>
-                            <td className="px-2 py-1.5"><Input value={editLabelPriceForm.notes} onChange={(e) => setEditLabelPriceForm((p) => ({ ...p, notes: e.target.value }))} className="h-7 text-xs" /></td>
-                            <td className="px-2 py-1.5">
-                              <div className="flex gap-1 justify-end">
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-green-600 hover:text-green-700" disabled={updateLabelPriceMutation.isPending}
-                                  onClick={() => {
-                                    const price = parseFloat(editLabelPriceForm.price_per_label);
-                                    const gst = parseFloat(editLabelPriceForm.gst_rate);
-                                    if (isNaN(price) || price <= 0 || isNaN(gst)) return;
-                                    updateLabelPriceMutation.mutate({ id: lp.id, sku: editLabelPriceForm.sku, effective_from: editLabelPriceForm.effective_from, price_per_label: price, gst_rate: gst, notes: editLabelPriceForm.notes });
-                                  }}>
-                                  <Check className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground" onClick={() => setEditingLabelPriceId(null)}>
-                                  <X className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </td>
-                          </>
-                        ) : (
-                          <>
-                            <td className="px-3 py-2 font-medium">{lp.sku}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{lp.effective_from}</td>
-                            <td className="px-3 py-2 text-right font-mono">₹{lp.price_per_label.toFixed(4)}</td>
-                            <td className="px-3 py-2 text-right text-muted-foreground">{lp.gst_rate}%</td>
-                            <td className="px-3 py-2 text-right font-mono">₹{totalPerLabel.toFixed(4)}</td>
-                            <td className="px-3 py-2 text-muted-foreground text-xs">{lp.notes || "—"}</td>
-                            <td className="px-2 py-2">
-                              <div className="flex gap-1 justify-end">
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-blue-600"
-                                  onClick={() => { setEditingLabelPriceId(lp.id); setEditLabelPriceForm({ sku: lp.sku, effective_from: lp.effective_from, price_per_label: String(lp.price_per_label), gst_rate: String(lp.gst_rate), notes: lp.notes ?? "" }); }}>
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600" disabled={deleteLabelPriceMutation.isPending}
-                                  onClick={() => deleteLabelPriceMutation.mutate(lp.id)}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">No label prices configured. Add a price to enable label cost calculations.</p>
           )}
         </CardContent>
       </Card>
