@@ -633,6 +633,9 @@ const Profitability: React.FC = () => {
     const totalDirectTransport = [...directTransportMap.values()].reduce((s, v) => s + v, 0);
     const miscTransportTotal = unlinkedTransport + (totalDirectTransport - usedDirectTransport);
 
+    const clientTotalExpense = result.reduce((s, r) => s + r.totalExpense, 0);
+    const clientProfit = result.reduce((s, r) => s + r.profit, 0);
+
     const summary = {
       clients: result.length,
       cases: result.reduce((s, r) => s + r.cases, 0),
@@ -643,8 +646,9 @@ const Profitability: React.FC = () => {
       commissionCost: result.reduce((s, r) => s + r.commissionCost, 0),
       miscExpensesCost: totalMiscExpenses,
       transportCost: result.reduce((s, r) => s + r.transportCost, 0) + miscTransportTotal,
-      totalExpense: result.reduce((s, r) => s + r.totalExpense, 0),
-      profit: result.reduce((s, r) => s + r.profit, 0),
+      // Include miscTransportTotal so the summary reconciles with actual total spend
+      totalExpense: clientTotalExpense + miscTransportTotal,
+      profit: clientProfit - miscTransportTotal,
     };
 
     return { rows: result, summary, miscTransportTotal };
@@ -1091,8 +1095,8 @@ const Profitability: React.FC = () => {
       <div className="flex items-start gap-2 text-xs text-muted-foreground bg-slate-50 border rounded-md px-3 py-2">
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
-          Labels cost is direct per client (sum of actual label purchases linked to that client in the period).
-          Back labels: cases × bottles/case × avg cost/label — only for clients in back label config.
+          Labels cost = cases × bottles/case × ₹/label (from Label Prices config, most recent rate on or before period end). EL SKUs have no label cost.
+          Back labels: cases × bottles/case × most recent back-label cost/label — only for clients in back label config.
           Commission: cases dispatched × ₹/case from active commission configs.
           Misc expenses are allocated proportionally by cases.
           Transport shows only direct entries linked to each client. Unallocated transport (no client link) appears as a separate "Transport Expenses (Misc)" row at the bottom — included in the Transport column total so it reconciles with the month's total transport expense.
