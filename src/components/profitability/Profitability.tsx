@@ -31,7 +31,6 @@ interface ProfitRow {
   labelsCost: number;
   backLabelsCost: number;
   commissionCost: number;
-  miscExpensesCost: number;
   transportCost: number;
   totalExpense: number;
   profit: number;
@@ -47,7 +46,6 @@ interface ColFilters {
   labelsCost: string;
   backLabelsCost: string;
   commissionCost: string;
-  miscExpensesCost: string;
   transportCost: string;
   totalExpense: string;
   profit: string;
@@ -63,7 +61,6 @@ const EMPTY_FILTERS: ColFilters = {
   labelsCost: "",
   backLabelsCost: "",
   commissionCost: "",
-  miscExpensesCost: "",
   transportCost: "",
   totalExpense: "",
   profit: "",
@@ -79,7 +76,6 @@ const SORT_COLS = [
   "labelsCost",
   "backLabelsCost",
   "commissionCost",
-  "miscExpensesCost",
   "transportCost",
   "totalExpense",
   "profit",
@@ -97,7 +93,6 @@ const EMPTY_SORTS: Record<SortCol, "asc" | "desc" | null> = {
   labelsCost: null,
   backLabelsCost: null,
   commissionCost: null,
-  miscExpensesCost: null,
   transportCost: null,
   totalExpense: null,
   profit: null,
@@ -444,15 +439,8 @@ const Profitability: React.FC = () => {
     const transport = transportRaw.filter((r) => inPeriod(r.expense_date, year, months));
     const miscExpenses = miscRaw.filter((r) => inPeriod(r.expense_date, year, months));
 
-    // Factory overhead categories bundled into factory cost (not shown as Misc Expenses).
-    // "Admin Salary" added alongside "Admin" so UI-entered entries are also captured.
-    const FACTORY_OVERHEAD_CATS = new Set(['Admin', 'Admin Salary', 'Label Designing', 'Factory Overhead']);
-    const factoryOverheadFromMisc = miscExpenses
-      .filter((r) => FACTORY_OVERHEAD_CATS.has(r.category))
-      .reduce((s, r) => s + (r.amount ?? 0), 0);
-    const totalMiscExpenses = miscExpenses
-      .filter((r) => !FACTORY_OVERHEAD_CATS.has(r.category))
-      .reduce((s, r) => s + (r.amount ?? 0), 0);
+    // All misc expenses feed directly into unlinked factory overhead — no per-client split.
+    const totalMiscExpenses = miscExpenses.reduce((s, r) => s + (r.amount ?? 0), 0);
 
     // Back labels: use cost_per_label from the most recent purchase on or before period end.
     // Back label cost is usage-based (cases dispatched × bottles × price) not purchase-based —
@@ -565,9 +553,8 @@ const Profitability: React.FC = () => {
         unlinkedFactory += f.amount ?? 0;
       }
     }
-    // Factory overhead misc expenses (Admin, Label Designing, Factory Overhead) are bundled
-    // into factory cost and allocated proportionally by cases, just like unlinked factory payables.
-    unlinkedFactory += factoryOverheadFromMisc;
+    // All misc overhead expenses (Admin Salary, GST, WhatsApp etc.) bundled into factory overhead pool.
+    unlinkedFactory += totalMiscExpenses;
 
     // Transport: entries with a client_id are attributed to that client directly.
     // Entries with no client_id (labels pickup, general overhead, etc.) go into miscTransportTotal
@@ -616,16 +603,14 @@ const Profitability: React.FC = () => {
       const hasBackLabel = backLabelConfigMap.get(clientName.toLowerCase()) ?? false;
       const backLabelsCost = hasBackLabel ? cases * bottlesPerCase * avgBackLabelPrice : 0;
 
-      const miscExpensesCost = totalMiscExpenses * caseFraction;
-
       const transportCost = directTransportMap.get(clientBranchKey) ?? 0;
       const commissionCost = commissionMap.get(clientBranchKey) ?? 0;
 
-      const totalExpense = factoryCost + labelsCost + backLabelsCost + commissionCost + miscExpensesCost + transportCost;
+      const totalExpense = factoryCost + labelsCost + backLabelsCost + commissionCost + transportCost;
       const profit = invoiceValue - totalExpense;
       const margin = invoiceValue !== 0 ? (profit / invoiceValue) * 100 : 0;
 
-      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, backLabelsCost, commissionCost, miscExpensesCost, transportCost, totalExpense, profit, margin });
+      result.push({ clientId, clientName, branch, cases, invoiceValue, factoryCost, labelsCost, backLabelsCost, commissionCost, transportCost, totalExpense, profit, margin });
     }
 
     // Misc transport = unlinked (no client_id) + direct transport for clients not active this period
@@ -644,7 +629,6 @@ const Profitability: React.FC = () => {
       labelsCost: result.reduce((s, r) => s + r.labelsCost, 0),
       backLabelsCost: result.reduce((s, r) => s + r.backLabelsCost, 0),
       commissionCost: result.reduce((s, r) => s + r.commissionCost, 0),
-      miscExpensesCost: totalMiscExpenses,
       transportCost: result.reduce((s, r) => s + r.transportCost, 0) + miscTransportTotal,
       // Include miscTransportTotal so the summary reconciles with actual total spend
       totalExpense: clientTotalExpense + miscTransportTotal,
@@ -690,17 +674,16 @@ const Profitability: React.FC = () => {
 
     // Numeric minimum-threshold filters
     const numericCols: Array<{ key: keyof ColFilters; field: keyof ProfitRow }> = [
-      { key: "cases",                  field: "cases" },
-      { key: "invoiceValue",           field: "invoiceValue" },
-      { key: "factoryCost",            field: "factoryCost" },
-      { key: "labelsCost",             field: "labelsCost" },
-      { key: "backLabelsCost",         field: "backLabelsCost" },
-      { key: "commissionCost",         field: "commissionCost" },
-      { key: "miscExpensesCost",       field: "miscExpensesCost" },
-      { key: "transportCost",          field: "transportCost" },
-      { key: "totalExpense",           field: "totalExpense" },
-      { key: "profit",                 field: "profit" },
-      { key: "margin",                 field: "margin" },
+      { key: "cases",          field: "cases" },
+      { key: "invoiceValue",   field: "invoiceValue" },
+      { key: "factoryCost",    field: "factoryCost" },
+      { key: "labelsCost",     field: "labelsCost" },
+      { key: "backLabelsCost", field: "backLabelsCost" },
+      { key: "commissionCost", field: "commissionCost" },
+      { key: "transportCost",  field: "transportCost" },
+      { key: "totalExpense",   field: "totalExpense" },
+      { key: "profit",         field: "profit" },
+      { key: "margin",         field: "margin" },
     ];
     for (const { key, field } of numericCols) {
       const raw = colFilters[key];
@@ -783,7 +766,6 @@ const Profitability: React.FC = () => {
       "Labels Cost (₹)": Math.round(r.labelsCost),
       "Back Labels Cost (₹)": Math.round(r.backLabelsCost),
       "Commission (₹)": Math.round(r.commissionCost),
-      "Misc Expenses (₹)": Math.round(r.miscExpensesCost),
       "Transport Cost (₹)": Math.round(r.transportCost),
       "Total Expense (₹)": Math.round(r.totalExpense),
       "Profit / Loss (₹)": Math.round(r.profit),
@@ -916,7 +898,6 @@ const Profitability: React.FC = () => {
         <SummaryCard title="Back Labels Cost" value={fmtINR(summary.backLabelsCost)} />
         <SummaryCard title="Commission" value={fmtINR(summary.commissionCost)} />
         <SummaryCard title="Misc Transport" value={fmtINR(miscTransportTotal)} />
-        <SummaryCard title="Misc Expenses" value={fmtINR(summary.miscExpensesCost)} />
         <SummaryCard title="Transport Cost" value={fmtINR(summary.transportCost)} />
         <SummaryCard title="Total Expense" value={fmtINR(summary.totalExpense)} accent="red" />
       </div>
@@ -1098,7 +1079,7 @@ const Profitability: React.FC = () => {
           Labels cost = cases × bottles/case × ₹/label (from Label Prices config, most recent rate on or before period end). EL SKUs have no label cost.
           Back labels: cases × bottles/case × most recent back-label cost/label — only for clients in back label config.
           Commission: cases dispatched × ₹/case from active commission configs.
-          Misc expenses are allocated proportionally by cases.
+          Misc expenses (Admin, Salary, etc.) are folded into factory overhead and do not appear as a separate column.
           Transport shows only direct entries linked to each client. Unallocated transport (no client link) appears as a separate "Transport Expenses (Misc)" row at the bottom — included in the Transport column total so it reconciles with the month's total transport expense.
           Numeric column filters show rows where the value is ≥ the entered threshold.
         </span>
@@ -1270,23 +1251,6 @@ const Profitability: React.FC = () => {
                     </div>
                   </TableHead>
 
-                  {/* Misc Expenses */}
-                  <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
-                    <div className="flex items-center justify-end gap-0.5">
-                      Misc Expenses
-                      <ColumnFilter
-                        columnKey="miscExpensesCost"
-                        columnName="Misc Expenses"
-                        filterValue={colFilters.miscExpensesCost}
-                        onFilterChange={(v) => handleFilterChange("miscExpensesCost", v as string)}
-                        onClearFilter={() => handleClearFilter("miscExpensesCost")}
-                        sortDirection={colSorts.miscExpensesCost}
-                        onSortChange={(d) => handleSortChange("miscExpensesCost", d)}
-                        dataType="number"
-                      />
-                    </div>
-                  </TableHead>
-
                   {/* Transport */}
                   <TableHead className="py-2 pl-1 pr-1 font-semibold whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-0.5">
@@ -1377,13 +1341,13 @@ const Profitability: React.FC = () => {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center text-muted-foreground py-12">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-12">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : displayRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center text-muted-foreground py-12">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-12">
                       {hasActiveFilters ? "No clients match the current filters" : "No data for the selected period"}
                     </TableCell>
                   </TableRow>
@@ -1411,9 +1375,6 @@ const Profitability: React.FC = () => {
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {r.commissionCost > 0 ? fmtINR(r.commissionCost) : "—"}
-                      </TableCell>
-                      <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
-                        {r.miscExpensesCost > 0 ? fmtINR(r.miscExpensesCost) : "—"}
                       </TableCell>
                       <TableCell className="py-2.5 px-2 text-right text-muted-foreground">
                         {r.transportCost > 0 ? fmtINR(r.transportCost) : "—"}
