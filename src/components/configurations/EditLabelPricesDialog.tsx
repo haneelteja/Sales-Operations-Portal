@@ -96,14 +96,14 @@ export function EditLabelPricesDialog({ open, onOpenChange }: Props) {
   const handleAdd = () => {
     const price = parseFloat(addForm.price_per_label);
     const gst = parseFloat(addForm.gst_rate);
-    if (isNaN(price) || price <= 0 || isNaN(gst) || !addForm.effective_from) return;
+    if (isNaN(price) || price < 0 || isNaN(gst) || !addForm.effective_from) return;
     addMutation.mutate({ sku: addForm.sku, effective_from: addForm.effective_from, price_per_label: price, gst_rate: gst, notes: addForm.notes });
   };
 
   const handleUpdate = (id: string) => {
     const price = parseFloat(editForm.price_per_label);
     const gst = parseFloat(editForm.gst_rate);
-    if (isNaN(price) || price <= 0 || isNaN(gst)) return;
+    if (isNaN(price) || price < 0 || isNaN(gst)) return;
     updateMutation.mutate({ id, sku: editForm.sku, effective_from: editForm.effective_from, price_per_label: price, gst_rate: gst, notes: editForm.notes });
   };
 
@@ -160,7 +160,7 @@ export function EditLabelPricesDialog({ open, onOpenChange }: Props) {
             <label className="text-xs text-muted-foreground">Notes (optional)</label>
             <Input placeholder="e.g. Morya labels batch" value={addForm.notes} onChange={(e) => setAddForm((p) => ({ ...p, notes: e.target.value }))} className="h-8 text-sm" />
           </div>
-          <Button size="sm" className="h-8" disabled={!addForm.price_per_label || !addForm.effective_from || addMutation.isPending} onClick={handleAdd}>
+          <Button size="sm" className="h-8" disabled={addForm.price_per_label === "" || !addForm.effective_from || addMutation.isPending} onClick={handleAdd}>
             <Plus className="h-3.5 w-3.5 mr-1" />Add
           </Button>
         </div>
