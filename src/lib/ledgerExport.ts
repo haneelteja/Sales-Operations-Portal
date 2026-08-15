@@ -11,6 +11,8 @@ export interface LedgerTransaction {
   cases?: number | null;
   amount: number;
   description?: string | null;
+  /** Running balance stored on the transaction row (used to derive opening balance) */
+  totalAmount?: number | null;
 }
 
 function triggerDownload(buffer: ExcelJS.Buffer, fileName: string) {
@@ -120,7 +122,44 @@ export async function exportLedger(
 
   // ── Client groups ────────────────────────────────────────────────────────────
   for (const [, rows] of groups) {
-    let balance = 0;
+    // Derive opening balance from the first transaction's stored running total.
+    // total_amount is the running balance AFTER that transaction, so we reverse
+    // its own contribution to get the balance that existed before it.
+    const firstTx = rows[0];
+    const firstContrib = firstTx.type === 'sale' ? (firstTx.amount ?? 0) : -(firstTx.amount ?? 0);
+    const openingBalance = firstTx.totalAmount != null
+      ? firstTx.totalAmount - firstContrib
+      : 0;
+
+    // Opening Balance row
+    const openingRow = ws.addRow([
+      '',
+      'Opening Balance',
+      '',
+      '',
+      null,
+      null,
+      openingBalance,
+    ]);
+    ws.mergeCells(openingRow.number, 1, openingRow.number, COLS - 1); // A:F
+    const openingLabelCell = openingRow.getCell(1);
+    openingLabelCell.value = 'Opening Balance';
+    openingLabelCell.font = { bold: true, italic: true };
+    openingLabelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: C.closingBg };
+    openingLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+    const openingBalCell = openingRow.getCell(7);
+    openingBalCell.numFmt = amountFmt;
+    openingBalCell.font = {
+      bold: true, italic: true,
+      color: openingBalance > 0 ? C.red : openingBalance < 0 ? C.green : C.neutral,
+    };
+    openingBalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: C.closingBg };
+    openingBalCell.alignment = { horizontal: 'right' };
+    openingRow.eachCell({ includeEmpty: true }, (cell) => {
+      cell.border = { top: { style: 'thin' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
+    });
+
+    let balance = openingBalance;
 
     for (const tx of rows) {
       const isDebit = tx.type === 'sale';

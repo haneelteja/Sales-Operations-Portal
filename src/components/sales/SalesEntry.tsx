@@ -1127,6 +1127,7 @@ const SalesEntry = () => {
       cases: tx.quantity,
       amount: tx.amount || 0,
       description: tx.description,
+      totalAmount: tx.total_amount ?? null,
     }));
 
     if (rows.length === 0) {
