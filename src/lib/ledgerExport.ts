@@ -31,10 +31,15 @@ function triggerDownload(buffer: ExcelJS.Buffer, fileName: string) {
  * Exports transactions in a double-entry ledger format (Debit / Credit / Running Balance).
  * Rows are grouped by client+branch, sorted chronologically within each group.
  */
+/**
+ * Per-group opening balances keyed by "clientName|||branch".
+ * When provided, these override the totalAmount-derived calculation.
+ */
 export async function exportLedger(
   transactions: LedgerTransaction[],
   fileName: string,
-  reportTitle = 'Client Ledger Statement'
+  reportTitle = 'Client Ledger Statement',
+  openingBalances?: Record<string, number>,
 ): Promise<void> {
   // ── Group by client+branch ──────────────────────────────────────────────────
   const groups = new Map<string, LedgerTransaction[]>();
@@ -121,15 +126,17 @@ export async function exportLedger(
   ws.views = [{ state: 'frozen', ySplit: colHeaderRow.number }];
 
   // ── Client groups ────────────────────────────────────────────────────────────
-  for (const [, rows] of groups) {
-    // Derive opening balance from the first transaction's stored running total.
-    // total_amount is the running balance AFTER that transaction, so we reverse
-    // its own contribution to get the balance that existed before it.
-    const firstTx = rows[0];
-    const firstContrib = firstTx.type === 'sale' ? (firstTx.amount ?? 0) : -(firstTx.amount ?? 0);
-    const openingBalance = firstTx.totalAmount != null
-      ? firstTx.totalAmount - firstContrib
-      : 0;
+  for (const [key, rows] of groups) {
+    // Use explicit opening balance if caller computed it (e.g. LedgerDrawer via fetchLedgerRows).
+    // Fall back to deriving from total_amount on the first transaction for backwards compatibility.
+    let openingBalance: number;
+    if (openingBalances && key in openingBalances) {
+      openingBalance = openingBalances[key];
+    } else {
+      const firstTx = rows[0];
+      const firstContrib = firstTx.type === 'sale' ? (firstTx.amount ?? 0) : -(firstTx.amount ?? 0);
+      openingBalance = firstTx.totalAmount != null ? firstTx.totalAmount - firstContrib : 0;
+    }
 
     // Opening Balance row
     const openingRow = ws.addRow([
