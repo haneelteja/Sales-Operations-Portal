@@ -31,6 +31,8 @@ const ConfigurationManagement = () => {
   const [isAddDealerOpen, setIsAddDealerOpen] = useState(false);
   const [exportingLedgerFor, setExportingLedgerFor] = useState<string | null>(null);
   const [contactsTarget, setContactsTarget] = useState<{ clientName: string; branch: string } | null>(null);
+  const [openingBalanceTarget, setOpeningBalanceTarget] = useState<{ clientName: string; branch: string; current: number } | null>(null);
+  const [openingBalanceInput, setOpeningBalanceInput] = useState("");
   
   // Additional state for advanced customer management
   const [editForm, setEditForm] = useState({
@@ -97,7 +99,7 @@ const ConfigurationManagement = () => {
       try {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, client_name, branch, sku, price_per_case, price_per_bottle, mrp_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, is_deprecated, created_at, updated_at")
+          .select("id, client_name, branch, sku, price_per_case, price_per_bottle, mrp_per_bottle, whatsapp_number, gst_number, pricing_date, is_active, is_deprecated, opening_balance, created_at, updated_at")
           .order("client_name", { ascending: true });
 
         if (error) {
@@ -324,6 +326,36 @@ const ConfigurationManagement = () => {
     },
     onError: (error) => {
       toast({ title: "Error", description: "Failed to update deprecated status: " + error.message, variant: "destructive" });
+    },
+  });
+
+  // Opening balance mutation — updates ALL rows for the client+branch pair
+  const setOpeningBalanceMutation = useMutation({
+    mutationFn: async ({ clientName, branch, amount }: { clientName: string; branch: string; amount: number }) => {
+      const { error } = await supabase
+        .from("customers")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .update({ opening_balance: amount } as any)
+        .eq("client_name", clientName)
+        .eq("branch", branch);
+      if (error) throw error;
+
+      // Trigger outstanding recalculation so total_amount includes the new offset
+      await supabase.rpc("recalculate_outstanding_for_client", {
+        p_client_name: clientName,
+        p_branch: branch,
+      });
+    },
+    onSuccess: (_result, variables) => {
+      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables.clientName, description: `Opening balance set to ₹${variables.amount} for ${variables.clientName} — ${variables.branch}` });
+      toast({ title: "Opening balance saved", description: `Outstanding totals for ${variables.clientName} (${variables.branch}) have been recalculated.` });
+      setOpeningBalanceTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["customers-management"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-transactions"] });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: "Failed to save opening balance: " + error.message, variant: "destructive" });
     },
   });
 
@@ -867,6 +899,19 @@ const ConfigurationManagement = () => {
                               <BookOpen className="mr-2 h-4 w-4" />
                               {exportingLedgerFor === customer.id ? 'Exporting…' : 'Export Ledger'}
                             </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setOpeningBalanceInput((customer.opening_balance ?? 0).toString());
+                                setOpeningBalanceTarget({
+                                  clientName: customer.client_name,
+                                  branch: customer.branch ?? "",
+                                  current: customer.opening_balance ?? 0,
+                                });
+                              }}
+                            >
+                              <ArrowUpDown className="mr-2 h-4 w-4" />
+                              Set Opening Balance
+                            </DropdownMenuItem>
                             {customer.is_active ? (
                               <DropdownMenuItem
                                 onClick={() => handleDeactivate(customer.id)}
@@ -966,6 +1011,59 @@ const ConfigurationManagement = () => {
           branch={contactsTarget.branch}
         />
       )}
+
+      {/* Opening Balance dialog */}
+      <Dialog
+        open={!!openingBalanceTarget}
+        onOpenChange={(v) => { if (!v) setOpeningBalanceTarget(null); }}
+      >
+        <DialogContent className="max-w-sm" aria-describedby="ob-desc">
+          <DialogHeader>
+            <DialogTitle>Set Opening Balance</DialogTitle>
+            <DialogDescription id="ob-desc">
+              {openingBalanceTarget && (
+                <>
+                  Historical balance for <strong>{openingBalanceTarget.clientName}</strong> ({openingBalanceTarget.branch}) before the first transaction in this portal.
+                  This updates all outstanding totals immediately.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="ob-amount">Opening Balance (₹ DR)</Label>
+              <Input
+                id="ob-amount"
+                type="number"
+                step="0.01"
+                min={0}
+                value={openingBalanceInput}
+                onChange={(e) => setOpeningBalanceInput(e.target.value)}
+                placeholder="e.g. 57200"
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">Enter the amount the client owed before any portal transactions. Leave 0 if starting fresh.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpeningBalanceTarget(null)}>Cancel</Button>
+            <Button
+              disabled={setOpeningBalanceMutation.isPending}
+              onClick={() => {
+                if (!openingBalanceTarget) return;
+                const amount = parseFloat(openingBalanceInput) || 0;
+                setOpeningBalanceMutation.mutate({
+                  clientName: openingBalanceTarget.clientName,
+                  branch: openingBalanceTarget.branch,
+                  amount,
+                });
+              }}
+            >
+              {setOpeningBalanceMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit client dialog */}
       <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>

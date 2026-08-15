@@ -12,6 +12,7 @@ export interface Customer {
   pricing_date?: string | null;
   is_active: boolean;
   is_deprecated?: boolean;
+  opening_balance?: number;
   created_at: string;
   updated_at: string;
 }
