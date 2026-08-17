@@ -382,9 +382,9 @@ export default function ReceivablesTrackingView() {
   const activeRow = activeNotes ? displayRows.find(r => r.key === activeNotes.key) : null;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full gap-4">
       {/* Header */}
-      <div>
+      <div className="flex-shrink-0">
         <h1 className="text-2xl font-bold">Receivables Tracker</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Track outstanding balances and follow-up schedules for all clients
@@ -392,7 +392,7 @@ export default function ReceivablesTrackingView() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-shrink-0">
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center gap-4">
@@ -450,7 +450,7 @@ export default function ReceivablesTrackingView() {
       </div>
 
       {/* Controls */}
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-wrap gap-3 items-center flex-shrink-0">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -544,15 +544,16 @@ export default function ReceivablesTrackingView() {
         </Button>
       </div>
 
-      {/* Table */}
+      {/* Table + count — fills remaining viewport height, table scrolls internally */}
+      <div className="flex-1 min-h-0 flex flex-col gap-2">
       {displayRows.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground border rounded-md">
+        <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground border rounded-md">
           {(filterClient || filterMinOutstanding || filterStatus || filterNotes || filterFollowupStatus || filterAssignee)
             ? 'No clients match the current filters.'
             : 'No clients with outstanding balances found.'}
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
+        <div className="flex-1 min-h-0 rounded-md border overflow-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/60 border-b text-left">
@@ -752,9 +753,10 @@ export default function ReceivablesTrackingView() {
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground text-right">
+      <p className="text-xs text-muted-foreground text-right flex-shrink-0">
         {displayRows.length} client{displayRows.length !== 1 ? 's' : ''} with outstanding balance
       </p>
+      </div>{/* end flex-1 table+count wrapper */}
 
       {/* Follow-up Notes Drawer */}
       {activeNotes && (

@@ -244,10 +244,10 @@ const Index = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="h-screen flex w-full overflow-hidden">
         <AppSidebar activeView={activeView} setActiveView={setActiveView} />
-        <div className="flex-1 flex flex-col">
-          <header className="h-12 flex items-center border-b bg-card px-4">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <header className="h-12 flex-shrink-0 flex items-center border-b bg-card px-4">
             <SidebarTrigger className="mr-4" />
             <div>
               <h1 className="text-lg font-semibold text-foreground">
@@ -255,7 +255,7 @@ const Index = () => {
               </h1>
             </div>
           </header>
-          <main className="flex-1 p-4 bg-background min-w-0 overflow-x-hidden">
+          <main className="flex-1 min-h-0 p-4 bg-background overflow-y-auto overflow-x-hidden">
             {renderContent()}
           </main>
         </div>
