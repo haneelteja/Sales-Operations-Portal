@@ -101,7 +101,7 @@ const LabelPurchases = () => {
     },
   });
 
-  // All customers (no is_active/is_deprecated filter) for display lookups on historical purchases
+  // All customers (no is_active filter) for display lookups on historical purchases
   const { data: customersForLookup } = useQuery({
     queryKey: ["customers-all-for-labels-lookup"],
     queryFn: async () => {
