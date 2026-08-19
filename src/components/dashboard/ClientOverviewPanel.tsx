@@ -190,6 +190,7 @@ export default function ClientOverviewPanel() {
       const { data, error } = await supabase
         .from('customers')
         .select('id, client_name, branch')
+        .eq('is_active', true)
         .order('client_name');
       if (error) throw error;
       // Deduplicate by client_name + branch — keep first row per unique pair
