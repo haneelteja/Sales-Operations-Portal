@@ -61,6 +61,9 @@ _tmp_*.json
 *~
 Back Up/
 
+# Documentation artifacts (keep on disk, not in git)
+docs/
+
 # Temporary documentation files
 *_STATUS.md
 *_VERIFICATION.md
