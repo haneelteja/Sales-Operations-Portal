@@ -41,7 +41,9 @@
       "Bash(npx shadcn@latest add command --yes)",
       "Bash(xargs grep -l \"ADD COLUMN\")",
       "Bash(xargs grep -l \"factory_payables\")",
-      "Bash(xargs grep -l \"CREATE TABLE\")"
+      "Bash(xargs grep -l \"CREATE TABLE\")",
+      "Bash(grep -r \"MinimalTest\\\\|Purchase\\\\|from.*\\\\/purchase\\\\|from.*errorHandler\\\\|usePaginatedQuery\\\\|secureStorage\\\\|desktop\\\\/notifications\\\\|desktop\\\\/store\\\\|desktop\\\\/fileSystem\\\\|mobile-navigation\" \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1/src\" --include=\"*.ts\" --include=\"*.tsx\" -l)",
+      "Bash(grep -r \"from.*Receivables\\\\b\\\\|from.*\\\\/receivables\\\\/Receivables\" \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1/src\" --include=\"*.ts\" --include=\"*.tsx\")"
     ]
   },
   "hooks": {

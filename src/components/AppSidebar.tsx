@@ -1,11 +1,9 @@
 import {
   BarChart3,
   DollarSign,
-  Users,
   Factory,
   Truck,
   Tag,
-  UserPlus,
   LogOut,
   User,
   ShoppingCart,

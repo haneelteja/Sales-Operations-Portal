@@ -59,6 +59,7 @@ _tmp_*.json
 *.backup
 *.old
 *~
+Back Up/
 
 # Temporary documentation files
 *_STATUS.md

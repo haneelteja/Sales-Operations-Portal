@@ -15,8 +15,6 @@ import { toast } from "sonner";
 
 import PortalRouter from "@/components/PortalRouter";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import MinimalTest from "@/pages/MinimalTest";
-
 const Auth = lazy(() => import("./pages/Auth"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const SupabaseVerify = lazy(() => import("./pages/SupabaseVerify"));
@@ -98,7 +96,6 @@ const App = () => {
                   <Route path="/verify" element={<SupabaseVerify />} />
                   <Route path="/" element={<PortalRouter />} />
                   <Route path="/embedded-order-management" element={<EmbeddedOrderManagement />} />
-                  <Route path="/minimal-test" element={<MinimalTest />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>

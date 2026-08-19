@@ -13,12 +13,10 @@ const SalesEntry = lazy(() => import("@/components/sales/SalesEntry"));
 const FactoryPayables = lazy(() => import("@/components/factory/FactoryPayables"));
 const TransportExpenses = lazy(() => import("@/components/transport/TransportExpenses"));
 const Labels = lazy(() => import("@/components/labels/Labels"));
-const Reports = lazy(() => import("@/components/reports/Reports"));
 const UserManagement = lazy(() => import("@/components/user-management/UserManagement"));
 const ApplicationConfigurationTab = lazy(() => import("@/components/user-management/ApplicationConfigurationTab"));
 const WhatsAppConfigurationTab = lazy(() => import("@/components/user-management/WhatsAppConfigurationTab"));
 const EmailReportScheduleTab = lazy(() => import("@/components/user-management/EmailReportScheduleTab"));
-const ReceivablesManagement = lazy(() => import("@/components/receivables/ReceivablesManagement"));
 const ReceivablesTrackingView = lazy(() => import("@/components/receivables-tracking/ReceivablesTrackingView"));
 const Profitability = lazy(() => import("@/components/profitability/Profitability"));
 const SalesTrackerView = lazy(() => import("@/components/sales-tracker/SalesTrackerView"));
@@ -64,14 +62,6 @@ const Index = () => {
             </Suspense>
           </ErrorBoundary>
         );
-      case "receivables-management":
-        return (
-          <ErrorBoundary>
-            <Suspense fallback={<RouteLoader />}>
-              <ReceivablesManagement />
-            </Suspense>
-          </ErrorBoundary>
-        );
       case "client-transactions":
         return (
           <ErrorBoundary>
@@ -101,14 +91,6 @@ const Index = () => {
           <ErrorBoundary>
             <Suspense fallback={<RouteLoader />}>
               <Labels />
-            </Suspense>
-          </ErrorBoundary>
-        );
-      case "reports":
-        return (
-          <ErrorBoundary>
-            <Suspense fallback={<RouteLoader />}>
-              <Reports />
             </Suspense>
           </ErrorBoundary>
         );
