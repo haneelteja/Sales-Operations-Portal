@@ -408,9 +408,9 @@ const Dashboard = memo(() => {
     });
   }, [filteredAndSortedReceivables, toast]);
 
-  // Compact currency formatter: ₹1.2L / ₹45K / ₹999
+  // Compact currency formatter: ₹1.26Cr / ₹12.57L / ₹45K / ₹999
   const fmtCur = (n: number) => {
-    if (n >= 10_00_000) return `₹${(n / 10_00_000).toFixed(2)}Cr`;
+    if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)}Cr`;
     if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(2)}L`;
     if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
     return `₹${Math.round(n).toLocaleString('en-IN')}`;
