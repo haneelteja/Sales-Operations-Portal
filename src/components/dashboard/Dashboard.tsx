@@ -53,11 +53,6 @@ const Dashboard = memo(() => {
     priority: null,
   });
 
-  // Inventory table state
-  const [inventorySearch, setInventorySearch] = useState("");
-  const debouncedInventorySearch = useDebouncedValue(inventorySearch, 200);
-  const [inventorySort, setInventorySort] = useState<{ col: 'clientName' | 'branch' | 'sku' | 'stock'; dir: 'asc' | 'desc' } | null>(null);
-
   // Plant Stock table state
   const [plantSearch, setPlantSearch] = useState("");
   const debouncedPlantSearch = useDebouncedValue(plantSearch, 200);
@@ -188,70 +183,6 @@ const Dashboard = memo(() => {
     const start = (plantPage - 1) * plantPageSize;
     return filteredPlantStock.slice(start, start + plantPageSize);
   }, [filteredPlantStock, plantPage, plantPageSize]);
-
-  // Fetch inventory: factory production minus net sales per client+branch.
-  // Grouped by client+branch only (no per-SKU breakdown).
-  // Negative sale entries (returns/adjustments) reduce the production commitment,
-  // not the sales total — so they correctly bring inventory down toward 0.
-  const { data: inventoryRows, isLoading: inventoryLoading } = useQuery({
-    queryKey: ["dashboard-inventory"],
-    ...getQueryConfig("dashboard-inventory"),
-    queryFn: async () => {
-      const [{ data: prodRows }, { data: salesRows }] = await Promise.all([
-        supabase
-          .from("factory_payables")
-          .select("customer_id, sku, quantity, customers(client_name, branch)")
-          .eq("transaction_type", "production")
-          .not("customer_id", "is", null)
-          .limit(10000),
-        supabase
-          .from("sales_transactions")
-          .select("customer_id, sku, quantity, transaction_type, customers(client_name, branch)")
-          .in("transaction_type", ["sale", "stock_adjustment"])
-          .limit(10000),
-      ]);
-
-      // Group production by (client_name, branch, sku)
-      const prodMap = new Map<string, { clientName: string; branch: string; sku: string; qty: number }>();
-      for (const r of prodRows ?? []) {
-        const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
-        const area = (r.customers as { branch?: string } | null)?.branch ?? "";
-        const sku = r.sku ?? "";
-        const key = `${clientName}|||${area}|||${sku}`;
-        const existing = prodMap.get(key);
-        if (existing) {
-          existing.qty += r.quantity ?? 0;
-        } else {
-          prodMap.set(key, { clientName, branch: area, sku, qty: r.quantity ?? 0 });
-        }
-      }
-
-      // inventory = factory_net - client_net
-      // factory_net: signed sum of all production entries (negative = returned to factory)
-      // client_net: signed sum of all sale entries (negative = damaged/transferred out)
-      //             + signed sum of stock_adjustment entries (invoice quantity differences)
-      // Negative client entries reduce client_net, which correctly increases inventory for that key.
-      const clientNetMap = new Map<string, number>();
-      for (const r of salesRows ?? []) {
-        const clientName = (r.customers as { client_name?: string } | null)?.client_name ?? "";
-        const area = (r.customers as { branch?: string } | null)?.branch ?? "";
-        const sku = r.sku ?? "";
-        const key = `${clientName}|||${area}|||${sku}`;
-        const qty = r.quantity ?? 0;
-        clientNetMap.set(key, (clientNetMap.get(key) ?? 0) + qty);
-      }
-
-      const result: { clientName: string; branch: string; sku: string; stock: number }[] = [];
-      for (const [key, prod] of prodMap.entries()) {
-        const clientNet = clientNetMap.get(key) ?? 0;
-        const stock = prod.qty - clientNet;
-        if (stock > 0) {
-          result.push({ clientName: prod.clientName, branch: prod.branch, sku: prod.sku, stock });
-        }
-      }
-      return result.sort((a, b) => a.clientName.localeCompare(b.clientName));
-    },
-  });
 
   // Pagination state for receivables table
   const [receivablesPage, setReceivablesPage] = useState(1);
@@ -878,108 +809,6 @@ const Dashboard = memo(() => {
         </Card>
       )}
 
-      {/* Inventory Table — grouped by client+branch (no SKU breakdown) */}
-      {(() => {
-        const allRows = inventoryRows ?? [];
-        const q = debouncedInventorySearch.toLowerCase();
-        let rows = allRows.filter(r =>
-          !q ||
-          r.clientName.toLowerCase().includes(q) ||
-          r.branch.toLowerCase().includes(q) ||
-          r.sku.toLowerCase().includes(q) ||
-          r.stock.toString().includes(q)
-        );
-
-        const toggleSort = (col: 'clientName' | 'branch' | 'sku' | 'stock') => {
-          setInventorySort(prev =>
-            prev?.col === col
-              ? prev.dir === 'asc' ? { col, dir: 'desc' } : null
-              : { col, dir: 'asc' }
-          );
-        };
-
-        if (inventorySort) {
-          rows = [...rows].sort((a, b) => {
-            let av: string | number, bv: string | number;
-            if (inventorySort.col === 'stock') { av = a.stock; bv = b.stock; }
-            else if (inventorySort.col === 'branch') { av = a.branch; bv = b.branch; }
-            else if (inventorySort.col === 'sku') { av = a.sku; bv = b.sku; }
-            else { av = a.clientName; bv = b.clientName; }
-            const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
-            return inventorySort.dir === 'asc' ? cmp : -cmp;
-          });
-        }
-
-        const SortIcon = ({ col }: { col: string }) => {
-          if (inventorySort?.col !== col) return <span className="ml-1 text-gray-300">↕</span>;
-          return <span className="ml-1">{inventorySort.dir === 'asc' ? '↑' : '↓'}</span>;
-        };
-
-        return (
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <CardTitle className="text-base">Available Inventory</CardTitle>
-                <Input
-                  placeholder="Search inventory..."
-                  value={inventorySearch}
-                  onChange={e => setInventorySearch(e.target.value)}
-                  className="w-56 h-8 text-sm"
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {inventoryLoading ? (
-                <div className="min-h-[120px] space-y-0">
-                  {[...Array(3)].map((_, i) => (
-                    <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-0 animate-pulse">
-                      <div className="h-4 flex-1 bg-slate-100 rounded" />
-                      <div className="h-4 w-24 bg-slate-100 rounded" />
-                      <div className="h-4 w-20 bg-slate-100 rounded" />
-                      <div className="h-4 w-12 bg-slate-100 rounded" />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('clientName')}>
-                      Client <SortIcon col="clientName" />
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('branch')}>
-                      Branch <SortIcon col="branch" />
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => toggleSort('sku')}>
-                      SKU <SortIcon col="sku" />
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none hover:bg-muted/50 text-right" onClick={() => toggleSort('stock')}>
-                      Stock (Cases) <SortIcon col="stock" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-4">
-                        {q ? "No results" : "All inventory balanced — no pending stock"}
-                      </TableCell>
-                    </TableRow>
-                  ) : rows.map((row, i) => (
-                    <TableRow key={i} className="hover:bg-muted/50">
-                      <TableCell className="font-medium">{row.clientName}</TableCell>
-                      <TableCell>{row.branch}</TableCell>
-                      <TableCell>{row.sku}</TableCell>
-                      <TableCell className="text-right font-medium">{row.stock}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              )}
-            </CardContent>
-          </Card>
-        );
-      })()}
 
     </div>
   );
