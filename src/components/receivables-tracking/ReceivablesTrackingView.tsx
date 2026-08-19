@@ -17,7 +17,7 @@ import { fetchReceivablesTracking, type RawRow, type FetchResult } from '@/lib/r
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type SortCol = 'name' | 'outstanding' | 'expectedNext' | 'daysOverdue' | 'pmtStatus' | 'followup' | 'assignee';
+type SortCol = 'name' | 'outstanding' | 'followup' | 'assignee';
 
 interface AssigneeEntry { name: string; bgClass: string; }
 
@@ -35,7 +35,6 @@ export default function ReceivablesTrackingView() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [filterClient, setFilterClient] = useState('');
   const [filterMinOutstanding, setFilterMinOutstanding] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
   const [filterNotes, setFilterNotes] = useState('');
   const [filterFollowupStatus, setFilterFollowupStatus] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
@@ -188,10 +187,6 @@ export default function ReceivablesTrackingView() {
       if (!isNaN(min)) rows = rows.filter(r => r.outstanding >= min);
     }
 
-    if (filterStatus) {
-      rows = rows.filter(r => r.paymentStatus === filterStatus);
-    }
-
     if (filterNotes.trim()) {
       const q = filterNotes.toLowerCase();
       rows = rows.filter(r => r.comments.toLowerCase().includes(q));
@@ -231,11 +226,6 @@ export default function ReceivablesTrackingView() {
       switch (sortCol) {
         case 'name': cmp = a.dealerName.localeCompare(b.dealerName); break;
         case 'outstanding': cmp = a.outstanding - b.outstanding; break;
-        case 'expectedNext':
-          cmp = (a.expectedNextPayment ?? '').localeCompare(b.expectedNextPayment ?? ''); break;
-        case 'daysOverdue':
-          cmp = (a.paymentDaysOverdue ?? -1) - (b.paymentDaysOverdue ?? -1); break;
-        case 'pmtStatus': cmp = a.paymentStatus.localeCompare(b.paymentStatus); break;
         case 'followup':
           if (!a.nextFollowupDate && !b.nextFollowupDate) { cmp = 0; break; }
           if (!a.nextFollowupDate) { cmp = 1; break; }
@@ -247,7 +237,7 @@ export default function ReceivablesTrackingView() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, filterClient, filterMinOutstanding, filterStatus, filterNotes, filterFollowupStatus, filterAssignee, sortCol, sortDir, assigneeMap, today]);
+  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, sortCol, sortDir, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -306,8 +296,7 @@ export default function ReceivablesTrackingView() {
 
     const headerRow = ws.addRow([
       'Client', 'Branch', 'Outstanding (₹)',
-      'Expected Next Payment', 'Payment Days Overdue',
-      'Payment Status', 'Latest Note', 'Next Follow-up', 'Assignee',
+      'Latest Note', 'Next Follow-up', 'Assignee',
     ]);
     headerRow.height = 20;
     headerRow.eachCell(cell => {
@@ -325,9 +314,6 @@ export default function ReceivablesTrackingView() {
         row.dealerName,
         row.branch,
         row.outstanding,
-        fmtDateXlsx(row.expectedNextPayment),
-        row.paymentDaysOverdue !== null ? row.paymentDaysOverdue : 'N/A',
-        row.paymentStatus,
         row.comments || '',
         row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
         assigneeMap[row.customerId] || '—',
@@ -461,20 +447,6 @@ export default function ReceivablesTrackingView() {
           />
         </div>
 
-        <Select value={filterStatus || '__all__'} onValueChange={v => setFilterStatus(v === '__all__' ? '' : v)}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Pmt Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All Statuses</SelectItem>
-            <SelectItem value="OVERDUE">Overdue</SelectItem>
-            <SelectItem value="DUE SOON">Due Soon</SelectItem>
-            <SelectItem value="ON TRACK">On Track</SelectItem>
-            <SelectItem value="No Payments">No Payments</SelectItem>
-            <SelectItem value="Only 1 Payment">Only 1 Payment</SelectItem>
-          </SelectContent>
-        </Select>
-
         <Select value={filterFollowupStatus || '__all__'} onValueChange={v => setFilterFollowupStatus(v === '__all__' ? '' : v)}>
           <SelectTrigger className="w-[170px]">
             <SelectValue placeholder="Follow-up" />
@@ -519,14 +491,13 @@ export default function ReceivablesTrackingView() {
           </Select>
         )}
 
-        {(filterClient || filterStatus || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes) && (
+        {(filterClient || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes) && (
           <Button
             variant="ghost"
             size="sm"
             className="text-muted-foreground hover:text-foreground"
             onClick={() => {
               setFilterClient('');
-              setFilterStatus('');
               setFilterAssignee('');
               setFilterMinOutstanding('');
               setFilterFollowupStatus('');
@@ -548,7 +519,7 @@ export default function ReceivablesTrackingView() {
       <div className="flex-1 min-h-0 flex flex-col gap-2">
       {displayRows.length === 0 ? (
         <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground border rounded-md">
-          {(filterClient || filterMinOutstanding || filterStatus || filterNotes || filterFollowupStatus || filterAssignee)
+          {(filterClient || filterMinOutstanding || filterNotes || filterFollowupStatus || filterAssignee)
             ? 'No clients match the current filters.'
             : 'No clients with outstanding balances found.'}
         </div>
@@ -557,10 +528,10 @@ export default function ReceivablesTrackingView() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/60 border-b text-left">
-                {(['name', 'outstanding', 'expectedNext', 'daysOverdue', 'pmtStatus', null, 'followup', 'assignee', null, null] as const).map((col, i) => {
-                  const labels = ['Client Branch', 'Outstanding', 'Expected Next Pmt', 'Days Overdue', 'Pmt Status', 'Latest Note', 'Next Follow-up', 'Assignee', 'Log', 'Ledger'];
-                  const rightAlign = i === 1 || i === 3;
-                  const minW = i === 5 ? 'min-w-[240px]' : '';
+                {(['name', 'outstanding', null, 'followup', 'assignee', null, null] as const).map((col, i) => {
+                  const labels = ['Client Branch', 'Outstanding', 'Latest Note', 'Next Follow-up', 'Assignee', 'Log', 'Ledger'];
+                  const rightAlign = i === 1;
+                  const minW = i === 2 ? 'min-w-[280px]' : '';
                   if (!col) {
                     return <th key={i} className={`px-4 py-3 font-semibold whitespace-nowrap ${rightAlign ? 'text-right' : ''} ${minW}`}>{labels[i]}</th>;
                   }
@@ -609,45 +580,12 @@ export default function ReceivablesTrackingView() {
                     {fmt(row.outstanding)}
                   </td>
 
-                  {/* Expected Next Payment */}
-                  <td className="px-4 py-3 whitespace-nowrap align-top">
-                    {row.expectedNextPayment ? (
-                      <span className="text-sm">{fmtDate(row.expectedNextPayment)}</span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground/50 italic">N/A</span>
-                    )}
-                  </td>
-
-                  {/* Payment Days Overdue */}
-                  <td className="px-4 py-3 text-right whitespace-nowrap align-top">
-                    {row.paymentDaysOverdue === null ? (
-                      <span className="text-muted-foreground/50">N/A</span>
-                    ) : row.paymentDaysOverdue > 0 ? (
-                      <span className="font-semibold text-red-600">{row.paymentDaysOverdue}d</span>
-                    ) : (
-                      <span className="text-emerald-600">0</span>
-                    )}
-                  </td>
-
-                  {/* Payment Status */}
-                  <td className="px-4 py-3 whitespace-nowrap align-top">
-                    {row.paymentStatus === 'OVERDUE' ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">OVERDUE</span>
-                    ) : row.paymentStatus === 'DUE SOON' ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">DUE SOON</span>
-                    ) : row.paymentStatus === 'ON TRACK' ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">ON TRACK</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{row.paymentStatus}</span>
-                    )}
-                  </td>
-
                   {/* Latest Note (read-only) */}
-                  <td className="px-4 py-3 align-top max-w-xs">
+                  <td className="px-4 py-3 align-top max-w-sm">
                     {row.comments ? (
-                      <p className="text-sm text-foreground line-clamp-2">{row.comments}</p>
+                      <p className="text-base text-foreground line-clamp-3">{row.comments}</p>
                     ) : (
-                      <span className="text-sm text-muted-foreground/50 italic">No notes yet</span>
+                      <span className="text-base text-muted-foreground/50 italic">No notes yet</span>
                     )}
                   </td>
 
