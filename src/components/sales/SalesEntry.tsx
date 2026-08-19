@@ -267,6 +267,7 @@ const SalesEntry = () => {
       resetSaleForm();
     } else if (value === "payment") {
       resetPaymentForm();
+    }
   }, [resetSaleForm, resetPaymentForm]);
 
   // Fetch customers for dropdown (must be before functions that use it)
