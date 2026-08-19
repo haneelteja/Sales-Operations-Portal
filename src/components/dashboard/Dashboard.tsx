@@ -234,11 +234,11 @@ const Dashboard = memo(() => {
     return { overLimit, warning, avgCreditLimit };
   }, [receivables]);
 
-  // Derive metrics from aggregates + receivables (no extra DB call)
+  // Derive metrics from aggregates + receivablesTracking RPC (full lifetime outstanding, not 90-day window)
   const metrics = useMemo(() => {
     if (!aggregates) return null;
-    const totalOutstanding = receivables?.reduce((sum, r) => sum + (r.outstanding || 0), 0) || 0;
-    const highValueCustomers = receivables?.filter(r => (r.outstanding || 0) > 50000).length || 0;
+    const totalOutstanding = receivablesTracking?.rows.reduce((sum, r) => sum + r.outstanding, 0) ?? 0;
+    const highValueCustomers = receivablesTracking?.rows.filter(r => r.outstanding > 50000).length ?? 0;
     return {
       totalClients: aggregates.total_clients,
       totalOutstanding,
@@ -246,7 +246,7 @@ const Dashboard = memo(() => {
       highValueCustomers,
       recentTransactions: aggregates.recent_transactions,
     };
-  }, [aggregates, receivables]);
+  }, [aggregates, receivablesTracking]);
 
   // Filter and sort handlers for Client Receivables Outstanding
   const handleReceivablesColumnFilterChange = useCallback((columnKey: string, value: string) => {
