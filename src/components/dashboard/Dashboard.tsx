@@ -146,6 +146,8 @@ const Dashboard = memo(() => {
         seenKeys.add(key);
         // Skip orphaned rows that have no client name (customer_id missing or deleted)
         if (!row.clientName) continue;
+        // Skip zero-stock entries — stock was fully dispatched
+        if (row.quantity <= 0) continue;
         current.push({ key, clientName: row.clientName, sku: row.sku, quantity: row.quantity, transaction_date: row.transaction_date });
       }
     }
@@ -855,7 +857,19 @@ const Dashboard = memo(() => {
                 </Table>
                 {plantTotalPages > 1 && (
                   <div className="border-t p-3">
-                    <Pagination currentPage={plantPage} totalPages={plantTotalPages} onPageChange={setPlantPage} />
+                    <Pagination
+                      page={plantPage}
+                      totalPages={plantTotalPages}
+                      total={filteredPlantStock.length}
+                      pageSize={plantPageSize}
+                      onPageChange={setPlantPage}
+                      onNextPage={() => setPlantPage(p => Math.min(p + 1, plantTotalPages))}
+                      onPreviousPage={() => setPlantPage(p => Math.max(p - 1, 1))}
+                      onFirstPage={() => setPlantPage(1)}
+                      onLastPage={() => setPlantPage(plantTotalPages)}
+                      hasNextPage={plantPage < plantTotalPages}
+                      hasPreviousPage={plantPage > 1}
+                    />
                   </div>
                 )}
               </>
