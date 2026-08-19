@@ -75,14 +75,6 @@ const SalesEntry = () => {
     transaction_date: new Date().toISOString().split('T')[0]
   });
 
-  const [stockAdjForm, setStockAdjForm] = useState({
-    customer_id: "",
-    sku: "",
-    quantity: "",
-    transaction_date: new Date().toISOString().split('T')[0],
-    description: "",
-  });
-
   const [editingTransaction, setEditingTransaction] = useState<SalesTransaction | null>(null);
   const [editForm, setEditForm] = useState({
     customer_id: "",
@@ -275,15 +267,6 @@ const SalesEntry = () => {
       resetSaleForm();
     } else if (value === "payment") {
       resetPaymentForm();
-    } else if (value === "stock-adjustment") {
-      setStockAdjForm({
-        customer_id: "",
-        sku: "",
-        quantity: "",
-        transaction_date: new Date().toISOString().split('T')[0],
-        description: "",
-      });
-    }
   }, [resetSaleForm, resetPaymentForm]);
 
   // Fetch customers for dropdown (must be before functions that use it)
@@ -416,68 +399,6 @@ const SalesEntry = () => {
   });
 
   const getAvailableAreasForEdit = useCallback(() => availableAreasForEdit, [availableAreasForEdit]);
-
-  // Stock Adjustment helpers
-  const stockAdjClientOptions = useMemo(() => {
-    if (!customers) return [];
-    const seen = new Set<string>();
-    const result: { value: string; label: string }[] = [];
-    for (const c of customers) {
-      if (!seen.has(c.client_name)) {
-        seen.add(c.client_name);
-        result.push({ value: c.id, label: c.client_name });
-      }
-    }
-    return result.sort((a, b) => a.label.localeCompare(b.label));
-  }, [customers]);
-
-  const stockAdjSKUs = useMemo(() => {
-    if (!customers || !stockAdjForm.customer_id) return [];
-    const clientName = findCustomerById(stockAdjForm.customer_id)?.client_name;
-    if (!clientName) return [];
-    return [...new Set(
-      customers
-        .filter(c => c.client_name === clientName && c.sku)
-        .map(c => c.sku as string)
-    )].sort();
-  }, [customers, stockAdjForm.customer_id, findCustomerById]);
-
-  const stockAdjMutation = useMutation({
-    mutationFn: async (form: typeof stockAdjForm) => {
-      const clientName = findCustomerById(form.customer_id)?.client_name;
-      const customerId = findCustomerRecord({ customerName: clientName, sku: form.sku })?.id;
-      if (!customerId) throw new Error("Could not find matching customer record");
-      const { error } = await supabase.from("sales_transactions").insert({
-        customer_id: customerId,
-        transaction_type: "stock_adjustment",
-        transaction_date: form.transaction_date,
-        sku: form.sku,
-        quantity: Number(form.quantity),
-        amount: 0,
-        description: form.description || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({ title: "Stock adjustment recorded" });
-      setStockAdjForm({
-        customer_id: "",
-        sku: "",
-        quantity: "",
-        transaction_date: new Date().toISOString().split('T')[0],
-        description: "",
-      });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["sales-transactions"] });
-    },
-    onError: (error: unknown) => {
-      toast({
-        title: "Error recording adjustment",
-        description: error instanceof Error ? error.message : String(error),
-        variant: "destructive",
-      });
-    },
-  });
 
   const multiSaleMutation = useMultiSaleSubmission({
     saleForm,
@@ -1294,10 +1215,9 @@ const SalesEntry = () => {
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden min-w-0">
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="sale">Record Sale</TabsTrigger>
           <TabsTrigger value="payment">Record Client Payment</TabsTrigger>
-          <TabsTrigger value="stock-adjustment">Stock Adjustment</TabsTrigger>
           <TabsTrigger value="configurations">Configurations</TabsTrigger>
         </TabsList>
 
@@ -1750,81 +1670,6 @@ const SalesEntry = () => {
                 </Button>
             </form>
           )}
-        </TabsContent>
-
-        <TabsContent value="stock-adjustment" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="mb-0">Stock Adjustment</CardTitle>
-              <CardDescription className="mb-0">Record case count corrections (₹0). Visible in inventory only — not in client ledger.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!stockAdjForm.customer_id || !stockAdjForm.sku || !stockAdjForm.quantity) return;
-                  stockAdjMutation.mutate(stockAdjForm);
-                }}
-                className="space-y-4"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <Label>Date *</Label>
-                    <Input
-                      type="date"
-                      value={stockAdjForm.transaction_date}
-                      onChange={(e) => setStockAdjForm(prev => ({ ...prev, transaction_date: e.target.value }))}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Client *</Label>
-                    <SearchableSelect
-                      options={stockAdjClientOptions}
-                      value={stockAdjForm.customer_id}
-                      onValueChange={(id) => setStockAdjForm(prev => ({ ...prev, customer_id: id, sku: "" }))}
-                      placeholder="Select client"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>SKU *</Label>
-                    <SearchableSelect
-                      options={stockAdjSKUs.map(s => ({ value: s, label: s }))}
-                      value={stockAdjForm.sku}
-                      onValueChange={(sku) => setStockAdjForm(prev => ({ ...prev, sku }))}
-                      placeholder={stockAdjForm.customer_id ? "Select SKU" : "Select client first"}
-                      disabled={!stockAdjForm.customer_id}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Cases *</Label>
-                    <Input
-                      type="number"
-                      value={safeNumValue(stockAdjForm.quantity)}
-                      onChange={(e) => setStockAdjForm(prev => ({ ...prev, quantity: e.target.value }))}
-                      placeholder="e.g. 10 or -5"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Input
-                    value={stockAdjForm.description}
-                    onChange={(e) => setStockAdjForm(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Reason for adjustment..."
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  disabled={stockAdjMutation.isPending || !stockAdjForm.customer_id || !stockAdjForm.sku || !stockAdjForm.quantity}
-                  className="w-full"
-                >
-                  {stockAdjMutation.isPending ? "Recording..." : "Record Stock Adjustment"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="configurations">
