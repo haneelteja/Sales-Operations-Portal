@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Edit, UserX, UserCheck, Download, ArrowUpDown, MoreHorizontal, BookOpen, Users } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,25 +25,15 @@ import { exportLedger } from '@/lib/ledgerExport';
 import { logger } from '@/lib/logger';
 
 const ConfigurationManagement = () => {
-  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
-  const [isEditCustomerOpen, setIsEditCustomerOpen] = useState(false);
-  const [isAddDealerOpen, setIsAddDealerOpen] = useState(false);
+  const [dealerDialogState, setDealerDialogState] = useState<{
+    open: boolean;
+    initialClientName?: string;
+    initialBranch?: string;
+  }>({ open: false });
   const [exportingLedgerFor, setExportingLedgerFor] = useState<string | null>(null);
   const [contactsTarget, setContactsTarget] = useState<{ clientName: string; branch: string } | null>(null);
   const [openingBalanceTarget, setOpeningBalanceTarget] = useState<{ clientName: string; branch: string; current: number } | null>(null);
   const [openingBalanceInput, setOpeningBalanceInput] = useState("");
-  
-  // Additional state for advanced customer management
-  const [editForm, setEditForm] = useState({
-    client_name: "",
-    branch: "",
-    sku: "",
-    price_per_case: "",
-    price_per_bottle: "",
-    mrp_per_bottle: "",
-    whatsapp_number: "",
-    pricing_date: "",
-  });
 
   const [showLatestOnly, setShowLatestOnly] = useState(true);
 
@@ -67,16 +56,6 @@ const ConfigurationManagement = () => {
     price_per_case: null,
     price_per_bottle: null
   });
-
-  // Radix Dialog sets pointer-events:none on body while open; restore it if cleanup is missed
-  useEffect(() => {
-    if (!isEditCustomerOpen) {
-      const t = setTimeout(() => {
-        document.body.style.removeProperty('pointer-events');
-      }, 300);
-      return () => clearTimeout(t);
-    }
-  }, [isEditCustomerOpen]);
 
   useEffect(() => {
     if (!contactsTarget) {
@@ -122,128 +101,24 @@ const ConfigurationManagement = () => {
     retryDelay: 1000,
   });
 
-  // Get available SKUs from Application Configurations (sku_configurations) for Edit Customer dropdown
-  const { data: availableSKUs = [], isLoading: availableSKUsLoading } = useQuery({
-    queryKey: ["sku-configurations"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("sku_configurations")
-        .select("sku, bottles_per_case")
-        .order("sku", { ascending: true });
-      if (error) throw new Error(handleSupabaseError(error));
-      const seen = new Set<string>();
-      return (data || [])
-        .filter((r) => r.sku && !seen.has((r.sku as string).toLowerCase()) && (seen.add((r.sku as string).toLowerCase()), true))
-        .map((r) => ({ sku: (r.sku as string).trim(), bottles_per_case: Number(r.bottles_per_case) || 0 }))
-        .sort((a, b) => a.sku.localeCompare(b.sku));
-    },
-    retry: 2,
-  });
-
-  // Update customer mutation (edit form)
-  const updateCustomerMutation = useMutation({
-    mutationFn: async (data: { id: string } & typeof editForm) => {
-      // Check if the 4-column unique key would conflict with another row
-      if (data.client_name && data.branch && data.sku && data.pricing_date) {
-        const { data: existingCustomers, error: checkError } = await supabase
-          .from("customers")
-          .select("id")
-          .eq("client_name", data.client_name)
-          .eq("branch", data.branch)
-          .eq("sku", data.sku)
-          .eq("pricing_date", data.pricing_date)
-          .neq("id", data.id)
-          .limit(1);
-
-        if (checkError) {
-          logger.error('Error checking for duplicates:', checkError);
-        } else if (existingCustomers && existingCustomers.length > 0) {
-          throw new Error(`A pricing row for "${data.client_name}" / "${data.branch}" / "${data.sku}" on ${data.pricing_date} already exists.`);
-        }
-      }
-
-      const updateData: Partial<{
-        client_name: string;
-        branch: string;
-        sku: string | null;
-        price_per_bottle: number | null;
-        mrp_per_bottle: number | null;
-        whatsapp_number: string | null;
-        pricing_date: string | null;
-      }> = {};
-      
-      // Only include fields that are provided
-      if (data.client_name) updateData.client_name = data.client_name;
-      if (data.branch !== undefined) updateData.branch = data.branch;
-      if (data.sku !== undefined) updateData.sku = data.sku;
-      // price_per_case is a generated column — never include it in UPDATE
-      if (data.price_per_bottle !== undefined) {
-        updateData.price_per_bottle = data.price_per_bottle ? parseFloat(data.price_per_bottle) : null;
-      }
-      if (data.whatsapp_number !== undefined) {
-        updateData.whatsapp_number = data.whatsapp_number || null;
-      }
-      if (data.mrp_per_bottle !== undefined) {
-        (updateData as Record<string, unknown>).mrp_per_bottle = data.mrp_per_bottle ? parseFloat(data.mrp_per_bottle) : null;
-      }
-      if (data.pricing_date) updateData.pricing_date = data.pricing_date;
-
-      const { data: updatedData, error } = await supabase
-        .from("customers")
-        .update(updateData)
-        .eq("id", data.id)
-        .select();
-
-      if (error) {
-        logger.error('Update error:', error);
-
-        // Handle 409 conflict (unique constraint violation)
-        if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
-          throw new Error(`A customer with client name "${data.client_name}" and branch "${data.branch}" already exists. Please use different values.`);
-        }
-
-        throw error;
-      }
-
-    },
-    onSuccess: (_result, variables) => {
-      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables.id, description: `Client configuration updated: ${variables.client_name} — ${variables.branch}`, newValues: { client_name: variables.client_name, branch: variables.branch, sku: variables.sku, price_per_case: variables.price_per_case } });
-      toast({ title: "Success", description: "Customer updated successfully!" });
-      setIsEditCustomerOpen(false);
-      setEditingCustomer(null);
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["customers-management"] });
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: error instanceof Error ? error.message : "Failed to update customer: " + (error as { message?: string }).message,
-        variant: "destructive"
-      });
-    },
-  });
-
-  // Deactivate customer mutation
+  // Deactivate all rows for a client+branch
   const deactivateCustomerMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ clientName, branch }: { clientName: string; branch: string | null }) => {
       const { error } = await supabase
         .from("customers")
         .update({ is_active: false })
-        .eq("id", id);
+        .eq("client_name", clientName)
+        .eq("branch", branch ?? "");
       if (error) throw error;
     },
     onSuccess: (_result, variables) => {
-      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables, description: `Client deactivated (ID: ${variables})` });
-      toast({ title: "Success", description: "Customer deactivated successfully!" });
+      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables.clientName, description: `Client deactivated: ${variables.clientName} — ${variables.branch}` });
+      toast({ title: "Success", description: "Client deactivated." });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to deactivate customer: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to deactivate: " + error.message, variant: "destructive" });
     },
   });
 
@@ -264,49 +139,24 @@ const ConfigurationManagement = () => {
     },
   });
 
-  // Reactivate customer mutation
+  // Reactivate all rows for a client+branch
   const reactivateCustomerMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ clientName, branch }: { clientName: string; branch: string | null }) => {
       const { error } = await supabase
         .from("customers")
         .update({ is_active: true })
-        .eq("id", id);
+        .eq("client_name", clientName)
+        .eq("branch", branch ?? "");
       if (error) throw error;
     },
     onSuccess: (_result, variables) => {
-      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables, description: `Client reactivated (ID: ${variables})` });
-      toast({ title: "Success", description: "Customer reactivated successfully!" });
+      log({ action: 'UPDATE', entityType: 'client_configuration', entityId: variables.clientName, description: `Client reactivated: ${variables.clientName} — ${variables.branch}` });
+      toast({ title: "Success", description: "Client reactivated." });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["customers-management"] });
     },
     onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to reactivate customer: " + error.message,
-        variant: "destructive"
-      });
-    },
-  });
-
-  const softDeleteCustomerMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("customers")
-        .update({ is_active: false })
-        .eq("id", id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Customer deactivated successfully!" });
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: "Failed to deactivate customer: " + error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to reactivate: " + error.message, variant: "destructive" });
     },
   });
 
@@ -468,6 +318,31 @@ const ConfigurationManagement = () => {
     return filteredAndSortedCustomers.filter((c) => ids.has(c.id));
   }, [filteredAndSortedCustomers, showLatestOnly]);
 
+  // Group by client+branch for the default (latest-only) view
+  interface CustomerGroup {
+    groupKey: string;
+    client_name: string;
+    branch: string | null;
+    is_active: boolean;
+    opening_balance?: number;
+    rows: Customer[];
+  }
+
+  const groupedDisplayedCustomers = useMemo((): CustomerGroup[] => {
+    const map = new Map<string, CustomerGroup>();
+    displayedCustomers.forEach((c) => {
+      const key = `${c.client_name}|||${c.branch ?? ''}`;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, { groupKey: key, client_name: c.client_name, branch: c.branch, is_active: c.is_active, opening_balance: c.opening_balance, rows: [c] });
+      } else {
+        existing.rows.push(c);
+        if (c.is_active) existing.is_active = true;
+      }
+    });
+    return Array.from(map.values());
+  }, [displayedCustomers]);
+
   // Handle column filter changes
   const handleColumnFilterChange = (columnKey: string, value: string) => {
     setColumnFilters(prev => ({
@@ -622,46 +497,19 @@ const ConfigurationManagement = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Handler functions for advanced customer management
-  const handleEditClick = (customer: Customer) => {
-    setEditingCustomer(customer);
-    setEditForm({
-      client_name: customer.client_name || "",
-      branch: customer.branch || "",
-      sku: customer.sku || "",
-      price_per_case: customer.price_per_case?.toString() || "",
-      price_per_bottle: customer.price_per_bottle?.toString() || "",
-      mrp_per_bottle: (customer as { mrp_per_bottle?: number | null }).mrp_per_bottle?.toString() || "",
-      whatsapp_number: customer.whatsapp_number || "",
-      pricing_date: customer.pricing_date || new Date().toISOString().split('T')[0],
-    });
-    setIsEditCustomerOpen(true);
+  const handleDeactivate = (args: { clientName: string; branch: string | null }) => {
+    deactivateCustomerMutation.mutate(args);
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingCustomer) return;
-    updateCustomerMutation.mutate({
-      id: editingCustomer.id,
-      ...editForm,
-    });
-  };
-
-  const handleDeactivate = (id: string) => {
-    deactivateCustomerMutation.mutate(id);
-  };
-
-  // Delete functionality removed - using soft delete (deactivate) only
-
-  const handleReactivate = (id: string) => {
-    reactivateCustomerMutation.mutate(id);
+  const handleReactivate = (args: { clientName: string; branch: string | null }) => {
+    reactivateCustomerMutation.mutate(args);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Client management</h2>
-        <Button onClick={() => setIsAddDealerOpen(true)}>
+        <Button onClick={() => setDealerDialogState({ open: true })}>
           Add client
         </Button>
       </div>
@@ -677,7 +525,9 @@ const ConfigurationManagement = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">
-                    {displayedCustomers.length} of {customers?.length || 0} rows
+                    {showLatestOnly
+                      ? `${groupedDisplayedCustomers.length} clients`
+                      : `${displayedCustomers.length} of ${customers?.length || 0} rows`}
                     {showLatestOnly && filteredAndSortedCustomers.length !== displayedCustomers.length && (
                       <span className="ml-1 text-xs text-muted-foreground/70">
                         ({filteredAndSortedCustomers.length - displayedCustomers.length} older hidden)
@@ -826,135 +676,195 @@ const ConfigurationManagement = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {displayedCustomers.length > 0 ? (
-                      displayedCustomers.map((customer) => (
-                      <TableRow key={customer.id}>
-                        <TableCell className="font-medium">{customer.client_name}</TableCell>
-                        <TableCell>{customer.branch}</TableCell>
-                        <TableCell>{customer.sku || '-'}</TableCell>
-                        <TableCell>{customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '-'}</TableCell>
-                        <TableCell className="text-right">
-                          {customer.price_per_case ? `₹${customer.price_per_case}` : '-'}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={customer.is_active ? "default" : "secondary"}>
-                            {customer.is_active ? "Active" : "Inactive"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditClick(customer)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setContactsTarget({
-                                  clientName: customer.client_name,
-                                  branch: customer.branch,
-                                })
-                              }
-                            >
-                              <Users className="mr-2 h-4 w-4" />
-                              Manage contacts
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => exportClientLedger(customer)}
-                              disabled={exportingLedgerFor === customer.id}
-                            >
-                              <BookOpen className="mr-2 h-4 w-4" />
-                              {exportingLedgerFor === customer.id ? 'Exporting…' : 'Export Ledger'}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setOpeningBalanceInput((customer.opening_balance ?? 0).toString());
-                                setOpeningBalanceTarget({
-                                  clientName: customer.client_name,
-                                  branch: customer.branch ?? "",
-                                  current: customer.opening_balance ?? 0,
-                                });
-                              }}
-                            >
-                              <ArrowUpDown className="mr-2 h-4 w-4" />
-                              Set Opening Balance
-                            </DropdownMenuItem>
-                            {customer.is_active ? (
-                              <DropdownMenuItem
-                                onClick={() => handleDeactivate(customer.id)}
-                                className="text-orange-600"
-                              >
-                                <UserX className="mr-2 h-4 w-4" />
-                                Deactivate
-                              </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem
-                                onClick={() => handleReactivate(customer.id)}
-                                className="text-green-600"
-                              >
-                                <UserCheck className="mr-2 h-4 w-4" />
-                                Reactivate
-                              </DropdownMenuItem>
-                            )}
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <DropdownMenuItem
-                                  className="text-red-700 font-medium"
-                                  onSelect={(e) => e.preventDefault()}
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete pricing row
-                                </DropdownMenuItem>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete pricing row?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This permanently removes the pricing row for <strong>{customer.client_name} – {customer.branch} – {customer.sku}</strong> dated {customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '—'}. This only affects pricing configuration — no sales transactions will be changed.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    className="bg-red-600 hover:bg-red-700"
-                                    onClick={() => deletePricingRowMutation.mutate(customer.id)}
+                    {showLatestOnly ? (
+                      // Grouped view — one row per client+branch
+                      groupedDisplayedCustomers.length > 0 ? (
+                        groupedDisplayedCustomers.map((group) => {
+                          const latestDate = group.rows.reduce((best, r) => {
+                            const d = r.pricing_date ?? '';
+                            return d > best ? d : best;
+                          }, '');
+                          const singleRow = group.rows.length === 1 ? group.rows[0] : null;
+                          const firstRow = group.rows[0];
+                          return (
+                            <TableRow key={group.groupKey}>
+                              <TableCell className="font-medium">{group.client_name}</TableCell>
+                              <TableCell>{group.branch}</TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap gap-1">
+                                  {group.rows.map(r => r.sku).filter(Boolean).map(sku => (
+                                    <Badge key={sku} variant="outline" className="text-xs font-normal">{sku}</Badge>
+                                  ))}
+                                </div>
+                              </TableCell>
+                              <TableCell>{latestDate ? new Date(latestDate).toLocaleDateString() : '-'}</TableCell>
+                              <TableCell className="text-right">
+                                {singleRow?.price_per_case ? `₹${singleRow.price_per_case}` : '-'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {singleRow?.price_per_bottle ? `₹${singleRow.price_per_bottle}` : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={group.is_active ? "default" : "secondary"}>
+                                  {group.is_active ? "Active" : "Inactive"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => setDealerDialogState({ open: true, initialClientName: group.client_name, initialBranch: group.branch ?? undefined })}>
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => setContactsTarget({ clientName: group.client_name, branch: group.branch ?? '' })}>
+                                      <Users className="mr-2 h-4 w-4" />
+                                      Manage contacts
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => exportClientLedger(firstRow)}
+                                      disabled={exportingLedgerFor === firstRow?.id}
+                                    >
+                                      <BookOpen className="mr-2 h-4 w-4" />
+                                      {exportingLedgerFor === firstRow?.id ? 'Exporting…' : 'Export Ledger'}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setOpeningBalanceInput((group.opening_balance ?? 0).toString());
+                                        setOpeningBalanceTarget({ clientName: group.client_name, branch: group.branch ?? '', current: group.opening_balance ?? 0 });
+                                      }}
+                                    >
+                                      <ArrowUpDown className="mr-2 h-4 w-4" />
+                                      Set Opening Balance
+                                    </DropdownMenuItem>
+                                    {group.is_active ? (
+                                      <DropdownMenuItem onClick={() => handleDeactivate({ clientName: group.client_name, branch: group.branch })} className="text-orange-600">
+                                        <UserX className="mr-2 h-4 w-4" />
+                                        Deactivate
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      <DropdownMenuItem onClick={() => handleReactivate({ clientName: group.client_name, branch: group.branch })} className="text-green-600">
+                                        <UserCheck className="mr-2 h-4 w-4" />
+                                        Reactivate
+                                      </DropdownMenuItem>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      ) : (
+                        <TableRow key="no-customers">
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            {searchTerm || Object.values(columnFilters).some(f => f !== '') ? "No customers found matching your filters" : "No customers found"}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    ) : (
+                      // Individual rows view (history mode — showLatestOnly off)
+                      displayedCustomers.length > 0 ? (
+                        displayedCustomers.map((customer) => (
+                          <TableRow key={customer.id}>
+                            <TableCell className="font-medium">{customer.client_name}</TableCell>
+                            <TableCell>{customer.branch}</TableCell>
+                            <TableCell>{customer.sku || '-'}</TableCell>
+                            <TableCell>{customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '-'}</TableCell>
+                            <TableCell className="text-right">{customer.price_per_case ? `₹${customer.price_per_case}` : '-'}</TableCell>
+                            <TableCell className="text-right">{customer.price_per_bottle ? `₹${customer.price_per_bottle}` : '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant={customer.is_active ? "default" : "secondary"}>
+                                {customer.is_active ? "Active" : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => setDealerDialogState({ open: true, initialClientName: customer.client_name, initialBranch: customer.branch ?? undefined })}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setContactsTarget({ clientName: customer.client_name, branch: customer.branch ?? '' })}>
+                                    <Users className="mr-2 h-4 w-4" />
+                                    Manage contacts
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => exportClientLedger(customer)} disabled={exportingLedgerFor === customer.id}>
+                                    <BookOpen className="mr-2 h-4 w-4" />
+                                    {exportingLedgerFor === customer.id ? 'Exporting…' : 'Export Ledger'}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setOpeningBalanceInput((customer.opening_balance ?? 0).toString());
+                                      setOpeningBalanceTarget({ clientName: customer.client_name, branch: customer.branch ?? '', current: customer.opening_balance ?? 0 });
+                                    }}
                                   >
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                    ))
-                  ) : (
-                    <TableRow key="no-customers">
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        {searchTerm || Object.values(columnFilters).some(filter => filter !== '')
-                          ? "No customers found matching your filters"
-                          : "No customers found"}
-                      </TableCell>
-                    </TableRow>
-                  )}
+                                    <ArrowUpDown className="mr-2 h-4 w-4" />
+                                    Set Opening Balance
+                                  </DropdownMenuItem>
+                                  {customer.is_active ? (
+                                    <DropdownMenuItem onClick={() => handleDeactivate({ clientName: customer.client_name, branch: customer.branch })} className="text-orange-600">
+                                      <UserX className="mr-2 h-4 w-4" />
+                                      Deactivate
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem onClick={() => handleReactivate({ clientName: customer.client_name, branch: customer.branch })} className="text-green-600">
+                                      <UserCheck className="mr-2 h-4 w-4" />
+                                      Reactivate
+                                    </DropdownMenuItem>
+                                  )}
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <DropdownMenuItem className="text-red-700 font-medium" onSelect={(e) => e.preventDefault()}>
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete pricing row
+                                      </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Delete pricing row?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          This permanently removes the pricing row for <strong>{customer.client_name} – {customer.branch} – {customer.sku}</strong> dated {customer.pricing_date ? new Date(customer.pricing_date).toLocaleDateString() : '—'}. This only affects pricing configuration — no sales transactions will be changed.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => deletePricingRowMutation.mutate(customer.id)}>Delete</AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow key="no-customers">
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            {searchTerm || Object.values(columnFilters).some(filter => filter !== '') ? "No customers found matching your filters" : "No customers found"}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    )}
                 </TableBody>
               </Table>
               </div>
             </CardContent>
           </Card>
-      {/* Add client dialog */}
+      {/* Add / Edit client dialog */}
       <AddDealerDialog
-        open={isAddDealerOpen}
-        onOpenChange={setIsAddDealerOpen}
+        open={dealerDialogState.open}
+        onOpenChange={(v) => { if (!v) setDealerDialogState({ open: false }); }}
+        initialClientName={dealerDialogState.initialClientName}
+        initialBranch={dealerDialogState.initialBranch}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["customers-management"] });
           queryClient.invalidateQueries({ queryKey: ["customers"] });
@@ -1023,140 +933,6 @@ const ConfigurationManagement = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit client dialog */}
-      <Dialog open={isEditCustomerOpen} onOpenChange={setIsEditCustomerOpen}>
-        <DialogContent className="max-w-2xl" aria-describedby="edit-client-desc" onCloseAutoFocus={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>Edit client</DialogTitle>
-            <DialogDescription id="edit-client-desc">Update client details and pricing.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleEditSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-client-name">Client name *</Label>
-                <Input
-                  id="edit-client-name"
-                  value={editForm.client_name}
-                  onChange={(e) => setEditForm({...editForm, client_name: e.target.value})}
-                  placeholder="Customer company name"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-pricing-date">Pricing date</Label>
-                <Input
-                  id="edit-pricing-date"
-                  type="date"
-                  value={editForm.pricing_date}
-                  onChange={(e) => setEditForm({...editForm, pricing_date: e.target.value})}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-area">Branch</Label>
-                <Input
-                  id="edit-area"
-                  value={editForm.branch}
-                  onChange={(e) => setEditForm({...editForm, branch: e.target.value})}
-                  placeholder="Branch or location"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-sku">SKU</Label>
-                <Select
-                  value={editForm.sku || "__none__"}
-                  onValueChange={(v) => {
-                    const sku = v === "__none__" ? "" : v;
-                    const opt = availableSKUs.find((o) => o.sku === sku);
-                    const ppb = parseFloat(editForm.price_per_bottle);
-                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(4) : editForm.price_per_case;
-                    setEditForm({ ...editForm, sku, price_per_case: ppc });
-                  }}
-                  disabled={availableSKUsLoading}
-                >
-                  <SelectTrigger id="edit-sku">
-                    <SelectValue placeholder="Select SKU" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Select SKU</SelectItem>
-                    {availableSKUs.map((o) => (
-                      <SelectItem key={o.sku} value={o.sku}>{o.sku}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-price-per-bottle">Price per Bottle (₹)</Label>
-                <Input
-                  id="edit-price-per-bottle"
-                  type="number"
-                  step="0.01"
-                  value={editForm.price_per_bottle}
-                  onChange={(e) => {
-                    const ppb = parseFloat(e.target.value);
-                    const opt = availableSKUs.find((o) => o.sku === editForm.sku);
-                    const ppc = opt && !isNaN(ppb) ? (ppb * opt.bottles_per_case).toFixed(4) : editForm.price_per_case;
-                    setEditForm({ ...editForm, price_per_bottle: e.target.value, price_per_case: ppc });
-                  }}
-                  placeholder="0.00"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-price-per-case">Price per Case (₹)</Label>
-                <Input
-                  id="edit-price-per-case"
-                  type="number"
-                  step="0.01"
-                  value={editForm.price_per_case}
-                  readOnly
-                  className="bg-muted"
-                  placeholder="Auto-calculated"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-whatsapp-number">WhatsApp Number</Label>
-                <Input
-                  id="edit-whatsapp-number"
-                  type="tel"
-                  value={editForm.whatsapp_number}
-                  onChange={(e) => setEditForm({...editForm, whatsapp_number: e.target.value})}
-                  placeholder="+919876543210"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-mrp-per-bottle">MRP per Bottle (₹)</Label>
-                <Input
-                  id="edit-mrp-per-bottle"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={editForm.mrp_per_bottle}
-                  onChange={(e) => setEditForm({ ...editForm, mrp_per_bottle: e.target.value })}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-            
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsEditCustomerOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={updateCustomerMutation.isPending}>
-                {updateCustomerMutation.isPending ? "Updating..." : "Update Customer"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

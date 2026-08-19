@@ -59,6 +59,8 @@ interface AddDealerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  initialClientName?: string;
+  initialBranch?: string;
 }
 
 async function fetchSkuConfigurations(): Promise<SkuOption[]> {
@@ -163,7 +165,10 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   open,
   onOpenChange,
   onSuccess,
+  initialClientName,
+  initialBranch,
 }) => {
+  const isEditMode = !!initialClientName;
   const { toast } = useToast();
   const log = useAuditLog();
   const queryClient = useQueryClient();
@@ -311,8 +316,18 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   }, [updateRowPricePerCase]);
 
   useEffect(() => {
-    if (open) resetForm();
-  }, [open, resetForm]);
+    if (open) {
+      resetForm();
+      if (initialClientName?.trim()) {
+        setIsExistingClient(true);
+        setSelectedExistingClient(initialClientName.trim());
+        if (initialBranch?.trim()) {
+          setIsExistingBranch(true);
+          setSelectedExistingBranch(initialBranch.trim());
+        }
+      }
+    }
+  }, [open, resetForm, initialClientName, initialBranch]);
 
   // Prefill GST / WhatsApp when picking an existing client (only when branch is not yet selected)
   useEffect(() => {
@@ -594,10 +609,11 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Add client</DialogTitle>
+          <DialogTitle>{isEditMode ? "Edit client pricing" : "Add client"}</DialogTitle>
           <DialogDescription>
-            Choose new or existing client and branch. Saving always adds new rows; existing client + branch with
-            unchanged prices does nothing.
+            {isEditMode
+              ? "Update pricing or add a new SKU for this client and branch. Saving always adds new rows; existing pricing with no changes is skipped."
+              : "Choose new or existing client and branch. Saving always adds new rows; existing client + branch with unchanged prices does nothing."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 flex-1 min-h-0 overflow-auto">
