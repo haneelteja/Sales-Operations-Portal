@@ -207,7 +207,7 @@ const BusinessAnalyticsChart: React.FC = () => {
   const { data: customers = [] } = useQuery({
     queryKey: ['biz-analytics-customers'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('customers').select('id, client_name').eq('is_active', true).eq('is_deprecated', false);
+      const { data, error } = await supabase.from('customers').select('id, client_name').eq('is_active', true);
       if (error) throw error;
       return (data ?? []) as { id: string; client_name: string }[];
     },

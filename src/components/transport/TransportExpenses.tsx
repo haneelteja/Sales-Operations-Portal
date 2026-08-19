@@ -83,7 +83,6 @@ const TransportExpenses = () => {
         .from("customers")
         .select("id, client_name, branch")
         .eq("is_active", true)
-        .eq("is_deprecated", false)
         .order("client_name", { ascending: true });
       return data || [];
     },

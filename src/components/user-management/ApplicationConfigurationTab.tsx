@@ -30,7 +30,6 @@ import { EditBackupTimeDialog } from './EditBackupTimeDialog';
 import { EditNotificationEmailDialog } from './EditNotificationEmailDialog';
 import { EditSkusAvailableDialog } from './EditSkusAvailableDialog';
 import { EditListConfigDialog } from './EditListConfigDialog';
-import { DeprecatedClientsDialog } from './DeprecatedClientsDialog';
 import { EditVendorPricingDialog } from './EditVendorPricingDialog';
 import { EditLabelPricesDialog } from '../configurations/EditLabelPricesDialog';
 import { EditTentativeDeliveryDaysDialog } from './EditTentativeDeliveryDaysDialog';
@@ -57,7 +56,6 @@ const ApplicationConfigurationTab: React.FC = () => {
   const [isLabelVendorsDialogOpen, setIsLabelVendorsDialogOpen] = useState(false);
   const [isLabelPricesDialogOpen, setIsLabelPricesDialogOpen] = useState(false);
   const [isAssigneeListDialogOpen, setIsAssigneeListDialogOpen] = useState(false);
-  const [isDeprecatedClientsDialogOpen, setIsDeprecatedClientsDialogOpen] = useState(false);
   const [isInvoiceFormatOpen, setIsInvoiceFormatOpen] = useState(false);
   const [invoiceFormatValue, setInvoiceFormatValue] = useState('simple');
   const [isRunningBackup, setIsRunningBackup] = useState(false);
@@ -215,22 +213,7 @@ const ApplicationConfigurationTab: React.FC = () => {
     } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
     seen.add('assignee_list');
 
-    // Row 6: Deprecated clients
-    result.push({
-      id: '',
-      config_key: 'deprecated_clients',
-      config_value: '',
-      config_type: 'string',
-      description: 'Deprecated Clients — clients no longer active; hidden from analysis tables and entry forms, history preserved',
-      updated_by: null,
-      updated_at: '',
-      created_at: '',
-      isCustom: true,
-      customKey: 'deprecated_clients',
-    } as InvoiceConfiguration & { isCustom?: boolean; customKey?: string });
-    seen.add('deprecated_clients');
-
-    // Row 7: SKUs (custom - not from config table)
+    // Row 6: SKUs (custom - not from config table)
     result.push({
       id: '',
       config_key: 'sku_configurations',
@@ -531,16 +514,6 @@ const ApplicationConfigurationTab: React.FC = () => {
                           >
                             <Edit className="h-4 w-4" />
                             Edit
-                          </Button>
-                        ) : config.config_key === 'deprecated_clients' ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsDeprecatedClientsDialogOpen(true)}
-                            className="flex items-center gap-2"
-                          >
-                            <Edit className="h-4 w-4" />
-                            Manage
                           </Button>
                         ) : config.config_key === 'invoice_folder_path' ? (
                           <Button
@@ -946,12 +919,6 @@ const ApplicationConfigurationTab: React.FC = () => {
         title="Assignee List"
         description="Add or remove assignees. These names appear in the Receivables Management assignee dropdown for each customer."
         placeholder="e.g. Ravi Kumar"
-      />
-
-      {/* Deprecated Clients Dialog */}
-      <DeprecatedClientsDialog
-        open={isDeprecatedClientsDialogOpen}
-        onOpenChange={setIsDeprecatedClientsDialogOpen}
       />
 
       {/* Label Price History Dialog */}

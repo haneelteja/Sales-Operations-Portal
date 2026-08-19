@@ -15,7 +15,6 @@ interface ClientSkuLabelSummary {
   client_id: string;
   client_name: string;
   sku: string;
-  is_deprecated: boolean;
   total_labels_purchased: number;
   total_adjustments: number;
   production_labels: number;
@@ -56,13 +55,13 @@ const LabelAvailability = () => {
     },
   });
 
-  // 2. All active customers including deprecated — no is_deprecated filter so we can split them
+  // 2. All active customers
   const { data: customers, isLoading: isLoadingCustomers } = useQuery({
     queryKey: ["customers-for-availability"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, client_name, is_deprecated")
+        .select("id, client_name")
         .eq("is_active", true)
         .order("client_name", { ascending: true });
       if (error) throw error;
@@ -172,13 +171,13 @@ const LabelAvailability = () => {
 
   const isLoading = isLoadingPurchases || isLoadingCustomers || isLoadingSales || isLoadingProduction;
 
-  // Build per-client+SKU summaries (all clients, including deprecated)
+  // Build per-client+SKU summaries
   const clientSkuSummaries: ClientSkuLabelSummary[] = React.useMemo(() => {
     if (!labelPurchases?.length) return [];
 
-    // customer_id → { client_name, is_deprecated }
+    // customer_id → { client_name }
     const customerMap = new Map(
-      customers?.map(c => [c.id, { client_name: c.client_name, is_deprecated: c.is_deprecated ?? false }]) ?? []
+      customers?.map(c => [c.id, { client_name: c.client_name }]) ?? []
     );
     const bottlesPerCase = (sku: string) => skuConfigs?.get(sku) ?? 1;
 
@@ -206,18 +205,12 @@ const LabelAvailability = () => {
             existing.last_purchase_date = p.purchase_date;
           }
         }
-        // Prefer the non-deprecated client_id for the Adjust button
-        if (!customerInfo.is_deprecated && existing.is_deprecated) {
-          existing.client_id = p.client_id;
-          existing.is_deprecated = false;
-        }
       } else {
         summaryMap.set(key, {
           key,
           client_id: p.client_id,
           client_name: customerInfo.client_name,
           sku: p.sku,
-          is_deprecated: customerInfo.is_deprecated,
           total_labels_purchased: isAdj ? 0 : qty,
           total_adjustments: isAdj ? qty : 0,
           production_labels: 0,
@@ -260,8 +253,8 @@ const LabelAvailability = () => {
       .filter(s => s.sku !== 'Plates');
   }, [labelPurchases, customers, salesTransactions, productionData, skuConfigs]);
 
-  // Split into 3 groups, each sorted by labels_available ascending (least available first)
-  const { activeRows, zeroStockRows, deprecatedRows } = React.useMemo(() => {
+  // Split into 2 groups, each sorted by labels_available ascending (least available first)
+  const { activeRows, zeroStockRows } = React.useMemo(() => {
     const search = searchTerm.toLowerCase();
     const filtered = clientSkuSummaries.filter(s =>
       !search ||
@@ -272,16 +265,14 @@ const LabelAvailability = () => {
     const byAvailable = (a: ClientSkuLabelSummary, b: ClientSkuLabelSummary) =>
       a.labels_available - b.labels_available;
 
-    const deprecated = filtered.filter(s => s.is_deprecated).sort(byAvailable);
-    const rest = filtered.filter(s => !s.is_deprecated);
-    const zeroStock = rest
+    const zeroStock = filtered
       .filter(s => s.labels_available === 0 || s.total_labels_purchased === 0)
       .sort(byAvailable);
-    const active = rest
+    const active = filtered
       .filter(s => s.labels_available !== 0 && s.total_labels_purchased > 0)
       .sort(byAvailable);
 
-    return { activeRows: active, zeroStockRows: zeroStock, deprecatedRows: deprecated };
+    return { activeRows: active, zeroStockRows: zeroStock };
   }, [clientSkuSummaries, searchTerm]);
 
   const openAdjustDialog = (row: ClientSkuLabelSummary) => {
@@ -300,11 +291,11 @@ const LabelAvailability = () => {
   };
 
   const handleExport = async () => {
-    const allRows = [...activeRows, ...zeroStockRows, ...deprecatedRows];
+    const allRows = [...activeRows, ...zeroStockRows];
     const exportData = allRows.map(s => ({
       'Client': s.client_name,
       'SKU': s.sku,
-      'Status': s.is_deprecated ? 'Deprecated' : s.labels_available === 0 || s.total_labels_purchased === 0 ? 'Zero Stock' : 'Active',
+      'Status': s.labels_available === 0 || s.total_labels_purchased === 0 ? 'Zero Stock' : 'Active',
       'Labels Purchased': s.total_labels_purchased,
       'Adjustments': s.total_adjustments,
       'Production Labels': s.production_labels,
@@ -455,21 +446,6 @@ const LabelAvailability = () => {
             </div>
           </div>
 
-          {/* Table 3 — Deprecated */}
-          <div className="space-y-2">
-            <div>
-              <h4 className="text-sm font-semibold text-slate-400">Deprecated ({deprecatedRows.length})</h4>
-              <p className="text-xs text-muted-foreground">Clients marked as deprecated in Configurations</p>
-            </div>
-            <div className="border rounded-lg opacity-60">
-              <Table>
-                {tableHeaders}
-                <TableBody>
-                  {deprecatedRows.length > 0 ? renderRows(deprecatedRows) : emptyRow("No deprecated client entries.")}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
         </>
       )}
 

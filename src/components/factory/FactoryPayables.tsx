@@ -141,7 +141,6 @@ const FactoryPayables = () => {
         .from("customers")
         .select("id, client_name, branch, sku")
         .eq("is_active", true)
-        .eq("is_deprecated", false)
         .order("client_name", { ascending: true });
       return data || [];
     },

@@ -93,14 +93,14 @@ const ClientAnalysis: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("transaction_type, amount, transaction_date, customers(client_name, branch, is_deprecated)")
+        .select("transaction_type, amount, transaction_date, customers(client_name, branch)")
         .order("transaction_date", { ascending: true })
         .limit(10000);
       return (data ?? []) as Array<{
         transaction_type: string;
         amount: number | null;
         transaction_date: string | null;
-        customers: { client_name: string; branch: string; is_deprecated: boolean } | null;
+        customers: { client_name: string; branch: string } | null;
       }>;
     },
   });
@@ -120,7 +120,6 @@ const ClientAnalysis: React.FC = () => {
     for (const tx of rawTx) {
       const cust = tx.customers;
       if (!cust?.client_name) continue;
-      if (cust.is_deprecated) continue;
       const key = `${cust.client_name.trim()}|||${(cust.branch ?? "").trim()}`;
       if (!buckets.has(key)) buckets.set(key, { txs: [], monthsSet: new Set() });
       const b = buckets.get(key)!;
