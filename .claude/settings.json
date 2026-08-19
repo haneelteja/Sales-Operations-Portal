@@ -43,7 +43,8 @@
       "Bash(xargs grep -l \"factory_payables\")",
       "Bash(xargs grep -l \"CREATE TABLE\")",
       "Bash(grep -r \"MinimalTest\\\\|Purchase\\\\|from.*\\\\/purchase\\\\|from.*errorHandler\\\\|usePaginatedQuery\\\\|secureStorage\\\\|desktop\\\\/notifications\\\\|desktop\\\\/store\\\\|desktop\\\\/fileSystem\\\\|mobile-navigation\" \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1/src\" --include=\"*.ts\" --include=\"*.tsx\" -l)",
-      "Bash(grep -r \"from.*Receivables\\\\b\\\\|from.*\\\\/receivables\\\\/Receivables\" \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1/src\" --include=\"*.ts\" --include=\"*.tsx\")"
+      "Bash(grep -r \"from.*Receivables\\\\b\\\\|from.*\\\\/receivables\\\\/Receivables\" \"c:/Users/Haneel Teja/Cursor Applications/Aamodha-Operations-Portal---V1/src\" --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(xargs -0 git rm --cached)"
     ]
   },
   "hooks": {
