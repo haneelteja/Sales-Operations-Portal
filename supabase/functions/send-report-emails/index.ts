@@ -214,7 +214,7 @@ async function fetchOutstandingRows(supabase: ReturnType<typeof createClient>): 
 
   const [{ data: outstanding }, { data: customers }] = await Promise.all([
     supabase.rpc('get_customer_outstanding'),
-    supabase.from('customers').select('id, client_name, branch, whatsapp_number').eq('is_active', true),
+    supabase.from('customers').select('id, client_name, branch, whatsapp_number'),
   ]);
 
   const customerMap = new Map((customers ?? []).map((c: { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }) => [c.id, c]));
@@ -257,7 +257,7 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
       .eq('transaction_type', 'payment')
       .order('transaction_date', { ascending: true })
       .limit(10000),
-    supabase.from('customers').select('id, client_name, branch, whatsapp_number').eq('is_active', true).limit(10000),
+    supabase.from('customers').select('id, client_name, branch, whatsapp_number').limit(10000),
   ]);
 
   const customerMap = new Map(
