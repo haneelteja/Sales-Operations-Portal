@@ -38,6 +38,7 @@ export default function ReceivablesTrackingView() {
   const [filterNotes, setFilterNotes] = useState('');
   const [filterFollowupStatus, setFilterFollowupStatus] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
+  const [showAllActive, setShowAllActive] = useState(false);
   const [activeNotes, setActiveNotes] = useState<{
     customerId: string;
     dealerName: string;
@@ -173,6 +174,10 @@ export default function ReceivablesTrackingView() {
       return { ...row, isOverdue };
     });
 
+    if (!showAllActive) {
+      rows = rows.filter(r => r.outstanding >= 0.01);
+    }
+
     if (filterClient.trim()) {
       const q = filterClient.toLowerCase();
       rows = rows.filter(r =>
@@ -237,7 +242,7 @@ export default function ReceivablesTrackingView() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, sortCol, sortDir, assigneeMap, today]);
+  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, showAllActive, sortCol, sortDir, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -491,6 +496,15 @@ export default function ReceivablesTrackingView() {
           </Select>
         )}
 
+        <Button
+          variant={showAllActive ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setShowAllActive(v => !v)}
+          className="whitespace-nowrap"
+        >
+          {showAllActive ? 'All active clients' : 'With balance only'}
+        </Button>
+
         {(filterClient || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes) && (
           <Button
             variant="ghost"
@@ -521,7 +535,7 @@ export default function ReceivablesTrackingView() {
         <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground border rounded-md">
           {(filterClient || filterMinOutstanding || filterNotes || filterFollowupStatus || filterAssignee)
             ? 'No clients match the current filters.'
-            : 'No clients with outstanding balances found.'}
+            : showAllActive ? 'No active clients found.' : 'No clients with outstanding balances found.'}
         </div>
       ) : (
         <div className="flex-1 min-h-0 rounded-md border overflow-auto">
@@ -576,7 +590,9 @@ export default function ReceivablesTrackingView() {
                   </td>
 
                   {/* Outstanding */}
-                  <td className="px-4 py-3 text-right font-bold text-red-600 whitespace-nowrap align-top">
+                  <td className={`px-4 py-3 text-right font-bold whitespace-nowrap align-top ${
+                    row.outstanding > 0.01 ? 'text-red-600' : row.outstanding < -0.01 ? 'text-green-600' : 'text-muted-foreground'
+                  }`}>
                     {fmt(row.outstanding)}
                   </td>
 
@@ -692,7 +708,7 @@ export default function ReceivablesTrackingView() {
       )}
 
       <p className="text-xs text-muted-foreground text-right flex-shrink-0">
-        {displayRows.length} client{displayRows.length !== 1 ? 's' : ''} with outstanding balance
+        {displayRows.length} {showAllActive ? 'active' : ''} client{displayRows.length !== 1 ? 's' : ''}{showAllActive ? '' : ' with outstanding balance'}
       </p>
       </div>{/* end flex-1 table+count wrapper */}
 

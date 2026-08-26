@@ -75,7 +75,6 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
   const rows: RawRow[] = [];
   for (const r of summaryRows) {
     const outstanding = Number(r.outstanding);
-    if (outstanding < 0.01) continue;
 
     const key = `${r.client_name.toLowerCase()}|||${r.branch.toLowerCase()}`;
     const totalPayments = Number(r.payment_count);
