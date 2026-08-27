@@ -208,6 +208,29 @@ function buildCreditRiskEmail(rows: CreditRow[], date: string): string {
 
 // ─── Data fetchers ───────────────────────────────────────────────────────────
 
+// Merge rows that share the same client_name + branch (duplicate customer records in DB).
+// Sums outstanding and invoice_count, takes the oldest sale date, escalates to Overdue if any.
+function mergeByNameBranch(rows: OutstandingRow[]): OutstandingRow[] {
+  const merged = new Map<string, OutstandingRow>();
+  for (const row of rows) {
+    const key = `${row.client_name.toLowerCase()}|||${(row.branch ?? '').toLowerCase()}`;
+    const ex = merged.get(key);
+    if (!ex) {
+      merged.set(key, { ...row });
+    } else {
+      ex.outstanding += row.outstanding;
+      ex.invoice_count += row.invoice_count;
+      if (row.oldest_sale_date && (!ex.oldest_sale_date || row.oldest_sale_date < ex.oldest_sale_date)) {
+        ex.oldest_sale_date = row.oldest_sale_date;
+        ex.age_days = Math.max(ex.age_days, row.age_days);
+      }
+      if (row.status === 'Overdue') ex.status = 'Overdue';
+      if (!ex.whatsapp_number && row.whatsapp_number) ex.whatsapp_number = row.whatsapp_number;
+    }
+  }
+  return Array.from(merged.values());
+}
+
 async function fetchOutstandingRows(supabase: ReturnType<typeof createClient>): Promise<OutstandingRow[]> {
   const today = Date.now();
   const DAY = 86400000;
@@ -219,7 +242,7 @@ async function fetchOutstandingRows(supabase: ReturnType<typeof createClient>): 
 
   const customerMap = new Map((customers ?? []).map((c: { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }) => [c.id, c]));
 
-  return (outstanding ?? [])
+  const unmerged = (outstanding ?? [])
     .filter((r: { outstanding: number; oldest_sale_date: string | null }) => r.outstanding > 0 && r.oldest_sale_date)
     .map((r: { customer_id: string; outstanding: number; invoice_count: number; oldest_sale_date: string | null }) => {
       const ageDays = Math.floor((today - new Date(r.oldest_sale_date!).getTime()) / DAY);
@@ -238,6 +261,8 @@ async function fetchOutstandingRows(supabase: ReturnType<typeof createClient>): 
       } as OutstandingRow;
     })
     .filter(Boolean) as OutstandingRow[];
+
+  return mergeByNameBranch(unmerged).sort((a, b) => b.outstanding - a.outstanding);
 }
 
 // Payment Follow Up uses payment-pattern logic (same as the portal's Receivables Tracking view).
@@ -321,7 +346,7 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
     });
   }
 
-  return rows.sort((a, b) => b.outstanding - a.outstanding);
+  return mergeByNameBranch(rows).sort((a, b) => b.outstanding - a.outstanding);
 }
 
 async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promise<CreditRow[]> {
