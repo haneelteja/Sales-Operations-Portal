@@ -680,29 +680,44 @@ const ConfigurationManagement = () => {
                       // Grouped view — one row per client+branch
                       groupedDisplayedCustomers.length > 0 ? (
                         groupedDisplayedCustomers.map((group) => {
-                          const latestDate = group.rows.reduce((best, r) => {
-                            const d = r.pricing_date ?? '';
-                            return d > best ? d : best;
-                          }, '');
-                          const singleRow = group.rows.length === 1 ? group.rows[0] : null;
                           const firstRow = group.rows[0];
                           return (
                             <TableRow key={group.groupKey}>
                               <TableCell className="font-medium">{group.client_name}</TableCell>
                               <TableCell>{group.branch}</TableCell>
                               <TableCell>
-                                <div className="flex flex-wrap gap-1">
-                                  {group.rows.map(r => r.sku).filter(Boolean).map(sku => (
-                                    <Badge key={sku} variant="outline" className="text-xs font-normal">{sku}</Badge>
+                                <div className="flex flex-col gap-1.5">
+                                  {group.rows.map(r => (
+                                    <Badge key={r.id} variant="outline" className="text-xs font-normal w-fit">{r.sku || '—'}</Badge>
                                   ))}
                                 </div>
                               </TableCell>
-                              <TableCell>{latestDate ? new Date(latestDate).toLocaleDateString() : '-'}</TableCell>
-                              <TableCell className="text-right">
-                                {singleRow?.price_per_case ? `₹${singleRow.price_per_case}` : '-'}
+                              <TableCell>
+                                <div className="flex flex-col gap-1.5">
+                                  {group.rows.map(r => (
+                                    <div key={r.id} className="text-sm leading-5">
+                                      {r.pricing_date ? new Date(r.pricing_date).toLocaleDateString() : '-'}
+                                    </div>
+                                  ))}
+                                </div>
                               </TableCell>
                               <TableCell className="text-right">
-                                {singleRow?.price_per_bottle ? `₹${singleRow.price_per_bottle}` : '-'}
+                                <div className="flex flex-col gap-1.5 items-end">
+                                  {group.rows.map(r => (
+                                    <div key={r.id} className="text-sm leading-5">
+                                      {r.price_per_case ? `₹${r.price_per_case}` : '-'}
+                                    </div>
+                                  ))}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex flex-col gap-1.5 items-end">
+                                  {group.rows.map(r => (
+                                    <div key={r.id} className="text-sm leading-5">
+                                      {r.price_per_bottle ? `₹${r.price_per_bottle}` : '-'}
+                                    </div>
+                                  ))}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 <Badge variant={group.is_active ? "default" : "secondary"}>
