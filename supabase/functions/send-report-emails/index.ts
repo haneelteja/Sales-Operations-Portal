@@ -123,10 +123,16 @@ function buildPaymentFollowupEmail(rows: OutstandingRow[], date: string): string
   const overdue = rows.filter(r => r.status === 'Overdue');
   const dueSoon = rows.filter(r => r.status === 'Due Soon');
 
-  const section = (title: string, color: string, bg: string, items: OutstandingRow[]) => {
-    if (items.length === 0) return '';
-    const cards = items.map(r => `
-      <div style="border:1px solid ${color}40;border-radius:8px;padding:14px 16px;margin-bottom:10px;background:${bg};">
+  // Single list sorted by outstanding descending so the highest-owed client
+  // always appears first, regardless of Overdue vs Due Soon status.
+  const sorted = [...rows].sort((a, b) => b.outstanding - a.outstanding);
+
+  const cards = sorted.map(r => {
+    const isOverdue = r.status === 'Overdue';
+    const borderColor = isOverdue ? '#dc2626' : '#d97706';
+    const bg = isOverdue ? '#fff5f5' : '#fffbeb';
+    return `
+      <div style="border:1px solid ${borderColor}40;border-radius:8px;padding:14px 16px;margin-bottom:10px;background:${bg};">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
           <div>
             <div style="font-weight:600;font-size:14px;color:#1e293b;">${r.client_name}${r.branch ? ` <span style="color:#64748b;font-weight:400;font-size:12px;">(${r.branch})</span>` : ''}</div>
@@ -140,9 +146,8 @@ function buildPaymentFollowupEmail(rows: OutstandingRow[], date: string): string
             ${statusBadge(r.status)}
           </div>
         </div>
-      </div>`).join('');
-    return `<h3 style="margin:20px 0 10px;font-size:15px;color:#1e293b;border-bottom:2px solid ${color};padding-bottom:6px;">${title} (${items.length})</h3>${cards}`;
-  };
+      </div>`;
+  }).join('');
 
   const body = `
     <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
@@ -150,8 +155,7 @@ function buildPaymentFollowupEmail(rows: OutstandingRow[], date: string): string
       ${summaryBox('Due Soon', dueSoon.length, '#fef3c7', '#92400e')}
       ${summaryBox('Total', rows.length, '#f1f5f9', '#475569')}
     </div>
-    ${section('🔴 Overdue — Action Required', '#dc2626', '#fff5f5', overdue)}
-    ${section('🟡 Due Soon — Follow Up', '#d97706', '#fffbeb', dueSoon)}`;
+    ${cards}`;
 
   return emailShell('Payment Follow Up Report', date, body);
 }
