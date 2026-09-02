@@ -293,13 +293,23 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
     (customers ?? []).map((c: { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }) => [c.id, c])
   );
 
-  // Group payment dates per customer (already ascending)
+  // Build customer_id → name+branch key (needed because payments may sit on a different
+  // customer_id than the representative one returned by get_customer_outstanding).
+  const custKeyMap = new Map<string, string>();
+  for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null }[]) {
+    custKeyMap.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
+  }
+
+  // Group payment dates by name+branch key so payments on any customer_id for the
+  // same client+branch are all counted together (already ascending).
   const paymentDates = new Map<string, string[]>();
   for (const tx of (payments ?? [])) {
     if (!tx.transaction_date) continue;
-    const arr = paymentDates.get(tx.customer_id) ?? [];
+    const key = custKeyMap.get(tx.customer_id);
+    if (!key) continue;
+    const arr = paymentDates.get(key) ?? [];
     arr.push(tx.transaction_date);
-    paymentDates.set(tx.customer_id, arr);
+    paymentDates.set(key, arr);
   }
 
   const rows: OutstandingRow[] = [];
@@ -309,7 +319,8 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
     if (out.outstanding < 0.01 || !out.oldest_sale_date) continue;
 
     const ageDays = Math.floor((Date.now() - new Date(out.oldest_sale_date).getTime()) / DAY);
-    const pmts = paymentDates.get(out.customer_id) ?? [];
+    const nameKey = custKeyMap.get(out.customer_id) ?? '';
+    const pmts = paymentDates.get(nameKey) ?? [];
     const totalPayments = pmts.length;
 
     let status: 'Overdue' | 'Due Soon' | null = null;
