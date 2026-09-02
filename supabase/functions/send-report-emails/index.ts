@@ -389,34 +389,41 @@ async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promi
   const [{ data: outstanding }, { data: sales }, { data: customers }] = await Promise.all([
     supabase.rpc('get_customer_outstanding'),
     supabase.from('sales_transactions').select('customer_id, amount').eq('transaction_type', 'sale').gte('transaction_date', since180),
-    supabase.from('customers').select('id, client_name, branch').eq('is_active', true),
+    supabase.from('customers').select('id, client_name, branch'),
   ]);
 
+  // Build customer_id → name+branch key (same pattern as fetchPaymentFollowupRows).
+  // This ensures sales on any customer_id for the same client+branch are all counted.
+  const custKeyMap = new Map<string, string>();
+  for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null }[]) {
+    custKeyMap.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
+  }
   const customerMap = new Map((customers ?? []).map((c: { id: string; client_name: string; branch: string | null }) => [c.id, c]));
 
-  // Sum sales per customer (last 6 months)
-  const salesMap = new Map<string, number>();
+  // Sum sales by name+branch key (last 6 months) across ALL customer_ids for the same client.
+  const salesByKey = new Map<string, number>();
   for (const s of (sales ?? [])) {
-    salesMap.set(s.customer_id, (salesMap.get(s.customer_id) ?? 0) + (s.amount ?? 0));
+    const key = custKeyMap.get(s.customer_id);
+    if (!key) continue;
+    salesByKey.set(key, (salesByKey.get(key) ?? 0) + (s.amount ?? 0));
   }
 
-  const outstandingMap = new Map((outstanding ?? []).map((r: { customer_id: string; outstanding: number }) => [r.customer_id, r.outstanding]));
-
+  // get_customer_outstanding returns ONE row per name+branch (deduped), so the loop
+  // below produces at most one credit row per client+branch — no merging needed.
   const rows: CreditRow[] = [];
-  // Iterate over ALL customers with outstanding (not just those with recent sales).
-  // Dormant clients with large outstanding and zero recent orders are the biggest risk.
-  for (const [customerId, out] of outstandingMap.entries()) {
-    if (out <= 0) continue;
-    const totalSales6m = salesMap.get(customerId) ?? 0;
-    const creditLimit = totalSales6m / 6; // avg monthly over 6 months
-    const usedPct = creditLimit > 0 ? (out / creditLimit) * 100 : 999; // no recent sales = treat as over limit
-    const cust = customerMap.get(customerId) as { client_name: string; branch: string | null } | undefined;
+  for (const r of (outstanding ?? []) as { customer_id: string; outstanding: number }[]) {
+    if (r.outstanding <= 0) continue;
+    const cust = customerMap.get(r.customer_id) as { client_name: string; branch: string | null } | undefined;
     if (!cust) continue;
+    const nameKey = custKeyMap.get(r.customer_id) ?? `${cust.client_name.toLowerCase()}|||${(cust.branch ?? '').toLowerCase()}`;
+    const totalSales6m = salesByKey.get(nameKey) ?? 0;
+    const creditLimit = totalSales6m / 6; // avg monthly over 6 months
+    const usedPct = creditLimit > 0 ? (r.outstanding / creditLimit) * 100 : 999; // no recent sales = over limit
     rows.push({
       client_name: cust.client_name,
       branch: cust.branch ?? null,
       credit_limit: creditLimit,
-      outstanding: out,
+      outstanding: r.outstanding,
       used_pct: usedPct,
       status: usedPct > 100 ? 'Over Limit' : usedPct >= 75 ? 'Warning' : 'OK',
     });
