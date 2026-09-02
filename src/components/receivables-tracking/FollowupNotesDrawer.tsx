@@ -58,25 +58,48 @@ export function FollowupNotesDrawer({
 
   const handleSave = async () => {
     const trimmed = note.trim();
-    if (!trimmed) return;
+    if (!trimmed || saving) return;
     setSaving(true);
     try {
       await insertFollowupNote(customerId, trimmed, followupDate || null, operatorName);
 
+      // Use ilike so the lookup is case-insensitive — dealer_name in client_followups
+      // may differ in case from what get_receivables_summary returns.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: upsertError } = await (supabase as any)
+      const { data: existingRows } = await (supabase as any)
         .from('client_followups')
-        .upsert(
-          {
+        .select('id')
+        .ilike('dealer_name', dealerName)
+        .ilike('branch', branch)
+        .limit(1);
+
+      const existingId = existingRows?.[0]?.id as string | undefined;
+
+      if (existingId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: updateError } = await (supabase as any)
+          .from('client_followups')
+          .update({
             dealer_name: dealerName,
             branch,
             comments: trimmed,
             next_followup_date: followupDate || null,
             updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'dealer_name,branch' }
-        );
-      if (upsertError) throw upsertError;
+          })
+          .eq('id', existingId);
+        if (updateError) throw updateError;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: insertError } = await (supabase as any)
+          .from('client_followups')
+          .insert({
+            dealer_name: dealerName,
+            branch,
+            comments: trimmed,
+            next_followup_date: followupDate || null,
+          });
+        if (insertError) throw insertError;
+      }
 
       queryClient.invalidateQueries({ queryKey: ['followup-notes', customerId] });
       queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });

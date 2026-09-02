@@ -43,6 +43,7 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
     (supabase as any)
       .from('client_followups')
       .select('dealer_name, branch, comments, next_followup_date')
+      .order('updated_at', { ascending: false })
       .limit(10000),
   ]);
 

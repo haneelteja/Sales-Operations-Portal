@@ -142,8 +142,8 @@ export default function ReceivablesTrackingView() {
       const { error } = await (supabase as any)
         .from('client_followups')
         .update({ next_followup_date: null, updated_at: new Date().toISOString() })
-        .eq('dealer_name', dealerName)
-        .eq('branch', branch);
+        .ilike('dealer_name', dealerName)
+        .ilike('branch', branch);
       if (error) throw error;
     },
     onSuccess: () => {
