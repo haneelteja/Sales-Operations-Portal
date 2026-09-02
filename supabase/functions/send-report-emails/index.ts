@@ -276,9 +276,10 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
   const todayMs = todayDate.getTime();
+  const todayStr = todayDate.toISOString().split('T')[0];
   const DAY = 86400000;
 
-  const [{ data: outstanding }, { data: payments }, { data: customers }] = await Promise.all([
+  const [{ data: outstanding }, { data: payments }, { data: customers }, { data: followups }] = await Promise.all([
     supabase.rpc('get_customer_outstanding'),
     supabase
       .from('sales_transactions')
@@ -287,7 +288,20 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
       .order('transaction_date', { ascending: true })
       .limit(10000),
     supabase.from('customers').select('id, client_name, branch, whatsapp_number').limit(10000),
+    supabase
+      .from('client_followups')
+      .select('dealer_name, branch, next_followup_date')
+      .not('next_followup_date', 'is', null)
+      .lte('next_followup_date', todayStr)
+      .limit(10000),
   ]);
+
+  // Set of name+branch keys whose portal follow-up date has passed today.
+  const overdueFollowupKeys = new Set<string>(
+    (followups ?? []).map((f: { dealer_name: string; branch: string | null }) =>
+      `${f.dealer_name.toLowerCase()}|||${(f.branch ?? '').toLowerCase()}`
+    )
+  );
 
   const customerMap = new Map(
     (customers ?? []).map((c: { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }) => [c.id, c])
@@ -342,8 +356,12 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
       if (daysOverdue > 14) status = 'Overdue';
       else if (daysOverdue > 0) status = 'Due Soon';
       else if (todayMs >= expMs - 5 * DAY) status = 'Due Soon';
-      // ON TRACK — omit from follow-up email
+      // ON TRACK per payment pattern — but still check portal follow-up date below
     }
+
+    // Fall back: if the portal follow-up date has passed, always include as Overdue
+    // regardless of what the payment-pattern analysis said.
+    if (!status && overdueFollowupKeys.has(nameKey)) status = 'Overdue';
 
     if (!status) continue;
 
