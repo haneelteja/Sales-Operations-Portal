@@ -290,7 +290,7 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
     supabase.from('customers').select('id, client_name, branch, whatsapp_number').limit(10000),
     supabase
       .from('client_followups')
-      .select('dealer_name, branch, next_followup_date')
+      .select('client_name, branch, next_followup_date')
       .not('next_followup_date', 'is', null)
       .lte('next_followup_date', todayStr)
       .limit(10000),
@@ -298,8 +298,8 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
 
   // Set of name+branch keys whose portal follow-up date has passed today.
   const overdueFollowupKeys = new Set<string>(
-    (followups ?? []).map((f: { dealer_name: string; branch: string | null }) =>
-      `${f.dealer_name.toLowerCase()}|||${(f.branch ?? '').toLowerCase()}`
+    (followups ?? []).map((f: { client_name: string; branch: string | null }) =>
+      `${f.client_name.toLowerCase()}|||${(f.branch ?? '').toLowerCase()}`
     )
   );
 

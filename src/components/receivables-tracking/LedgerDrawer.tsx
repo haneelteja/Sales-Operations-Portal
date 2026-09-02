@@ -11,12 +11,12 @@ export interface LedgerDrawerProps {
   open: boolean;
   onClose: () => void;
   customerId: string;
-  dealerName: string;
+  clientName: string;
   branch: string;
   outstanding: number;
 }
 
-export function LedgerDrawer({ open, onClose, customerId, dealerName, branch }: LedgerDrawerProps) {
+export function LedgerDrawer({ open, onClose, customerId, clientName, branch }: LedgerDrawerProps) {
   const [exporting, setExporting] = useState(false);
   const defaultFY = useMemo(() => currentFY(), []);
   const [dateFrom, setDateFrom] = useState(defaultFY.from);
@@ -25,16 +25,16 @@ export function LedgerDrawer({ open, onClose, customerId, dealerName, branch }: 
   // Fetch ALL customer IDs for this (client_name, branch) so the ledger includes
   // transactions that may have been recorded against sibling UUIDs (split-UUID issue).
   const { data: allCustomerIds } = useQuery({
-    queryKey: ['customer-ids-for-branch', dealerName, branch],
+    queryKey: ['customer-ids-for-branch', clientName, branch],
     queryFn: async () => {
       const { data } = await supabase
         .from('customers')
         .select('id')
-        .eq('client_name', dealerName)
+        .eq('client_name', clientName)
         .eq('branch', branch || '');
       return (data ?? []).map(c => c.id as string);
     },
-    enabled: open && !!dealerName,
+    enabled: open && !!clientName,
     staleTime: 300000,
   });
 
@@ -79,7 +79,7 @@ export function LedgerDrawer({ open, onClose, customerId, dealerName, branch }: 
     try {
       const rows = ledger.map(r => ({
         date: r.date,
-        clientName: dealerName,
+        clientName: clientName,
         branch: branch || '',
         type: r.debit != null ? 'sale' : 'payment',
         sku: r.sku,
@@ -87,14 +87,14 @@ export function LedgerDrawer({ open, onClose, customerId, dealerName, branch }: 
         amount: r.debit ?? r.credit ?? 0,
         description: r.particulars,
       }));
-      const safeName = dealerName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeName = clientName.replace(/[^a-zA-Z0-9_-]/g, '_');
       const safeBranch = (branch || '').replace(/[^a-zA-Z0-9_-]/g, '_');
       const exportDate = new Date().toISOString().split('T')[0];
-      const groupKey = `${dealerName}|||${branch || ''}`;
+      const groupKey = `${clientName}|||${branch || ''}`;
       await exportLedger(
         rows,
         `${safeName}${safeBranch ? `_${safeBranch}` : ''}_${exportDate}.xlsx`,
-        `Client Ledger — ${dealerName}${branch ? ` (${branch})` : ''} | ${dateFrom} to ${dateTo}`,
+        `Client Ledger — ${clientName}${branch ? ` (${branch})` : ''} | ${dateFrom} to ${dateTo}`,
         { [groupKey]: openingBalance },
       );
     } finally {
@@ -109,7 +109,7 @@ export function LedgerDrawer({ open, onClose, customerId, dealerName, branch }: 
         <SheetHeader className="px-6 py-4 border-b bg-card flex-shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <SheetTitle className="text-base font-semibold leading-tight">{dealerName}</SheetTitle>
+              <SheetTitle className="text-base font-semibold leading-tight">{clientName}</SheetTitle>
               {branch && <p className="text-sm text-muted-foreground mt-0.5">{branch}</p>}
             </div>
             <Button

@@ -317,7 +317,7 @@ export const PaymentReminderSchedules: React.FC = () => {
           (sum: number, r: { newlySent?: number }) => sum + (r.newlySent ?? 0), 0
         );
         const totalSchedules = data?.scheduleCount ?? 0;
-        const noWhatsapp: string[] = data?.noWhatsappDealers ?? [];
+        const noWhatsapp: string[] = data?.noWhatsappClients ?? [];
         const lines: string[] = [];
         if (totalSchedules === 0) lines.push('No enabled schedules found.');
         else lines.push(`${totalSent} reminder(s) sent across ${totalSchedules} schedule(s).`);

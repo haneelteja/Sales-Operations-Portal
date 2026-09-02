@@ -32,7 +32,7 @@ export interface InvoiceData {
   companyPhone: string;
   companyEmail: string;
   companyGSTIN?: string;
-  dealerName: string;
+  clientName: string;
   area: string | null;
   clientAddress?: string;
   clientPhone?: string;
@@ -328,7 +328,7 @@ export function prepareInvoiceData(
     companyPhone: companyConfig.phone,
     companyEmail: companyConfig.email,
     companyGSTIN: companyConfig.gstin,
-    dealerName: transaction.customers?.client_name || customer.client_name,
+    clientName: transaction.customers?.client_name || customer.client_name,
     area: transaction.branch || transaction.customers?.branch || customer.branch,
     clientAddress: undefined,
     clientPhone: undefined,
@@ -396,7 +396,7 @@ export function prepareMultiInvoiceData(
     companyPhone: companyConfig.phone,
     companyEmail: companyConfig.email,
     companyGSTIN: companyConfig.gstin,
-    dealerName: transactions[0].customers?.client_name || customer.client_name,
+    clientName: transactions[0].customers?.client_name || customer.client_name,
     area: transactions[0].branch || transactions[0].customers?.branch || customer.branch,
     clientAddress: undefined,
     clientPhone: undefined,

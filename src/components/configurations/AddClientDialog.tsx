@@ -55,7 +55,7 @@ export interface SkuPricingRow {
   price_per_case: number;
 }
 
-interface AddDealerDialogProps {
+interface AddClientDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
@@ -89,11 +89,11 @@ async function fetchDistinctClientNames(): Promise<string[]> {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
-async function fetchBranchesForClient(dealerName: string): Promise<string[]> {
+async function fetchBranchesForClient(clientName: string): Promise<string[]> {
   const { data, error } = await supabase
     .from("customers")
     .select("branch")
-    .eq("client_name", dealerName)
+    .eq("client_name", clientName)
     .eq("is_active", true);
   if (error) throw new Error(handleSupabaseError(error));
   const set = new Set<string>();
@@ -104,11 +104,11 @@ async function fetchBranchesForClient(dealerName: string): Promise<string[]> {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
-async function fetchRowsForPair(dealerName: string, area: string): Promise<Customer[]> {
+async function fetchRowsForPair(clientName: string, area: string): Promise<Customer[]> {
   const { data, error } = await supabase
     .from("customers")
     .select("sku, price_per_bottle, price_per_case, gst_number, whatsapp_number, bottles_per_case, created_at, pricing_date, mrp_per_bottle")
-    .eq("client_name", dealerName)
+    .eq("client_name", clientName)
     .eq("branch", area)
     .eq("is_active", true)
     .order("pricing_date", { ascending: false })
@@ -136,12 +136,12 @@ function latestRowPerSku(rows: Customer[]): Map<string, Customer> {
 }
 
 async function fetchSampleContactForClient(
-  dealerName: string
+  clientName: string
 ): Promise<{ gst_number: string | null; whatsapp_number: string | null; mrp_per_bottle: number | null } | null> {
   const { data, error } = await supabase
     .from("customers")
     .select("gst_number, whatsapp_number, mrp_per_bottle")
-    .eq("client_name", dealerName)
+    .eq("client_name", clientName)
     .eq("is_active", true)
     .order("pricing_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -161,7 +161,7 @@ const getInitialRow = (): SkuPricingRow => ({
   price_per_case: 0,
 });
 
-export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
+export const AddClientDialog: React.FC<AddClientDialogProps> = ({
   open,
   onOpenChange,
   onSuccess,
@@ -175,7 +175,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [isExistingClient, setIsExistingClient] = useState(false);
   const [selectedExistingClient, setSelectedExistingClient] = useState("");
-  const [dealerNameInput, setDealerNameInput] = useState("");
+  const [clientNameInput, setClientNameInput] = useState("");
   const [isExistingBranch, setIsExistingBranch] = useState(false);
   const [selectedExistingBranch, setSelectedExistingBranch] = useState("");
   const [branchInput, setBranchInput] = useState("");
@@ -302,7 +302,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setDate(new Date().toISOString().split("T")[0]);
     setIsExistingClient(false);
     setSelectedExistingClient("");
-    setDealerNameInput("");
+    setClientNameInput("");
     setIsExistingBranch(false);
     setSelectedExistingBranch("");
     setBranchInput("");
@@ -386,7 +386,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     setWhatsappNumber(one?.whatsapp_number ?? sampleContact?.whatsapp_number ?? "");
   }, [open, pairKey, rowsForPair, pairRowsLoading, skuOptions, sampleContact, updateRowPricePerCase]);
 
-  const resolvedDealerName = isExistingClient ? selectedExistingClient.trim() : dealerNameInput.trim();
+  const resolvedClientName = isExistingClient ? selectedExistingClient.trim() : clientNameInput.trim();
   const resolvedArea =
     isExistingClient && isExistingBranch
       ? selectedExistingBranch.trim()
@@ -401,7 +401,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
     if (isExistingClient) {
       if (!selectedExistingClient.trim()) errors.client_name = "Select a client";
     } else {
-      if (!dealerNameInput?.trim()) errors.client_name = "Client name is required";
+      if (!clientNameInput?.trim()) errors.client_name = "Client name is required";
     }
 
     if (isExistingClient && isExistingBranch) {
@@ -436,17 +436,14 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
 
   const priceChangedOrNew = (sku: string, pricePerBottleStr: string, mrpStr: string): boolean => {
     const skuKey = sku.trim();
-    // New pricing date for this SKU → always allow insert
     const dateAlreadyExists = rowsForPair.some(
       (r) => r.sku?.trim() === skuKey && r.pricing_date === date
     );
     if (!dateAlreadyExists) return true;
     const prev = initialPricesBySkuRef.current[skuKey];
     if (prev === undefined) return true;
-    // Price changed?
     const cur = parseFloat(pricePerBottleStr);
     if (!Number.isNaN(cur) && Math.abs(cur - prev.price) > 1e-4) return true;
-    // MRP changed?
     const curMrp = mrpStr.trim() ? parseFloat(mrpStr) : null;
     const prevMrp = prev.mrp;
     if (curMrp !== prevMrp) {
@@ -484,7 +481,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
       if (rowsToInsert.length === 0) throw new Error("Add at least one SKU pricing row with valid values.");
 
       const inserts = rowsToInsert.map((row) => ({
-        client_name: resolvedDealerName,
+        client_name: resolvedClientName,
         branch: resolvedArea,
         pricing_date: date,
         gst_number: gst || null,
@@ -494,12 +491,10 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         bottles_per_case: row.bottles_per_case,
         mrp_per_bottle: row.mrp_per_bottle.trim() ? parseFloat(row.mrp_per_bottle) : null,
       }));
-      // Insert pricing rows in parallel; on unique conflict (same date+SKU), update price fields
       await Promise.all(inserts.map(async (row) => {
         const { error: insertErr } = await supabase.from("customers").insert(row);
         if (insertErr) {
           if (insertErr.code === "23505") {
-            // Try exact-date match first (works when 4-column constraint is active)
             const { data: exactUpdated, error: updateErr } = await supabase
               .from("customers")
               .update({
@@ -514,7 +509,6 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               .select("id");
             if (updateErr) throw new Error(handleSupabaseError(updateErr));
             if (!exactUpdated || exactUpdated.length === 0) {
-              // Old 3-column constraint still active — update any existing row for this client/branch/SKU
               const { error: fallbackErr } = await supabase
                 .from("customers")
                 .update({
@@ -534,38 +528,35 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
         }
       }));
 
-      // Sync GST / WhatsApp across all existing rows for this client+branch (MRP is per-SKU, not synced globally)
       const { error: syncErr } = await supabase
         .from("customers")
         .update({ gst_number: gst || null, whatsapp_number: wa || null })
-        .eq("client_name", resolvedDealerName)
+        .eq("client_name", resolvedClientName)
         .eq("branch", resolvedArea);
       if (syncErr) throw new Error(handleSupabaseError(syncErr));
 
-      // If back label is enabled, insert a history entry only when not already active
       if (requiresBackLabel) {
         const { data: latest } = await supabase
           .from("customer_back_label_history")
           .select("requires_back_label")
-          .eq("client_name", resolvedDealerName)
+          .eq("client_name", resolvedClientName)
           .order("effective_from", { ascending: false })
           .limit(1)
           .maybeSingle();
         if (!latest || !latest.requires_back_label) {
           const { error: histErr } = await supabase
             .from("customer_back_label_history")
-            .insert({ client_name: resolvedDealerName, requires_back_label: true, effective_from: date });
+            .insert({ client_name: resolvedClientName, requires_back_label: true, effective_from: date });
           if (histErr) throw new Error(handleSupabaseError(histErr));
         }
       }
 
-      // Upsert sales officer mapping if an officer is selected
       if (salesOfficerId) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: officerErr } = await (supabase as any)
           .from('customer_sales_officer')
           .upsert(
-            { client_name: resolvedDealerName, branch: resolvedArea, officer_id: salesOfficerId },
+            { client_name: resolvedClientName, branch: resolvedArea, officer_id: salesOfficerId },
             { onConflict: 'client_name,branch' }
           );
         if (officerErr) throw new Error(handleSupabaseError(officerErr));
@@ -625,7 +616,7 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
                 onCheckedChange={(v) => {
                   setIsExistingClient(v);
                   setSelectedExistingClient("");
-                  setDealerNameInput("");
+                  setClientNameInput("");
                   setIsExistingBranch(false);
                   setSelectedExistingBranch("");
                   setBranchInput("");
@@ -659,9 +650,9 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="dealer-date">Pricing date *</Label>
+              <Label htmlFor="client-date">Pricing date *</Label>
               <Input
-                id="dealer-date"
+                id="client-date"
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
@@ -690,11 +681,11 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="dealer-name">Client name *</Label>
+                <Label htmlFor="client-name">Client name *</Label>
                 <Input
-                  id="dealer-name"
-                  value={dealerNameInput}
-                  onChange={(e) => setDealerNameInput(e.target.value)}
+                  id="client-name"
+                  value={clientNameInput}
+                  onChange={(e) => setClientNameInput(e.target.value)}
                   placeholder="Client name"
                 />
                 {fieldErrors.client_name && <p className="text-sm text-destructive">{fieldErrors.client_name}</p>}
@@ -715,9 +706,9 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="dealer-area">Branch *</Label>
+                <Label htmlFor="client-area">Branch *</Label>
                 <Input
-                  id="dealer-area"
+                  id="client-area"
                   value={branchInput}
                   onChange={(e) => setBranchInput(e.target.value)}
                   placeholder="Branch"
@@ -727,9 +718,9 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="dealer-gst">GST Number</Label>
+              <Label htmlFor="client-gst">GST Number</Label>
               <Input
-                id="dealer-gst"
+                id="client-gst"
                 value={gstNumber}
                 onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
                 placeholder="e.g. 22AAAAA0000A1Z5"
@@ -738,9 +729,9 @@ export const AddDealerDialog: React.FC<AddDealerDialogProps> = ({
               {fieldErrors.gst_number && <p className="text-sm text-destructive">{fieldErrors.gst_number}</p>}
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="dealer-whatsapp">WhatsApp Number *</Label>
+              <Label htmlFor="client-whatsapp">WhatsApp Number *</Label>
               <Input
-                id="dealer-whatsapp"
+                id="client-whatsapp"
                 type="tel"
                 value={whatsappNumber}
                 onChange={(e) => setWhatsappNumber(e.target.value)}

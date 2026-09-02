@@ -130,9 +130,9 @@ const LabelPurchases = () => {
     if (!clientId || !customers) return skuConfigs ?? [];
     const selected = customers.find(c => c.id === clientId);
     if (!selected) return [];
-    const dealerName = selected.client_name.trim().toLowerCase();
+    const clientName = selected.client_name.trim().toLowerCase();
     const skus = customers
-      .filter(c => c.client_name.trim().toLowerCase() === dealerName && c.sku)
+      .filter(c => c.client_name.trim().toLowerCase() === clientName && c.sku)
       .map(c => c.sku as string);
     return [...new Set(skus)].sort();
   }, [customers, skuConfigs]);

@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 export interface RawRow {
   key: string;
   customerId: string;
-  dealerName: string;
+  clientName: string;
   branch: string;
   outstanding: number;
   lastPaymentDate: string | null;
@@ -42,7 +42,7 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('client_followups')
-      .select('dealer_name, branch, comments, next_followup_date')
+      .select('client_name, branch, comments, next_followup_date')
       .order('updated_at', { ascending: true })
       .limit(10000),
   ]);
@@ -51,7 +51,7 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
 
   const summaryRows = (summaryResult.data ?? []) as SummaryRow[];
   const followups = (followupResult.data ?? []) as Array<{
-    dealer_name: string;
+    client_name: string;
     branch: string;
     comments: string | null;
     next_followup_date: string | null;
@@ -59,7 +59,7 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
 
   const followupMap = new Map<string, { comments: string; nextFollowupDate: string }>();
   for (const f of followups) {
-    followupMap.set(`${f.dealer_name.toLowerCase()}|||${f.branch.toLowerCase()}`, {
+    followupMap.set(`${f.client_name.toLowerCase()}|||${f.branch.toLowerCase()}`, {
       comments: f.comments ?? '',
       nextFollowupDate: f.next_followup_date ?? '',
     });
@@ -121,7 +121,7 @@ export async function fetchReceivablesTracking(): Promise<FetchResult> {
     rows.push({
       key,
       customerId: r.customer_id,
-      dealerName: r.client_name,
+      clientName: r.client_name,
       branch: r.branch,
       outstanding,
       lastPaymentDate: lastPmtDate,

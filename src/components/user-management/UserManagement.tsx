@@ -37,7 +37,7 @@ interface UserManagementRecord {
 interface UserForm {
   username: string;
   email: string;
-  associated_dealer_areas: string[]; // Changed to client-area combinations
+  associated_client_areas: string[]; // Changed to client-area combinations
   role: 'admin' | 'manager';
 }
 
@@ -47,7 +47,7 @@ const UserManagement = () => {
   const [userForm, setUserForm] = useState<UserForm>({
     username: '',
     email: '',
-    associated_dealer_areas: [],
+    associated_client_areas: [],
     role: 'manager'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -335,7 +335,7 @@ const UserManagement = () => {
       setUserForm({
         username: '',
         email: '',
-        associated_dealer_areas: [],
+        associated_client_areas: [],
         role: 'manager'
       });
       clearSavedData();
@@ -539,13 +539,13 @@ const UserManagement = () => {
       username, 
       email, 
       role, 
-      associated_dealer_areas 
+      associated_client_areas 
     }: { 
       userId: string; 
       username: string; 
       email: string; 
       role: string; 
-      associated_dealer_areas: string[] 
+      associated_client_areas: string[] 
     }) => {
       let associatedClients: string[];
       let associatedBranches: string[];
@@ -634,7 +634,7 @@ const UserManagement = () => {
           username: userForm.username,
           email: userForm.email,
           role: userForm.role,
-          associated_dealer_areas: userForm.associated_dealer_areas
+          associated_client_areas: userForm.associated_client_areas
         });
         setEditingUserId(null);
       } else {
@@ -645,7 +645,7 @@ const UserManagement = () => {
       setUserForm({
         username: '',
         email: '',
-        associated_dealer_areas: [],
+        associated_client_areas: [],
         role: 'manager'
       });
       clearSavedData(); // Clear auto-saved data after successful submission
@@ -662,27 +662,27 @@ const UserManagement = () => {
   const handleClientBranchToggle = (clientBranch: string) => {
     setUserForm(prev => ({
       ...prev,
-      associated_dealer_areas: prev.associated_dealer_areas.includes(clientBranch)
-        ? prev.associated_dealer_areas.filter(cb => cb !== clientBranch)
-        : [...prev.associated_dealer_areas, clientBranch]
+      associated_client_areas: prev.associated_client_areas.includes(clientBranch)
+        ? prev.associated_client_areas.filter(cb => cb !== clientBranch)
+        : [...prev.associated_client_areas, clientBranch]
     }));
   };
 
   const handleSelectAllFiltered = () => {
-    const filteredCombinations = getFilteredDealerAreas();
-    const newSelections = [...new Set([...userForm.associated_dealer_areas, ...filteredCombinations])];
+    const filteredCombinations = getFilteredClientAreas();
+    const newSelections = [...new Set([...userForm.associated_client_areas, ...filteredCombinations])];
     setUserForm(prev => ({
       ...prev,
-      associated_dealer_areas: newSelections
+      associated_client_areas: newSelections
     }));
   };
 
   const handleDeselectAllFiltered = () => {
-    const filteredCombinations = getFilteredDealerAreas();
-    const newSelections = userForm.associated_dealer_areas.filter(cb => !filteredCombinations.includes(cb));
+    const filteredCombinations = getFilteredClientAreas();
+    const newSelections = userForm.associated_client_areas.filter(cb => !filteredCombinations.includes(cb));
     setUserForm(prev => ({
       ...prev,
-      associated_dealer_areas: newSelections
+      associated_client_areas: newSelections
     }));
   };
 
@@ -878,7 +878,7 @@ const UserManagement = () => {
                 <Select
                   value={userForm.role || 'manager'}
                   onValueChange={(value: 'admin' | 'manager') => {
-                    setUserForm(prev => ({ ...prev, role: value, associated_dealer_areas: [] }));
+                    setUserForm(prev => ({ ...prev, role: value, associated_client_areas: [] }));
                   }}
                   disabled={isSubmitting}
                 >
@@ -939,7 +939,7 @@ const UserManagement = () => {
                     setUserForm({
                       username: '',
                       email: '',
-                      associated_dealer_areas: [],
+                      associated_client_areas: [],
                       role: 'manager'
                     });
                   }}
@@ -1211,7 +1211,7 @@ const UserManagement = () => {
                               setUserForm({
                                 username: user.username,
                                 email: user.email,
-                                associated_dealer_areas: [],
+                                associated_client_areas: [],
                                 role: user.role === 'admin' ? 'admin' : 'manager'
                               });
                               setEditingUserId(user.user_id);

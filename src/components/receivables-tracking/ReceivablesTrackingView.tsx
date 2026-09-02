@@ -41,7 +41,7 @@ export default function ReceivablesTrackingView() {
   const [showAllActive, setShowAllActive] = useState(false);
   const [activeNotes, setActiveNotes] = useState<{
     customerId: string;
-    dealerName: string;
+    clientName: string;
     branch: string;
     outstanding: number;
     key: string;
@@ -49,7 +49,7 @@ export default function ReceivablesTrackingView() {
 
   const [activeLedger, setActiveLedger] = useState<{
     customerId: string;
-    dealerName: string;
+    clientName: string;
     branch: string;
     outstanding: number;
   } | null>(null);
@@ -137,12 +137,12 @@ export default function ReceivablesTrackingView() {
   const { toast } = useToast();
 
   const clearFollowupDateMutation = useMutation({
-    mutationFn: async ({ dealerName, branch }: { dealerName: string; branch: string }) => {
+    mutationFn: async ({ clientName, branch }: { clientName: string; branch: string }) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
         .from('client_followups')
         .update({ next_followup_date: null, updated_at: new Date().toISOString() })
-        .ilike('dealer_name', dealerName)
+        .ilike('client_name', clientName)
         .ilike('branch', branch);
       if (error) throw error;
     },
@@ -181,7 +181,7 @@ export default function ReceivablesTrackingView() {
     if (filterClient.trim()) {
       const q = filterClient.toLowerCase();
       rows = rows.filter(r =>
-        r.dealerName.toLowerCase().includes(q) ||
+        r.clientName.toLowerCase().includes(q) ||
         r.branch.toLowerCase().includes(q) ||
         r.comments.toLowerCase().includes(q)
       );
@@ -229,7 +229,7 @@ export default function ReceivablesTrackingView() {
     return [...rows].sort((a, b) => {
       let cmp = 0;
       switch (sortCol) {
-        case 'name': cmp = a.dealerName.localeCompare(b.dealerName); break;
+        case 'name': cmp = a.clientName.localeCompare(b.clientName); break;
         case 'outstanding': cmp = a.outstanding - b.outstanding; break;
         case 'followup':
           if (!a.nextFollowupDate && !b.nextFollowupDate) { cmp = 0; break; }
@@ -316,7 +316,7 @@ export default function ReceivablesTrackingView() {
 
     for (const row of displayRows) {
       const dataRow = ws.addRow([
-        row.dealerName,
+        row.clientName,
         row.branch,
         row.outstanding,
         row.comments || '',
@@ -580,7 +580,7 @@ export default function ReceivablesTrackingView() {
                 >
                   {/* Client Branch */}
                   <td className="px-4 py-3 align-top">
-                    <div className="font-medium leading-tight">{row.dealerName}</div>
+                    <div className="font-medium leading-tight">{row.clientName}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">{row.branch}</div>
                     {row.isOverdue && (
                       <Badge variant="destructive" className="mt-1.5 text-xs">
@@ -617,7 +617,7 @@ export default function ReceivablesTrackingView() {
                           <button
                             type="button"
                             title="Remove follow-up date"
-                            onClick={() => clearFollowupDateMutation.mutate({ dealerName: row.dealerName, branch: row.branch })}
+                            onClick={() => clearFollowupDateMutation.mutate({ clientName: row.clientName, branch: row.branch })}
                             disabled={clearFollowupDateMutation.isPending}
                             className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-500 p-0.5 rounded"
                           >
@@ -669,7 +669,7 @@ export default function ReceivablesTrackingView() {
                       onClick={() =>
                         setActiveNotes({
                           customerId: row.customerId,
-                          dealerName: row.dealerName,
+                          clientName: row.clientName,
                           branch: row.branch,
                           outstanding: row.outstanding,
                           key: row.key,
@@ -690,7 +690,7 @@ export default function ReceivablesTrackingView() {
                       onClick={() =>
                         setActiveLedger({
                           customerId: row.customerId,
-                          dealerName: row.dealerName,
+                          clientName: row.clientName,
                           branch: row.branch,
                           outstanding: row.outstanding,
                         })
@@ -718,7 +718,7 @@ export default function ReceivablesTrackingView() {
           open={!!activeNotes}
           onClose={() => setActiveNotes(null)}
           customerId={activeNotes.customerId}
-          dealerName={activeNotes.dealerName}
+          clientName={activeNotes.clientName}
           branch={activeNotes.branch}
           outstanding={activeNotes.outstanding}
           currentFollowupDate={activeRow?.nextFollowupDate ?? ''}
@@ -731,7 +731,7 @@ export default function ReceivablesTrackingView() {
           open={!!activeLedger}
           onClose={() => setActiveLedger(null)}
           customerId={activeLedger.customerId}
-          dealerName={activeLedger.dealerName}
+          clientName={activeLedger.clientName}
           branch={activeLedger.branch}
           outstanding={activeLedger.outstanding}
         />

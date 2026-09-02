@@ -75,8 +75,8 @@ export async function generateWordDocument(
       companyGSTIN: data.companyGSTIN || '',
 
       // Client details — template uses {clientName} and {branch}
-      dealerName: data.dealerName ?? '',
-      clientName: data.dealerName ?? '',
+      clientName: data.clientName ?? '',
+      clientName: data.clientName ?? '',
       area: data.area ?? '',
       branch: data.area ?? '',
       clientAddress: data.clientAddress || '',
@@ -203,8 +203,8 @@ function replaceTemplatePlaceholders(template: string, data: InvoiceData): strin
     companyName: escHtml(data.companyName ?? ''),
     // escape first, then convert newlines to <br> — order matters
     companyAddress: escHtml(data.companyAddress ?? '').replace(/\n/g, '<br>'),
-    dealerName: escHtml(data.dealerName ?? ''),
-    clientName: escHtml(data.dealerName ?? ''),
+    clientName: escHtml(data.clientName ?? ''),
+    clientName: escHtml(data.clientName ?? ''),
     area: escHtml(data.area ?? ''),
     branch: escHtml(data.area ?? ''),
     invoiceNumber: escHtml(data.invoiceNumber ?? ''),

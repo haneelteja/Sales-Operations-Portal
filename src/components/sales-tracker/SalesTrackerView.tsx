@@ -252,7 +252,7 @@ export default function SalesTrackerView() {
   const customerIdToOfficer = useMemo(() => {
     const result = new Map<string, string>();
     for (const r of (receivablesData?.rows ?? [])) {
-      const k = `${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`;
+      const k = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
       const oid = mappingByKey.get(k);
       if (oid) result.set(r.customerId, oid);
     }
@@ -262,7 +262,7 @@ export default function SalesTrackerView() {
   const allMappedCustomerIds = useMemo(() => {
     const ids: string[] = [];
     for (const r of (receivablesData?.rows ?? [])) {
-      if (mappingByKey.has(`${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`)) ids.push(r.customerId);
+      if (mappingByKey.has(`${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`)) ids.push(r.customerId);
     }
     return ids;
   }, [receivablesData, mappingByKey]);
@@ -280,7 +280,7 @@ export default function SalesTrackerView() {
   const officerRows = useMemo(() => {
     if (!selectedOfficerId) return [];
     return (receivablesData?.rows ?? []).filter(r =>
-      officerClientKeys.has(`${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`),
+      officerClientKeys.has(`${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`),
     );
   }, [receivablesData, officerClientKeys, selectedOfficerId]);
 
@@ -356,7 +356,7 @@ export default function SalesTrackerView() {
   const teamStats = useMemo(() => {
     let totalOutstanding = 0; let overdueClients = 0; let casesThisMonth = 0;
     for (const r of (receivablesData?.rows ?? [])) {
-      const k = `${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`;
+      const k = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
       if (!mappingByKey.has(k)) continue;
       totalOutstanding += r.outstanding;
       if (!r.lastPaymentDate || (Date.now() - new Date(r.lastPaymentDate).getTime()) / 86400000 > 60) overdueClients += 1;
@@ -372,7 +372,7 @@ export default function SalesTrackerView() {
     for (const o of officers) sm[o.id] = { clients: 0, outstanding: 0, overdue: 0, casesThisMonth: 0 };
     for (const m of allMappings) { if (sm[m.officer_id]) sm[m.officer_id].clients += 1; }
     for (const r of (receivablesData?.rows ?? [])) {
-      const k = `${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`;
+      const k = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
       const oid = mappingByKey.get(k);
       if (!oid || !sm[oid]) continue;
       sm[oid].outstanding += r.outstanding;
@@ -393,11 +393,11 @@ export default function SalesTrackerView() {
     activeOfficerIds === null ? officers : officers.filter(o => activeOfficerIds.has(o.id)),
   [officers, activeOfficerIds]);
 
-  // Client detail lookup for tooltips: monthLabel → officerId → [{dealerName, branch}]
+  // Client detail lookup for tooltips: monthLabel → officerId → [{clientName, branch}]
   // Uses first_sale_date from the RPC (first dispatch date per client, not bulk-insert date).
   const newClientsDetailByLabel = useMemo(() => {
     const keys = buildMonthKeys(chartPeriod, customStartDate, customEndDate);
-    const result = new Map<string, Map<string, Array<{ dealerName: string; branch: string }>>>();
+    const result = new Map<string, Map<string, Array<{ clientName: string; branch: string }>>>();
     for (const k of keys) result.set(monthLabel(k), new Map());
     for (const m of allClientFirstSales) {
       if (!m.first_sale_date) continue;
@@ -406,19 +406,19 @@ export default function SalesTrackerView() {
       if (activeOfficerIds !== null && !activeOfficerIds.has(m.officer_id)) continue;
       const om = result.get(lbl)!;
       if (!om.has(m.officer_id)) om.set(m.officer_id, []);
-      om.get(m.officer_id)!.push({ dealerName: m.client_name, branch: m.branch ?? '' });
+      om.get(m.officer_id)!.push({ clientName: m.client_name, branch: m.branch ?? '' });
     }
     return result;
   }, [allClientFirstSales, chartPeriod, customStartDate, customEndDate, activeOfficerIds]);
 
-  // Client detail lookup for outstanding tooltip: officerId → [{dealerName, branch, outstanding}]
+  // Client detail lookup for outstanding tooltip: officerId → [{clientName, branch, outstanding}]
   const officerClientsDetail = useMemo(() => {
-    const result = new Map<string, Array<{ dealerName: string; branch: string; outstanding: number }>>();
+    const result = new Map<string, Array<{ clientName: string; branch: string; outstanding: number }>>();
     for (const o of officers) result.set(o.id, []);
     for (const r of (receivablesData?.rows ?? [])) {
-      const k = `${r.dealerName.toLowerCase()}|||${r.branch.toLowerCase()}`;
+      const k = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
       const oid = mappingByKey.get(k);
-      if (oid && result.has(oid)) result.get(oid)!.push({ dealerName: r.dealerName, branch: r.branch, outstanding: r.outstanding });
+      if (oid && result.has(oid)) result.get(oid)!.push({ clientName: r.clientName, branch: r.branch, outstanding: r.outstanding });
     }
     for (const [, clients] of result) clients.sort((a, b) => b.outstanding - a.outstanding);
     return result;
@@ -471,7 +471,7 @@ export default function SalesTrackerView() {
         const monthKey = dateKey.substring(0, 7);
         const [y, mo] = monthKey.split('-').map(Number);
         return {
-          dealerName: m.client_name,
+          clientName: m.client_name,
           branch: m.branch ?? '',
           officerName,
           officerId: m.officer_id,
@@ -858,7 +858,7 @@ export default function SalesTrackerView() {
                                       <div key={ci} className="flex items-start gap-1.5 pl-3.5 mb-0.5">
                                         <span className="text-slate-300 mt-px">•</span>
                                         <span className="text-slate-500 leading-tight">
-                                          {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                          {c.clientName}{c.branch ? ` · ${c.branch}` : ''}
                                         </span>
                                       </div>
                                     ))}
@@ -924,7 +924,7 @@ export default function SalesTrackerView() {
                                               <div key={ci} style={{ display: 'flex', alignItems: 'flex-start', gap: '3px', paddingLeft: '10px', marginBottom: '1px' }}>
                                                 <span style={{ color: '#cbd5e1', lineHeight: 1.4, flexShrink: 0 }}>·</span>
                                                 <span style={{ color: '#64748b', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px' }}>
-                                                  {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                                  {c.clientName}{c.branch ? ` · ${c.branch}` : ''}
                                                 </span>
                                               </div>
                                             ))}
@@ -984,7 +984,7 @@ export default function SalesTrackerView() {
                                       <div key={ci} className="flex items-start gap-1.5 pl-3.5 mb-0.5">
                                         <span className="text-slate-300 mt-px">•</span>
                                         <span className="text-slate-500 leading-tight">
-                                          {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                          {c.clientName}{c.branch ? ` · ${c.branch}` : ''}
                                         </span>
                                       </div>
                                     ))}
@@ -1048,7 +1048,7 @@ export default function SalesTrackerView() {
                                     <div key={ci} className="flex items-start gap-1.5">
                                       <span className="text-slate-300 mt-px">•</span>
                                       <span className="text-slate-500 flex-1 leading-tight">
-                                        {c.dealerName}{c.branch ? ` · ${c.branch}` : ''}
+                                        {c.clientName}{c.branch ? ` · ${c.branch}` : ''}
                                       </span>
                                       {c.outstanding > 0 && (
                                         <span className="font-semibold text-slate-700 ml-2 whitespace-nowrap">{fmtINR(c.outstanding)}</span>
@@ -1208,9 +1208,9 @@ export default function SalesTrackerView() {
                                         const globalOfficerIdx = officers.findIndex(o => o.id === row.officerId);
                                         const officerColor = globalOfficerIdx >= 0 ? OFFICER_COLORS[globalOfficerIdx % OFFICER_COLORS.length] : '#94a3b8';
                                         return (
-                                          <TableRow key={`${monthKey}-${row.dealerName}-${row.branch}-${rowIdx}`}>
+                                          <TableRow key={`${monthKey}-${row.clientName}-${row.branch}-${rowIdx}`}>
                                             <TableCell />
-                                            <TableCell className="font-medium text-sm">{row.dealerName}</TableCell>
+                                            <TableCell className="font-medium text-sm">{row.clientName}</TableCell>
                                             <TableCell className="text-muted-foreground text-sm">{row.branch || '—'}</TableCell>
                                             <TableCell>
                                               {row.officerId ? (
@@ -1374,7 +1374,7 @@ export default function SalesTrackerView() {
                     <TableBody>
                       {[...officerRows].sort((a, b) => b.outstanding - a.outstanding).map(r => (
                         <TableRow key={r.key}>
-                          <TableCell className="font-medium">{r.dealerName}</TableCell>
+                          <TableCell className="font-medium">{r.clientName}</TableCell>
                           <TableCell className="text-muted-foreground text-sm">{r.branch}</TableCell>
                           <TableCell className="text-right font-mono text-sm">{fmtINR(r.outstanding)}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{r.lastPaymentDate ?? '—'}</TableCell>
@@ -1416,7 +1416,7 @@ export default function SalesTrackerView() {
                         const daysSince = r.lastPaymentDate ? Math.round((Date.now() - new Date(r.lastPaymentDate).getTime()) / 86400000) : null;
                         return (
                           <TableRow key={r.key}>
-                            <TableCell className="font-medium">{r.dealerName}</TableCell>
+                            <TableCell className="font-medium">{r.clientName}</TableCell>
                             <TableCell className="text-muted-foreground text-sm">{r.branch}</TableCell>
                             <TableCell className="text-right font-mono text-sm">{fmtINR(r.outstanding)}</TableCell>
                             <TableCell className="text-sm">{r.lastPaymentDate ?? 'Never'}</TableCell>

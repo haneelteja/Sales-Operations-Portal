@@ -186,36 +186,36 @@ serve(async (req) => {
       .limit(10000);
     if (custError) throw new Error(`Failed to fetch customers: ${custError.message}`);
 
-    const idToDealerName = new Map<string, string>(
+    const idToClientName = new Map<string, string>(
       (allCustomers || []).map((c) => [c.id, c.client_name])
     );
 
-    // Best row per dealer for sending (prefer active + has WhatsApp)
-    const dealerInfo = new Map<string, { id: string; dealer_name: string; whatsapp_number: string }>();
+    // Best row per client for sending (prefer active + has WhatsApp)
+    const clientInfo = new Map<string, { id: string; client_name: string; whatsapp_number: string }>();
     for (const c of (allCustomers || [])) {
       if (!c.whatsapp_number) continue;
-      const existing = dealerInfo.get(c.client_name);
+      const existing = clientInfo.get(c.client_name);
       if (!existing || (!existing.is_active && c.is_active)) {
-        dealerInfo.set(c.client_name, { id: c.id, dealer_name: c.client_name, whatsapp_number: c.whatsapp_number });
+        clientInfo.set(c.client_name, { id: c.id, client_name: c.client_name, whatsapp_number: c.whatsapp_number });
       }
     }
 
-    // Aggregate outstanding PER DEALER across all customer_id rows
-    const dealerData = new Map<string, { outstanding: number; oldestSaleDate: string | null; invoiceCount: number }>();
-    const dealersWithOutstanding = new Set<string>();
-    const noWhatsappDealers: string[] = [];
+    // Aggregate outstanding PER CLIENT across all customer_id rows
+    const clientData = new Map<string, { outstanding: number; oldestSaleDate: string | null; invoiceCount: number }>();
+    const clientsWithOutstanding = new Set<string>();
+    const noWhatsappClients: string[] = [];
 
     for (const [customerId] of customerData.entries()) {
-      const name = idToDealerName.get(customerId);
-      if (name) dealersWithOutstanding.add(name);
+      const name = idToClientName.get(customerId);
+      if (name) clientsWithOutstanding.add(name);
     }
 
     for (const [customerId, data] of customerData.entries()) {
-      const name = idToDealerName.get(customerId);
+      const name = idToClientName.get(customerId);
       if (!name) continue;
-      if (!dealerInfo.has(name)) continue;
-      if (!dealerData.has(name)) dealerData.set(name, { outstanding: 0, oldestSaleDate: null, invoiceCount: 0 });
-      const entry = dealerData.get(name)!;
+      if (!clientInfo.has(name)) continue;
+      if (!clientData.has(name)) clientData.set(name, { outstanding: 0, oldestSaleDate: null, invoiceCount: 0 });
+      const entry = clientData.get(name)!;
       entry.outstanding += data.outstanding;
       entry.invoiceCount += data.invoiceCount;
       if (data.oldestSaleDate && (!entry.oldestSaleDate || data.oldestSaleDate < entry.oldestSaleDate)) {
@@ -223,22 +223,22 @@ serve(async (req) => {
       }
     }
 
-    for (const name of dealersWithOutstanding) {
-      if (!dealerInfo.has(name)) noWhatsappDealers.push(name);
+    for (const name of clientsWithOutstanding) {
+      if (!clientInfo.has(name)) noWhatsappClients.push(name);
     }
 
     // Fetch contacts
-    const dealerNamesWithOutstanding = [...dealersWithOutstanding];
+    const clientNamesWithOutstanding = [...clientsWithOutstanding];
     const { data: contactsData } = await supabase
       .from('client_contacts')
       .select('client_name, contact_name, phone, role')
-      .in('client_name', dealerNamesWithOutstanding)
+      .in('client_name', clientNamesWithOutstanding)
       .eq('is_active', true);
 
-    const dealerContacts = new Map<string, Array<{ contact_name: string; phone: string; role: string }>>();
+    const clientContacts = new Map<string, Array<{ contact_name: string; phone: string; role: string }>>();
     for (const c of (contactsData || [])) {
-      if (!dealerContacts.has(c.client_name)) dealerContacts.set(c.client_name, []);
-      dealerContacts.get(c.client_name)!.push({ contact_name: c.contact_name, phone: c.phone, role: c.role });
+      if (!clientContacts.has(c.client_name)) clientContacts.set(c.client_name, []);
+      clientContacts.get(c.client_name)!.push({ contact_name: c.contact_name, phone: c.phone, role: c.role });
     }
 
     const now = new Date();
@@ -283,22 +283,22 @@ serve(async (req) => {
       const minOutstanding = schedule.min_outstanding_amount ?? 0;
       const isRecurring = schedule.is_recurring !== false; // default true
 
-      // Eligible dealers: outstanding > threshold
-      const eligibleDealers = Array.from(dealerData.entries())
+      // Eligible clients: outstanding > threshold
+      const eligibleClients = Array.from(clientData.entries())
         .filter(([, data]) => data.outstanding > 0 && data.outstanding >= minOutstanding)
         .map(([name]) => name);
 
-      if (eligibleDealers.length === 0) {
+      if (eligibleClients.length === 0) {
         results.push({ scheduleId: schedule.id, scheduleName: schedule.name, sent: 0, skipped: 0, reason: 'No eligible customers above threshold' });
         continue;
       }
 
       // Dedup: for recurring, skip customers already sent today for this schedule
-      let dealersToSend = eligibleDealers;
+      let clientsToSend = eligibleClients;
       let dedupSkipped = 0;
       if (!force) {
         const todayStartUTC = `${todayIST}T00:00:00+05:30`; // IST midnight
-        const eligibleIds = eligibleDealers.map((name) => dealerInfo.get(name)!.id);
+        const eligibleIds = eligibleClients.map((name) => clientInfo.get(name)!.id);
         const { data: todayLogs } = await supabase
           .from('payment_reminder_logs')
           .select('customer_id')
@@ -308,8 +308,8 @@ serve(async (req) => {
           .gte('triggered_at', todayStartUTC);
 
         const alreadySentToday = new Set((todayLogs || []).map((l: { customer_id: string }) => l.customer_id));
-        dealersToSend = eligibleDealers.filter((name) => !alreadySentToday.has(dealerInfo.get(name)!.id));
-        dedupSkipped = eligibleDealers.length - dealersToSend.length;
+        clientsToSend = eligibleClients.filter((name) => !alreadySentToday.has(clientInfo.get(name)!.id));
+        dedupSkipped = eligibleClients.length - clientsToSend.length;
       }
 
       let sent = 0;
@@ -317,13 +317,13 @@ serve(async (req) => {
       const sentCustomers: Array<{ name: string; outstanding: string }> = [];
       const failedCustomers: Array<{ name: string; reason: string }> = [];
 
-      for (const dealerName of dealersToSend) {
-        const customer = dealerInfo.get(dealerName)!;
-        const data = dealerData.get(dealerName)!;
+      for (const clientName of clientsToSend) {
+        const customer = clientInfo.get(clientName)!;
+        const data = clientData.get(clientName)!;
         const outstandingFormatted = `₹${data.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
         const placeholders = {
-          customerName: customer.dealer_name,
+          customerName: customer.client_name,
           amount: outstandingFormatted,
           outstandingAmount: outstandingFormatted,
           invoiceCount: data.invoiceCount.toString(),
@@ -336,7 +336,7 @@ serve(async (req) => {
             : '',
         };
 
-        const contacts = dealerContacts.get(dealerName) || [];
+        const contacts = clientContacts.get(clientName) || [];
         const recipients: Array<{ phone?: string; label: string }> =
           contacts.length > 0
             ? contacts.map((c) => ({ phone: c.phone, label: `${c.contact_name} (${c.role})` }))
@@ -372,15 +372,15 @@ serve(async (req) => {
         }
 
         if (status === 'sent') {
-          sentCustomers.push({ name: customer.dealer_name, outstanding: outstandingFormatted });
+          sentCustomers.push({ name: customer.client_name, outstanding: outstandingFormatted });
         } else {
-          failedCustomers.push({ name: customer.dealer_name, reason: failureReason ?? 'Unknown error' });
+          failedCustomers.push({ name: customer.client_name, reason: failureReason ?? 'Unknown error' });
         }
 
         await supabase.from('payment_reminder_logs').insert({
           schedule_id: schedule.id,
           customer_id: customer.id,
-          customer_name: customer.dealer_name,
+          customer_name: customer.client_name,
           outstanding_amount: data.outstanding,
           whatsapp_message_log_id: whatsappLogId,
           status,
@@ -401,7 +401,7 @@ serve(async (req) => {
         scheduleName: schedule.name,
         daysOfWeek: schedule.days_of_week,
         isRecurring,
-        eligible: eligibleDealers.length,
+        eligible: eligibleClients.length,
         alreadySentToday: dedupSkipped,
         newlySent: sent,
         failed,
@@ -497,7 +497,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ triggered: true, force, currentIST, currentDayOfWeek, scheduleCount: matchingSchedules.length, results, noWhatsappDealers }),
+      JSON.stringify({ triggered: true, force, currentIST, currentDayOfWeek, scheduleCount: matchingSchedules.length, results, noWhatsappClients }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

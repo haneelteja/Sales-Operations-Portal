@@ -86,7 +86,7 @@ export const roleSchema = z.enum(['admin', 'manager'], {
 export const userFormSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
-  associated_dealer_areas: z
+  associated_client_areas: z
     .array(z.string().min(1, 'Client / branch entry cannot be empty'))
     .min(0),
   role: roleSchema,
@@ -220,19 +220,19 @@ export const indiaWhatsAppSchema = z
   .transform((val) => (val.startsWith('+') ? val : `+91${val}`));
 
 /** Single SKU pricing row for add-client form */
-export const dealerSkuPricingRowSchema = z.object({
+export const clientSkuPricingRowSchema = z.object({
   sku: z.string().min(1, 'SKU is required'),
   price_per_bottle: rupeeAmountNonNeg('Price per bottle'),
   bottles_per_case: z.number().int().positive().max(10_000, 'Bottles per case cannot exceed 10,000'),
 });
 
 /** Add-client form: main fields + at least one SKU pricing row */
-export const dealerFormSchema = z.object({
+export const clientFormSchema = z.object({
   date: z.string().min(1, 'Date is required').regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date'),
   client_name: z.string().min(1, 'Client name is required').max(200).trim(),
   branch: z.string().min(1, 'Branch is required').max(200).trim(),
   gst_number: gstinSchema,
   whatsapp_number: indiaWhatsAppSchema,
-  sku_rows: z.array(dealerSkuPricingRowSchema).min(1, 'Add at least one SKU pricing row'),
+  sku_rows: z.array(clientSkuPricingRowSchema).min(1, 'Add at least one SKU pricing row'),
 });
-export type DealerFormInput = z.infer<typeof dealerFormSchema>;
+export type ClientFormInput = z.infer<typeof clientFormSchema>;

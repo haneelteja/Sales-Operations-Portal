@@ -96,14 +96,14 @@ export function useSalesFormController({
   findCustomerRecord,
 }: UseSalesFormControllerOptions) {
   const handleCustomerChange = useCallback((customerName: string) => {
-    const dealerCustomers = customers?.filter((customer) =>
+    const clientCustomers = customers?.filter((customer) =>
       normalizeLookupValue(getCustomerName(customer)) === normalizeLookupValue(customerName)
     ) || [];
-    const selectedCustomer = dealerCustomers[0];
-    const branches = [...new Set(dealerCustomers.map((customer) => getCustomerBranch(customer)).filter(Boolean))];
+    const selectedCustomer = clientCustomers[0];
+    const branches = [...new Set(clientCustomers.map((customer) => getCustomerBranch(customer)).filter(Boolean))];
     const autoArea = branches.length === 1 ? branches[0] : '';
     const customerForArea = autoArea
-      ? dealerCustomers.find((customer) =>
+      ? clientCustomers.find((customer) =>
           normalizeLookupValue(getCustomerBranch(customer)) === normalizeLookupValue(autoArea)
         )
       : selectedCustomer;

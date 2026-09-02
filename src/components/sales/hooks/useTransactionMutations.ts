@@ -119,7 +119,7 @@ export function useTransactionMutations({
         const nextFollowupDate = nextDate.toISOString().split('T')[0];
 
         const customer = customers?.find(c => c.id === variables.customer_id);
-        const dealerName = customer?.client_name ?? '';
+        const clientName = customer?.client_name ?? '';
         const branch = variables.area ?? customer?.branch ?? '';
         const noteText = `Payment received: ₹${parseFloat(variables.amount).toLocaleString('en-IN')}`;
 
@@ -133,19 +133,19 @@ export function useTransactionMutations({
               created_by: 'system',
             });
 
-          if (dealerName) {
+          if (clientName) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (supabase as any)
               .from('client_followups')
               .upsert(
                 {
-                  dealer_name: dealerName,
+                  client_name: clientName,
                   branch,
                   comments: noteText,
                   next_followup_date: nextFollowupDate,
                   updated_at: new Date().toISOString(),
                 },
-                { onConflict: 'dealer_name,branch' }
+                { onConflict: 'client_name,branch' }
               );
           }
 

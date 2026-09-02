@@ -15,7 +15,7 @@ export interface FollowupNotesDrawerProps {
   open: boolean;
   onClose: () => void;
   customerId: string;
-  dealerName: string;
+  clientName: string;
   branch: string;
   outstanding: number;
   currentFollowupDate: string;
@@ -25,7 +25,7 @@ export function FollowupNotesDrawer({
   open,
   onClose,
   customerId,
-  dealerName,
+  clientName,
   branch,
   outstanding,
   currentFollowupDate,
@@ -63,13 +63,13 @@ export function FollowupNotesDrawer({
     try {
       await insertFollowupNote(customerId, trimmed, followupDate || null, operatorName);
 
-      // Use ilike so the lookup is case-insensitive — dealer_name in client_followups
-      // may differ in case from what get_receivables_summary returns.
+      // Use ilike so the lookup is case-insensitive — client_name in client_followups
+      // may differ in case from what get_receivables_summary returns (legacy data).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: existingRows } = await (supabase as any)
         .from('client_followups')
         .select('id')
-        .ilike('dealer_name', dealerName)
+        .ilike('client_name', clientName)
         .ilike('branch', branch)
         .limit(1);
 
@@ -80,7 +80,7 @@ export function FollowupNotesDrawer({
         const { error: updateError } = await (supabase as any)
           .from('client_followups')
           .update({
-            dealer_name: dealerName,
+            client_name: clientName,
             branch,
             comments: trimmed,
             next_followup_date: followupDate || null,
@@ -93,7 +93,7 @@ export function FollowupNotesDrawer({
         const { error: insertError } = await (supabase as any)
           .from('client_followups')
           .insert({
-            dealer_name: dealerName,
+            client_name: clientName,
             branch,
             comments: trimmed,
             next_followup_date: followupDate || null,
@@ -130,7 +130,7 @@ export function FollowupNotesDrawer({
       <SheetContent className="w-full sm:max-w-lg flex flex-col">
         <SheetHeader className="pb-4 border-b">
           <SheetTitle className="flex flex-col gap-1">
-            <span className="font-semibold text-base">{dealerName}</span>
+            <span className="font-semibold text-base">{clientName}</span>
             {branch && <span className="text-sm font-normal text-muted-foreground">{branch}</span>}
             <span className="text-sm font-bold text-red-600">
               ₹{outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })} outstanding

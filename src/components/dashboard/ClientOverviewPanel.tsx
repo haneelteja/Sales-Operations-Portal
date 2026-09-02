@@ -232,7 +232,7 @@ export default function ClientOverviewPanel() {
       const { data } = await (supabase as any)
         .from('client_followups')
         .select('next_followup_date, comments')
-        .eq('dealer_name', selectedCustomer.client_name)
+        .eq('client_name', selectedCustomer.client_name)
         .eq('branch', selectedCustomer.branch ?? '')
         .maybeSingle();
       return data as { next_followup_date: string | null; comments: string | null } | null;
@@ -542,7 +542,7 @@ export default function ClientOverviewPanel() {
           </div>
         ) : (
           <div className="space-y-5">
-            {/* Dealer info header */}
+            {/* Client info header */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4 text-muted-foreground" />
@@ -734,7 +734,7 @@ export default function ClientOverviewPanel() {
             open={ledgerOpen}
             onClose={() => setLedgerOpen(false)}
             customerId={selectedCustomer.id}
-            dealerName={selectedCustomer.client_name}
+            clientName={selectedCustomer.client_name}
             branch={selectedCustomer.branch ?? ''}
             outstanding={metrics?.outstanding ?? 0}
           />
@@ -742,7 +742,7 @@ export default function ClientOverviewPanel() {
             open={notesOpen}
             onClose={() => setNotesOpen(false)}
             customerId={selectedCustomer.id}
-            dealerName={selectedCustomer.client_name}
+            clientName={selectedCustomer.client_name}
             branch={selectedCustomer.branch ?? ''}
             outstanding={metrics?.outstanding ?? 0}
             currentFollowupDate={followupDateStr}

@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCacheInvalidation } from "@/hooks/useCacheInvalidation";
 import { supabase, handleSupabaseError } from "@/integrations/supabase/client";
 import type { Customer } from "@/types";
-import { AddDealerDialog } from "./AddDealerDialog";
+import { AddClientDialog } from "./AddClientDialog";
 import { ClientContactsDialog } from "./ClientContactsDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import { exportLedger } from '@/lib/ledgerExport';
 import { logger } from '@/lib/logger';
 
 const ConfigurationManagement = () => {
-  const [dealerDialogState, setDealerDialogState] = useState<{
+  const [clientDialogState, setDealerDialogState] = useState<{
     open: boolean;
     initialClientName?: string;
     initialBranch?: string;
@@ -875,11 +875,11 @@ const ConfigurationManagement = () => {
             </CardContent>
           </Card>
       {/* Add / Edit client dialog */}
-      <AddDealerDialog
-        open={dealerDialogState.open}
+      <AddClientDialog
+        open={clientDialogState.open}
         onOpenChange={(v) => { if (!v) setDealerDialogState({ open: false }); }}
-        initialClientName={dealerDialogState.initialClientName}
-        initialBranch={dealerDialogState.initialBranch}
+        initialClientName={clientDialogState.initialClientName}
+        initialBranch={clientDialogState.initialBranch}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["customers-management"] });
           queryClient.invalidateQueries({ queryKey: ["customers"] });
