@@ -602,7 +602,8 @@ export default function ReceivablesTrackingView() {
               setFilterNotes('');
               setActivityMode('all');
               setBalanceMode('positive');
-            }>
+            }}
+          >
             <X className="h-3.5 w-3.5 mr-1" />
             Clear filters
           </Button>
