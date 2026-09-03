@@ -536,48 +536,61 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
 }
 
 async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promise<CreditRow[]> {
-  // 6-month window gives a stable monthly average (90 days was too short and volatile)
-  const since180 = new Date(Date.now() - 180 * 86400000).toISOString();
-
-  const [{ data: outstanding }, { data: sales }, { data: customers }] = await Promise.all([
+  // Formula: credit limit = avg monthly sales × payment ratio (all-time)
+  // Matches ClientAnalysis in-app table exactly.
+  const [{ data: outstanding }, { data: transactions }, { data: customers }] = await Promise.all([
     supabase.rpc('get_customer_outstanding'),
-    supabase.from('sales_transactions').select('customer_id, amount').eq('transaction_type', 'sale').gte('transaction_date', since180),
+    supabase.from('sales_transactions')
+      .select('customer_id, amount, transaction_type, transaction_date')
+      .in('transaction_type', ['sale', 'payment'])
+      .limit(50000),
     supabase.from('customers').select('id, client_name, branch'),
   ]);
 
-  // Build customer_id → name+branch key (same pattern as fetchPaymentFollowupRows).
-  // This ensures sales on any customer_id for the same client+branch are all counted.
   const custKeyMap = new Map<string, string>();
   for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null }[]) {
     custKeyMap.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
   }
-  const customerMap = new Map((customers ?? []).map((c: { id: string; client_name: string; branch: string | null }) => [c.id, c]));
+  const customerMap = new Map(
+    (customers ?? []).map((c: { id: string; client_name: string; branch: string | null }) => [c.id, c])
+  );
 
-  // Sum sales by name+branch key (last 6 months) across ALL customer_ids for the same client.
-  const salesByKey = new Map<string, number>();
-  for (const s of (sales ?? [])) {
-    const key = custKeyMap.get(s.customer_id);
+  // Accumulate sales, payments, and active months per client+branch
+  const buckets = new Map<string, { totalSales: number; totalPaid: number; monthsSet: Set<string> }>();
+  for (const tx of (transactions ?? []) as { customer_id: string; amount: number | null; transaction_type: string; transaction_date: string | null }[]) {
+    const key = custKeyMap.get(tx.customer_id);
     if (!key) continue;
-    salesByKey.set(key, (salesByKey.get(key) ?? 0) + (s.amount ?? 0));
+    if (!buckets.has(key)) buckets.set(key, { totalSales: 0, totalPaid: 0, monthsSet: new Set() });
+    const b = buckets.get(key)!;
+    const amt = tx.amount ?? 0;
+    if (tx.transaction_type === 'sale') {
+      b.totalSales += amt;
+      if (tx.transaction_date) b.monthsSet.add(tx.transaction_date.substring(0, 7));
+    } else if (tx.transaction_type === 'payment') {
+      b.totalPaid += amt;
+    }
   }
 
-  // get_customer_outstanding returns ONE row per name+branch (deduped), so the loop
-  // below produces at most one credit row per client+branch — no merging needed.
   const rows: CreditRow[] = [];
   for (const r of (outstanding ?? []) as { customer_id: string; outstanding: number }[]) {
     if (r.outstanding <= 0) continue;
     const cust = customerMap.get(r.customer_id) as { client_name: string; branch: string | null } | undefined;
     if (!cust) continue;
     const nameKey = custKeyMap.get(r.customer_id) ?? `${cust.client_name.toLowerCase()}|||${(cust.branch ?? '').toLowerCase()}`;
-    const totalSales6m = salesByKey.get(nameKey) ?? 0;
-    const creditLimit = totalSales6m / 6; // avg monthly over 6 months
-    const usedPct = creditLimit > 0 ? (r.outstanding / creditLimit) * 100 : 999; // no recent sales = over limit
+    const b = buckets.get(nameKey);
+    const totalSales   = b?.totalSales ?? 0;
+    const totalPaid    = b?.totalPaid  ?? 0;
+    const monthsActive = b?.monthsSet.size || 1;
+    const avgMonthly   = totalSales / monthsActive;
+    const paymentRatio = totalSales > 0 ? totalPaid / totalSales : 0;
+    const creditLimit  = avgMonthly * paymentRatio;
+    const usedPct      = creditLimit > 0 ? (r.outstanding / creditLimit) * 100 : 999;
     rows.push({
-      client_name: cust.client_name,
-      branch: cust.branch ?? null,
+      client_name:  cust.client_name,
+      branch:       cust.branch ?? null,
       credit_limit: creditLimit,
-      outstanding: r.outstanding,
-      used_pct: usedPct,
+      outstanding:  r.outstanding,
+      used_pct:     usedPct,
       status: usedPct > 100 ? 'Over Limit' : usedPct >= 75 ? 'Warning' : 'OK',
     });
   }
