@@ -65,43 +65,22 @@ export function FollowupNotesDrawer({
       // Clear immediately so a follow-up error can't trigger a duplicate submission.
       setNote('');
 
-      // Use ilike so the lookup is case-insensitive — client_name in client_followups
-      // may differ in case from what get_receivables_summary returns (legacy data).
+      // Upsert on the unique (client_name, branch) constraint — single atomic
+      // operation that inserts or updates without a separate SELECT round-trip.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: existingRows } = await (supabase as any)
+      const { error: upsertError } = await (supabase as any)
         .from('client_followups')
-        .select('id')
-        .ilike('client_name', clientName)
-        .ilike('branch', branch)
-        .limit(1);
-
-      const existingId = existingRows?.[0]?.id as string | undefined;
-
-      if (existingId) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: updateError } = await (supabase as any)
-          .from('client_followups')
-          .update({
+        .upsert(
+          {
             client_name: clientName,
             branch,
             comments: trimmed,
             next_followup_date: followupDate || null,
             updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingId);
-        if (updateError) throw updateError;
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: insertError } = await (supabase as any)
-          .from('client_followups')
-          .insert({
-            client_name: clientName,
-            branch,
-            comments: trimmed,
-            next_followup_date: followupDate || null,
-          });
-        if (insertError) throw insertError;
-      }
+          },
+          { onConflict: 'client_name,branch' }
+        );
+      if (upsertError) throw upsertError;
 
       queryClient.invalidateQueries({ queryKey: ['followup-notes', customerId] });
       queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });
