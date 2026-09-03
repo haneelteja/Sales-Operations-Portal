@@ -79,6 +79,18 @@ export default function ReceivablesTrackingView() {
     staleTime: 30000,
   });
 
+  // All customers (for building pair key → last sale date map)
+  const { data: allCustomers = [] } = useQuery({
+    queryKey: ['all-customers-id-pair'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('customers')
+        .select('id, client_name, branch');
+      return (data ?? []) as Array<{ id: string; client_name: string; branch: string | null }>;
+    },
+    staleTime: 5 * 60_000,
+  });
+
   const { data: lastSaleDates = [] } = useQuery({
     queryKey: ['last-sale-dates'],
     queryFn: async () => {
@@ -92,14 +104,26 @@ export default function ReceivablesTrackingView() {
     staleTime: 60_000,
   });
 
-  const lastSaleDateMap = useMemo(() => {
+  // customer_id → "clientname|||branch" key (lowercased, matches r.clientName/r.branch)
+  const customerIdToPairKey = useMemo(() => {
     const map = new Map<string, string>();
-    for (const tx of lastSaleDates) {
-      const cur = map.get(tx.customer_id);
-      if (!cur || tx.transaction_date > cur) map.set(tx.customer_id, tx.transaction_date);
+    for (const c of allCustomers) {
+      map.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
     }
     return map;
-  }, [lastSaleDates]);
+  }, [allCustomers]);
+
+  // "clientname|||branch" → max sale date across ALL customer_ids for that pair
+  const lastSaleDateByPair = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const tx of lastSaleDates) {
+      const pairKey = customerIdToPairKey.get(tx.customer_id);
+      if (!pairKey) continue;
+      const cur = map.get(pairKey);
+      if (!cur || tx.transaction_date > cur) map.set(pairKey, tx.transaction_date);
+    }
+    return map;
+  }, [lastSaleDates, customerIdToPairKey]);
 
   const { data: assigneeListRaw } = useQuery({
     queryKey: ['assignee-list-config'],
@@ -208,20 +232,22 @@ export default function ReceivablesTrackingView() {
       rows = rows.filter(r => r.outstanding > 0);
     }
 
-    // Activity filter
+    // Activity filter — keyed by client_name|||branch to cover ALL customer_ids for a pair
     if (activityMode !== 'all') {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - Number(thresholdDays));
       const cutoffStr = cutoff.toISOString().split('T')[0];
       if (activityMode === 'inactive') {
         rows = rows.filter(r => {
-          const lastSale = lastSaleDateMap.get(r.customerId);
+          const pairKey = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
+          const lastSale = lastSaleDateByPair.get(pairKey);
           return !lastSale || lastSale < cutoffStr;
         });
       } else {
-        // active: had a sale within the threshold
+        // active: had a sale within the threshold across any customer_id
         rows = rows.filter(r => {
-          const lastSale = lastSaleDateMap.get(r.customerId);
+          const pairKey = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
+          const lastSale = lastSaleDateByPair.get(pairKey);
           return !!lastSale && lastSale >= cutoffStr;
         });
       }
@@ -291,7 +317,7 @@ export default function ReceivablesTrackingView() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, showAllClients, activityMode, thresholdDays, lastSaleDateMap, sortCol, sortDir, assigneeMap, today]);
+  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, showAllClients, activityMode, thresholdDays, lastSaleDateByPair, sortCol, sortDir, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -371,7 +397,7 @@ export default function ReceivablesTrackingView() {
     const todayMs = new Date(today + 'T00:00:00').getTime();
 
     for (const row of displayRows) {
-      const lastSale = lastSaleDateMap.get(row.customerId) ?? null;
+      const lastSale = lastSaleDateByPair.get(`${row.clientName.toLowerCase()}|||${row.branch.toLowerCase()}`) ?? null;
       const daysSince = lastSale
         ? Math.round((todayMs - new Date(lastSale + 'T00:00:00').getTime()) / 86400000)
         : null;
