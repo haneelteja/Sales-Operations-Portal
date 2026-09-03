@@ -18,6 +18,7 @@ import { fetchReceivablesTracking, type RawRow, type FetchResult } from '@/lib/r
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type SortCol = 'name' | 'outstanding' | 'followup' | 'assignee';
+type InactiveDays = '30' | '60' | '90';
 
 interface AssigneeEntry { name: string; bgClass: string; }
 
@@ -39,6 +40,8 @@ export default function ReceivablesTrackingView() {
   const [filterFollowupStatus, setFilterFollowupStatus] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
   const [showAllActive, setShowAllActive] = useState(false);
+  const [filterInactive, setFilterInactive] = useState(false);
+  const [inactiveDays, setInactiveDays] = useState<InactiveDays>('60');
   const [activeNotes, setActiveNotes] = useState<{
     customerId: string;
     clientName: string;
@@ -74,6 +77,28 @@ export default function ReceivablesTrackingView() {
     },
     staleTime: 30000,
   });
+
+  const { data: lastSaleDates = [] } = useQuery({
+    queryKey: ['last-sale-dates'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('sales_transactions')
+        .select('customer_id, transaction_date')
+        .eq('transaction_type', 'sale')
+        .limit(100000);
+      return (data ?? []) as Array<{ customer_id: string; transaction_date: string }>;
+    },
+    staleTime: 60_000,
+  });
+
+  const lastSaleDateMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const tx of lastSaleDates) {
+      const cur = map.get(tx.customer_id);
+      if (!cur || tx.transaction_date > cur) map.set(tx.customer_id, tx.transaction_date);
+    }
+    return map;
+  }, [lastSaleDates]);
 
   const { data: assigneeListRaw } = useQuery({
     queryKey: ['assignee-list-config'],
@@ -181,6 +206,17 @@ export default function ReceivablesTrackingView() {
       rows = rows.filter(r => r.outstanding >= 0.01);
     }
 
+    if (filterInactive) {
+      const threshold = Number(inactiveDays);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - threshold);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      rows = rows.filter(r => {
+        const lastSale = lastSaleDateMap.get(r.customerId);
+        return !lastSale || lastSale < cutoffStr;
+      });
+    }
+
     if (filterClient.trim()) {
       const q = filterClient.toLowerCase();
       rows = rows.filter(r =>
@@ -245,7 +281,7 @@ export default function ReceivablesTrackingView() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, showAllActive, sortCol, sortDir, assigneeMap, today]);
+  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, showAllActive, filterInactive, inactiveDays, lastSaleDateMap, sortCol, sortDir, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -261,9 +297,11 @@ export default function ReceivablesTrackingView() {
     const ExcelJS = await importExcelJS();
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Aamodha Operations Portal';
-    const ws = wb.addWorksheet('Receivables');
+    const sheetName = filterInactive ? 'Inactive Clients' : 'Receivables';
+    const ws = wb.addWorksheet(sheetName);
 
     const headerFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+    const inactiveFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
     const overdueFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4D6' } };
     const normalFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
     const thinBorder: Partial<ExcelJS.Borders> = {
@@ -271,41 +309,45 @@ export default function ReceivablesTrackingView() {
       left: { style: 'thin' }, right: { style: 'thin' },
     };
 
-    ws.columns = [
-      { key: 'client', width: 28 },
-      { key: 'branch', width: 22 },
-      { key: 'outstanding', width: 18 },
-      { key: 'expectedNext', width: 22 },
-      { key: 'daysOverdue', width: 16 },
-      { key: 'pmtStatus', width: 18 },
-      { key: 'comments', width: 40 },
-      { key: 'followup', width: 18 },
-      { key: 'assignee', width: 20 },
-    ];
+    const colCount = filterInactive ? 8 : 6;
+    const lastCol = String.fromCharCode(64 + colCount);
 
-    ws.mergeCells('A1:I1');
+    if (filterInactive) {
+      ws.columns = [
+        { key: 'client', width: 28 }, { key: 'branch', width: 22 },
+        { key: 'outstanding', width: 18 }, { key: 'lastSale', width: 18 },
+        { key: 'daysSince', width: 16 }, { key: 'comments', width: 40 },
+        { key: 'followup', width: 18 }, { key: 'assignee', width: 20 },
+      ];
+    } else {
+      ws.columns = [
+        { key: 'client', width: 28 }, { key: 'branch', width: 22 },
+        { key: 'outstanding', width: 18 }, { key: 'comments', width: 40 },
+        { key: 'followup', width: 18 }, { key: 'assignee', width: 20 },
+      ];
+    }
+
+    ws.mergeCells(`A1:${lastCol}1`);
     const titleCell = ws.getCell('A1');
-    titleCell.value = 'Receivables Tracker Report';
+    titleCell.value = filterInactive
+      ? `Inactive Clients Report (No sale in ${inactiveDays}+ days)`
+      : 'Receivables Tracker Report';
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 24;
 
-    ws.mergeCells('A2:I2');
-    ws.getCell('A2').value = `Generated: ${new Date().toLocaleDateString('en-IN')}`;
+    ws.mergeCells(`A2:${lastCol}2`);
+    ws.getCell('A2').value = `Generated: ${new Date().toLocaleDateString('en-IN')}   |   Clients shown: ${displayRows.length}`;
     ws.getCell('A2').font = { size: 10, italic: true, color: { argb: 'FF666666' } };
     ws.getCell('A2').alignment = { horizontal: 'center' };
 
-    ws.mergeCells('A3:I3');
-    ws.getCell('A3').value = `Overdue Clients: ${overdueCount}   |   Collections This Month: ₹${(data?.collectionsThisMonth ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-    ws.getCell('A3').font = { size: 10, color: { argb: 'FF333333' } };
-    ws.getCell('A3').alignment = { horizontal: 'center' };
-
     ws.addRow([]);
 
-    const headerRow = ws.addRow([
-      'Client', 'Branch', 'Outstanding (₹)',
-      'Latest Note', 'Next Follow-up', 'Assignee',
-    ]);
+    const headers = filterInactive
+      ? ['Client', 'Branch', 'Outstanding (₹)', 'Last Sale Date', 'Days Since Last Sale', 'Latest Note', 'Next Follow-up', 'Assignee']
+      : ['Client', 'Branch', 'Outstanding (₹)', 'Latest Note', 'Next Follow-up', 'Assignee'];
+
+    const headerRow = ws.addRow(headers);
     headerRow.height = 20;
     headerRow.eachCell(cell => {
       cell.fill = headerFill;
@@ -314,20 +356,33 @@ export default function ReceivablesTrackingView() {
       cell.border = { top: { style: 'thin' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
     });
 
-    const fmtDateXlsx = (d: string | null) =>
-      d ? new Date(d).toLocaleDateString('en-IN') : '—';
+    const todayMs = new Date(today + 'T00:00:00').getTime();
 
     for (const row of displayRows) {
-      const dataRow = ws.addRow([
-        row.clientName,
-        row.branch,
-        row.outstanding,
-        row.comments || '',
-        row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
-        assigneeMap[row.customerId] || '—',
-      ]);
+      const lastSale = lastSaleDateMap.get(row.customerId) ?? null;
+      const daysSince = lastSale
+        ? Math.round((todayMs - new Date(lastSale + 'T00:00:00').getTime()) / 86400000)
+        : null;
+
+      const dataRow = filterInactive
+        ? ws.addRow([
+            row.clientName, row.branch, row.outstanding,
+            lastSale ? new Date(lastSale).toLocaleDateString('en-IN') : 'Never',
+            daysSince ?? 'N/A',
+            row.comments || '',
+            row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
+            assigneeMap[row.customerId] || '—',
+          ])
+        : ws.addRow([
+            row.clientName, row.branch, row.outstanding,
+            row.comments || '',
+            row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
+            assigneeMap[row.customerId] || '—',
+          ]);
+
+      const rowFill = filterInactive ? inactiveFill : (row.isOverdue ? overdueFill : normalFill);
       dataRow.eachCell({ includeEmpty: true }, (cell, col) => {
-        cell.fill = row.isOverdue ? overdueFill : normalFill;
+        cell.fill = rowFill;
         cell.border = thinBorder;
         if (col === 3) {
           cell.numFmt = '#,##0.00';
@@ -344,7 +399,9 @@ export default function ReceivablesTrackingView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Receivables_${today}.xlsx`;
+    a.download = filterInactive
+      ? `Inactive_Clients_${inactiveDays}days_${today}.xlsx`
+      : `Receivables_${today}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -509,7 +566,30 @@ export default function ReceivablesTrackingView() {
           {showAllActive ? 'All active clients' : 'With balance only'}
         </Button>
 
-        {(filterClient || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes) && (
+        <div className="flex items-center gap-1">
+          <Button
+            variant={filterInactive ? 'secondary' : 'outline'}
+            size="sm"
+            onClick={() => setFilterInactive(v => !v)}
+            className="whitespace-nowrap"
+          >
+            {filterInactive ? 'Inactive only' : 'Inactive only'}
+          </Button>
+          {filterInactive && (
+            <Select value={inactiveDays} onValueChange={v => setInactiveDays(v as InactiveDays)}>
+              <SelectTrigger className="w-[90px] h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">30 days</SelectItem>
+                <SelectItem value="60">60 days</SelectItem>
+                <SelectItem value="90">90 days</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        {(filterClient || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes || filterInactive) && (
           <Button
             variant="ghost"
             size="sm"
@@ -520,6 +600,7 @@ export default function ReceivablesTrackingView() {
               setFilterMinOutstanding('');
               setFilterFollowupStatus('');
               setFilterNotes('');
+              setFilterInactive(false);
             }}
           >
             <X className="h-3.5 w-3.5 mr-1" />
@@ -529,7 +610,7 @@ export default function ReceivablesTrackingView() {
 
         <Button variant="outline" onClick={handleExport}>
           <Download className="h-4 w-4 mr-2" />
-          Export Excel
+          {filterInactive ? 'Export Inactive' : 'Export Excel'}
         </Button>
       </div>
 
@@ -537,8 +618,10 @@ export default function ReceivablesTrackingView() {
       <div className="flex-1 min-h-0 flex flex-col gap-2">
       {displayRows.length === 0 ? (
         <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground border rounded-md">
-          {(filterClient || filterMinOutstanding || filterNotes || filterFollowupStatus || filterAssignee)
-            ? 'No clients match the current filters.'
+          {(filterClient || filterMinOutstanding || filterNotes || filterFollowupStatus || filterAssignee || filterInactive)
+            ? filterInactive
+              ? `No inactive clients (no sale in ${inactiveDays}+ days) with outstanding balance found.`
+              : 'No clients match the current filters.'
             : showAllActive ? 'No active clients found.' : 'No clients with outstanding balances found.'}
         </div>
       ) : (
