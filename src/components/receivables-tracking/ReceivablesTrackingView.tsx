@@ -171,7 +171,10 @@ export default function ReceivablesTrackingView() {
 
     let rows = data.rows.map(row => {
       const isOverdue = row.outstanding > 0 && !!row.nextFollowupDate && row.nextFollowupDate < today;
-      return { ...row, isOverdue };
+      const overdueDays = isOverdue
+        ? Math.round((new Date(today + 'T00:00:00').getTime() - new Date(row.nextFollowupDate + 'T00:00:00').getTime()) / 86400000)
+        : 0;
+      return { ...row, isOverdue, isRecentOverdue: isOverdue && overdueDays <= 3, isLongOverdue: isOverdue && overdueDays > 3 };
     });
 
     if (!showAllActive) {
@@ -357,7 +360,8 @@ export default function ReceivablesTrackingView() {
     const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
     const d = new Date(dateStr); d.setHours(0, 0, 0, 0);
     const diff = Math.round((d.getTime() - todayDate.getTime()) / 86400000);
-    if (diff < 0) return { badge: 'bg-red-100 text-red-700 border-red-200', text: 'text-red-600' };
+    if (diff < -3) return { badge: 'bg-red-100 text-red-700 border-red-200', text: 'text-red-600' };
+    if (diff < 0)  return { badge: 'bg-orange-100 text-orange-700 border-orange-200', text: 'text-orange-600' };
     if (diff <= 1) return { badge: 'bg-amber-100 text-amber-700 border-amber-200', text: 'text-amber-600' };
     return { badge: 'bg-green-100 text-green-700 border-green-200', text: 'text-green-600' };
   };
@@ -575,17 +579,20 @@ export default function ReceivablesTrackingView() {
                 <tr
                   key={row.key}
                   className={`border-b last:border-0 transition-colors ${
-                    row.isOverdue ? 'bg-red-50 hover:bg-red-100/60' : 'hover:bg-muted/30'
+                    row.isLongOverdue   ? 'bg-red-50 hover:bg-red-100/60' :
+                    row.isRecentOverdue ? 'bg-orange-50 hover:bg-orange-100/60' :
+                    'hover:bg-muted/30'
                   }`}
                 >
                   {/* Client Branch */}
                   <td className="px-4 py-3 align-top">
                     <div className="font-medium leading-tight">{row.clientName}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">{row.branch}</div>
-                    {row.isOverdue && (
-                      <Badge variant="destructive" className="mt-1.5 text-xs">
-                        Overdue
-                      </Badge>
+                    {row.isLongOverdue && (
+                      <Badge variant="destructive" className="mt-1.5 text-xs">Overdue</Badge>
+                    )}
+                    {row.isRecentOverdue && (
+                      <Badge className="mt-1.5 text-xs bg-orange-100 text-orange-700 border border-orange-200 hover:bg-orange-100">Missed</Badge>
                     )}
                   </td>
 
