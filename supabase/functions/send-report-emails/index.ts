@@ -48,11 +48,18 @@ function emailShell(title: string, date: string, body: string): string {
 
 function statusBadge(status: string): string {
   const map: Record<string, [string, string]> = {
-    'Overdue':    ['#fee2e2', '#991b1b'],
-    'Due Soon':   ['#fef3c7', '#92400e'],
-    'Over Limit': ['#fee2e2', '#991b1b'],
-    'Warning':    ['#fef3c7', '#92400e'],
-    'OK':         ['#dcfce7', '#166534'],
+    'Overdue':          ['#fee2e2', '#991b1b'],
+    'Due Soon':         ['#fef3c7', '#92400e'],
+    'Over Limit':       ['#fee2e2', '#991b1b'],
+    'Warning':          ['#fef3c7', '#92400e'],
+    'OK':               ['#dcfce7', '#166534'],
+    'Delivery Overdue': ['#fee2e2', '#991b1b'],
+    'Due Today':        ['#fef3c7', '#92400e'],
+    'Due Tomorrow':     ['#fef3c7', '#92400e'],
+    'Pending':          ['#eff6ff', '#1d4ed8'],
+    'Dispatched':       ['#dcfce7', '#166534'],
+    'delivered':        ['#f1f5f9', '#475569'],
+    'cancelled':        ['#f1f5f9', '#94a3b8'],
   };
   const [bg, color] = map[status] ?? ['#f1f5f9', '#475569'];
   return `<span style="background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${status}</span>`;
@@ -63,6 +70,165 @@ function summaryBox(label: string, value: string | number, bg: string, color: st
     <div style="font-size:26px;font-weight:700;color:${color};">${value}</div>
     <div style="font-size:12px;color:${color};font-weight:500;">${label}</div>
   </div>`;
+}
+
+// ─── Orders report types & helpers ──────────────────────────────────────────
+
+type OrderRow = {
+  client: string;
+  branch: string | null;
+  sku: string;
+  number_of_cases: number;
+  order_date: string;
+  tentative_delivery_date: string | null;
+  status: string;
+  days_left: number | null;
+  outstanding: number;
+};
+
+function orderDeliveryStatus(r: OrderRow): string {
+  if (r.status === 'dispatched') return 'Dispatched';
+  if (r.status === 'delivered')  return 'delivered';
+  if (r.status === 'cancelled')  return 'cancelled';
+  // pending
+  if (r.days_left === null)  return 'Pending';
+  if (r.days_left < 0)       return 'Delivery Overdue';
+  if (r.days_left === 0)     return 'Due Today';
+  if (r.days_left === 1)     return 'Due Tomorrow';
+  return `Pending`;
+}
+
+function orderRowBg(r: OrderRow): string {
+  if (r.status !== 'pending') return 'transparent';
+  if (r.days_left === null)  return 'transparent';
+  if (r.days_left < 0)       return '#fff5f5';
+  if (r.days_left <= 1)      return '#fffbeb';
+  return 'transparent';
+}
+
+function daysLabel(r: OrderRow): string {
+  if (r.status !== 'pending' || r.days_left === null) return '—';
+  if (r.days_left < 0) return `${Math.abs(r.days_left)}d late`;
+  if (r.days_left === 0) return 'Today';
+  if (r.days_left === 1) return 'Tomorrow';
+  return `${r.days_left}d`;
+}
+
+async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promise<OrderRow[]> {
+  const cutoffDispatched = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+
+  const [{ data: allOrders }, { data: outstanding }, { data: customers }] = await Promise.all([
+    // All pending orders + dispatched in last 30 days
+    supabase
+      .from('orders')
+      .select('client, branch, sku, number_of_cases, order_date, tentative_delivery_date, status')
+      .or(`status.eq.pending,and(status.eq.dispatched,order_date.gte.${cutoffDispatched})`)
+      .order('tentative_delivery_date', { ascending: true, nullsFirst: false }),
+    supabase.rpc('get_customer_outstanding'),
+    supabase.from('customers').select('id, client_name, branch').limit(10000),
+  ]);
+
+  // Build outstanding lookup: lowercase(client_name)|||lowercase(branch) → total outstanding
+  const custKeyMap = new Map<string, string>();
+  for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null }[]) {
+    custKeyMap.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
+  }
+  const outstandingByKey = new Map<string, number>();
+  for (const r of (outstanding ?? []) as { customer_id: string; outstanding: number }[]) {
+    const key = custKeyMap.get(r.customer_id);
+    if (!key || r.outstanding <= 0) continue;
+    outstandingByKey.set(key, (outstandingByKey.get(key) ?? 0) + r.outstanding);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+
+  const rows = (allOrders ?? []).map((o: Record<string, unknown>) => {
+    const outKey = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
+    const rawDelivery = o.tentative_delivery_date as string | null;
+    let daysLeft: number | null = null;
+    if (rawDelivery) {
+      const d = new Date(rawDelivery);
+      d.setHours(0, 0, 0, 0);
+      daysLeft = Math.round((d.getTime() - todayMs) / 86400000);
+    }
+    return {
+      client: (o.client as string) ?? '',
+      branch: (o.branch as string | null) ?? null,
+      sku: (o.sku as string) ?? '',
+      number_of_cases: (o.number_of_cases as number) ?? 0,
+      order_date: (o.order_date as string) ?? '',
+      tentative_delivery_date: rawDelivery,
+      status: (o.status as string) ?? '',
+      days_left: daysLeft,
+      outstanding: outstandingByKey.get(outKey) ?? 0,
+    } as OrderRow;
+  });
+
+  // Pending (sorted by delivery date ascending, nulls last) then dispatched (most recent first)
+  const pending    = rows.filter(r => r.status === 'pending')
+    .sort((a, b) => {
+      if (a.days_left === null && b.days_left === null) return 0;
+      if (a.days_left === null) return 1;
+      if (b.days_left === null) return -1;
+      return a.days_left - b.days_left;
+    });
+  const dispatched = rows.filter(r => r.status !== 'pending')
+    .sort((a, b) => b.order_date.localeCompare(a.order_date));
+
+  return [...pending, ...dispatched];
+}
+
+function buildOrdersPaymentEmail(rows: OrderRow[], date: string): string {
+  const pending    = rows.filter(r => r.status === 'pending');
+  const dispatched = rows.filter(r => r.status === 'dispatched');
+  const urgentDelivery = pending.filter(r => r.days_left !== null && r.days_left <= 1);
+  const uniqueClients = new Set(rows.map(r => `${r.client}|||${r.branch ?? ''}`)).size;
+
+  const tableRows = rows.map(r => {
+    const dlStatus = orderDeliveryStatus(r);
+    const dLabel   = daysLabel(r);
+    const bg       = orderRowBg(r);
+    return `
+    <tr style="border-bottom:1px solid #f1f5f9;background:${bg};">
+      <td style="padding:7px 8px;font-weight:500;">${r.client}</td>
+      <td style="padding:7px 8px;color:#64748b;">${r.branch || '—'}</td>
+      <td style="padding:7px 8px;">${r.sku}</td>
+      <td style="padding:7px 8px;text-align:center;">${r.number_of_cases}</td>
+      <td style="padding:7px 8px;color:#64748b;white-space:nowrap;">${fmtDate(r.order_date)}</td>
+      <td style="padding:7px 8px;color:#64748b;white-space:nowrap;">${fmtDate(r.tentative_delivery_date)}</td>
+      <td style="padding:7px 8px;text-align:center;font-weight:600;color:${r.days_left !== null && r.days_left < 0 ? '#dc2626' : r.days_left !== null && r.days_left <= 1 ? '#92400e' : '#475569'};">${dLabel}</td>
+      <td style="padding:7px 8px;">${statusBadge(dlStatus)}</td>
+      <td style="padding:7px 8px;font-weight:600;color:${r.outstanding > 0 ? '#dc2626' : '#94a3b8'};">${r.outstanding > 0 ? fmtINR(r.outstanding) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const body = `
+    <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+      ${summaryBox('Pending Orders', pending.length, '#eff6ff', '#1d4ed8')}
+      ${summaryBox('Urgent (≤1 day)', urgentDelivery.length, urgentDelivery.length > 0 ? '#fef3c7' : '#f1f5f9', urgentDelivery.length > 0 ? '#92400e' : '#475569')}
+      ${summaryBox('Dispatched (30d)', dispatched.length, '#dcfce7', '#166534')}
+      ${summaryBox('Active Clients', uniqueClients, '#f1f5f9', '#475569')}
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:#f8fafc;">
+          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Client</th>
+          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Branch</th>
+          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">SKU</th>
+          <th style="text-align:center;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Cases</th>
+          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Order Date</th>
+          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Delivery Date</th>
+          <th style="text-align:center;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Days</th>
+          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Status</th>
+          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>`;
+
+  return emailShell('Orders &amp; Payment Status Report', date, body);
 }
 
 // ─── Email builders ──────────────────────────────────────────────────────────
@@ -509,8 +675,10 @@ serve(async (req) => {
         let html = '';
 
         if (schedule.report_type === 'orders_payment_status') {
-          const rows = await fetchOutstandingRows(supabase);
-          subject = `Orders & Payment Status — ${dateLabel} (${rows.length} clients)`;
+          const rows = await fetchOrdersData(supabase);
+          const pending = rows.filter(r => r.status === 'pending').length;
+          const dispatched = rows.filter(r => r.status === 'dispatched').length;
+          subject = `Orders & Payment Status — ${dateLabel} (${pending} pending, ${dispatched} dispatched)`;
           html = buildOrdersPaymentEmail(rows, dateLabel);
         } else if (schedule.report_type === 'payment_followup') {
           const rows = await fetchPaymentFollowupRows(supabase);
