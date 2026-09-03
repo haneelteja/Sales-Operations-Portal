@@ -251,32 +251,39 @@ function buildPaymentFollowupEmail(rows: FollowupRow[], date: string): string {
   const upcoming = rows.filter(r => r.status === 'Upcoming');
   const noDate   = rows.filter(r => r.status === 'No Date');
 
-  const cards = rows.map(r => {
-    const bg          = r.status === 'Overdue' ? '#fff5f5' : r.status === 'Upcoming' ? '#fffbeb' : '#f8fafc';
-    const borderHex   = r.status === 'Overdue' ? '#dc2626' : r.status === 'Upcoming' ? '#d97706' : '#e2e8f0';
-    const badgeBg     = r.status === 'Overdue' ? '#fee2e2' : r.status === 'Upcoming' ? '#fef3c7' : '#f1f5f9';
-    const badgeColor  = r.status === 'Overdue' ? '#991b1b' : r.status === 'Upcoming' ? '#92400e'  : '#475569';
-    const statusLabel = r.status === 'No Date' ? 'No Date Set' : r.status;
-    const dateDisplay = r.next_followup_date ? `📅 ${fmtDate(r.next_followup_date)}` : '📅 Not set';
-    const meta = r.invoice_count > 0
-      ? `${r.invoice_count} invoice${r.invoice_count !== 1 ? 's' : ''} · Oldest: ${fmtDate(r.oldest_sale_date)}`
-      : 'Opening balance only';
+  const rowHtml = (r: FollowupRow, idx: number) => {
+    const bg         = r.status === 'Overdue' ? '#fff5f5' : r.status === 'Upcoming' ? '#fffbeb' : '#ffffff';
+    const badgeBg    = r.status === 'Overdue' ? '#fee2e2' : r.status === 'Upcoming' ? '#fef3c7' : '#f1f5f9';
+    const badgeColor = r.status === 'Overdue' ? '#991b1b' : r.status === 'Upcoming' ? '#92400e'  : '#475569';
+    const dateCell   = r.next_followup_date ? fmtDate(r.next_followup_date) : '—';
+    const note       = r.comments ? (r.comments.length > 70 ? r.comments.slice(0, 67) + '…' : r.comments) : '—';
     return `
-      <div style="border:1px solid ${borderHex}40;border-radius:8px;padding:14px 16px;margin-bottom:10px;background:${bg};">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-          <div style="flex:1;min-width:200px;">
-            <div style="font-weight:600;font-size:14px;color:#1e293b;">${r.client_name}${r.branch ? ` <span style="color:#64748b;font-weight:400;font-size:12px;">(${r.branch})</span>` : ''}</div>
-            <div style="font-size:12px;color:#64748b;margin-top:3px;">${meta}${r.whatsapp_number ? ` · 📱 ${r.whatsapp_number}` : ''}</div>
-            <div style="font-size:12px;color:#64748b;margin-top:2px;">${dateDisplay}</div>
-            ${r.comments ? `<div style="font-size:12px;color:#475569;margin-top:4px;font-style:italic;">"${r.comments}"</div>` : ''}
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div style="font-size:18px;font-weight:700;color:#dc2626;">${fmtINR(r.outstanding)}</div>
-            <span style="background:${badgeBg};color:${badgeColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${statusLabel}</span>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
+      <tr style="background:${bg};border-bottom:1px solid #e2e8f0;">
+        <td style="padding:10px 12px;font-size:12px;color:#94a3b8;text-align:center;">${idx}</td>
+        <td style="padding:10px 12px;">
+          <div style="font-weight:600;font-size:13px;color:#1e293b;">${r.client_name}</div>
+          ${r.branch ? `<div style="font-size:11px;color:#94a3b8;margin-top:1px;">${r.branch}</div>` : ''}
+        </td>
+        <td style="padding:10px 12px;font-size:13px;font-weight:700;color:#dc2626;text-align:right;white-space:nowrap;">${fmtINR(r.outstanding)}</td>
+        <td style="padding:10px 12px;font-size:12px;color:#475569;white-space:nowrap;">${dateCell}</td>
+        <td style="padding:10px 12px;font-size:12px;color:#64748b;font-style:italic;">${note}</td>
+        <td style="padding:10px 12px;text-align:center;">
+          <span style="background:${badgeBg};color:${badgeColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap;">${r.status}</span>
+        </td>
+      </tr>`;
+  };
+
+  const thead = `
+    <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+      <th style="padding:10px 12px;font-size:11px;color:#94a3b8;font-weight:600;text-align:center;">#</th>
+      <th style="padding:10px 12px;font-size:11px;color:#64748b;font-weight:600;text-align:left;">CLIENT</th>
+      <th style="padding:10px 12px;font-size:11px;color:#64748b;font-weight:600;text-align:right;">OUTSTANDING</th>
+      <th style="padding:10px 12px;font-size:11px;color:#64748b;font-weight:600;text-align:left;">FOLLOW-UP DATE</th>
+      <th style="padding:10px 12px;font-size:11px;color:#64748b;font-weight:600;text-align:left;">LATEST NOTE</th>
+      <th style="padding:10px 12px;font-size:11px;color:#64748b;font-weight:600;text-align:center;">STATUS</th>
+    </tr>`;
+
+  const tbody = rows.map((r, i) => rowHtml(r, i + 1)).join('');
 
   const body = `
     <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
@@ -285,7 +292,12 @@ function buildPaymentFollowupEmail(rows: FollowupRow[], date: string): string {
       ${summaryBox('No Date', noDate.length, '#f1f5f9', '#475569')}
       ${summaryBox('Total', rows.length, '#eff6ff', '#1d4ed8')}
     </div>
-    ${cards}`;
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-family:sans-serif;">
+        <thead>${thead}</thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>`;
 
   return emailShell('Payment Follow Up Report', date, body);
 }
