@@ -95,7 +95,7 @@ const ClientAnalysis: React.FC = () => {
         .from("sales_transactions")
         .select("transaction_type, amount, transaction_date, customers(client_name, branch, is_active)")
         .order("transaction_date", { ascending: true })
-        .limit(10000);
+        .limit(50000);
       return (data ?? []) as Array<{
         transaction_type: string;
         amount: number | null;
@@ -105,10 +105,41 @@ const ClientAnalysis: React.FC = () => {
     },
   });
 
+  // Accurate outstanding (includes opening_balance) — same RPC as Receivables Tracker
+  const { data: outstandingRpc = [] } = useQuery({
+    queryKey: ["client-analysis-outstanding"],
+    staleTime: 2 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase.rpc("get_customer_outstanding");
+      return (data || []) as Array<{ customer_id: string; outstanding: number }>;
+    },
+  });
+
+  const { data: customersData = [] } = useQuery({
+    queryKey: ["client-analysis-customers"],
+    staleTime: 2 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase.from("customers").select("id, client_name, branch").limit(10000);
+      return (data || []) as Array<{ id: string; client_name: string; branch: string | null }>;
+    },
+  });
+
   const baseRows = useMemo<ClientAnalysisRow[]>(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
+
+    // Build outstanding map from RPC (includes opening_balance)
+    const custKeyById = new Map<string, string>();
+    for (const c of customersData) {
+      custKeyById.set(c.id, `${c.client_name.trim()}|||${(c.branch || "").trim()}`);
+    }
+    const outstandingMap = new Map<string, number>();
+    for (const r of outstandingRpc) {
+      const key = custKeyById.get(r.customer_id);
+      if (!key) continue;
+      outstandingMap.set(key, (outstandingMap.get(key) ?? 0) + r.outstanding);
+    }
 
     interface Bucket {
       txs: Array<{ type: string; amount: number; date: string }>;
@@ -134,7 +165,7 @@ const ClientAnalysis: React.FC = () => {
     for (const [key, b] of buckets) {
       const [client, branch] = key.split("|||");
 
-      // Compute metrics from chronologically-sorted transactions
+      // Credit limit formula uses transaction totals (opening_balance doesn't affect these)
       let totalRevenue = 0;
       let totalPaid = 0;
       let runningBalance = 0;
@@ -149,9 +180,6 @@ const ClientAnalysis: React.FC = () => {
           totalPaid += amt;
           runningBalance -= amt;
         }
-        // Aged outstanding exposure: how long has this balance been sitting?
-        // Each transaction checkpoint where the client owes us money contributes
-        // (days since that transaction) × (current balance) / 10000 to risk.
         if (runningBalance > 0) {
           const txMs = new Date(tx.date).setHours(0, 0, 0, 0);
           const daysSince = Math.max(0, Math.round((todayMs - txMs) / 86400000));
@@ -159,7 +187,8 @@ const ClientAnalysis: React.FC = () => {
         }
       }
 
-      const outstanding = totalRevenue - totalPaid;
+      // Use RPC outstanding (accurate — includes opening_balance)
+      const outstanding = outstandingMap.get(key) ?? (totalRevenue - totalPaid);
       const monthsActive = b.monthsSet.size || 1;
       const avgMonthlyRevenue = totalRevenue / monthsActive;
       const paymentRatio = totalRevenue > 0 ? totalPaid / totalRevenue : 0;
@@ -183,7 +212,7 @@ const ClientAnalysis: React.FC = () => {
       if (so !== 0) return so;
       return b.utilization - a.utilization;
     });
-  }, [rawTx]);
+  }, [rawTx, outstandingRpc, customersData]);
 
   const uniqueClients = useMemo(() => [...new Set(baseRows.map((r) => r.client))].sort(), [baseRows]);
   const uniqueBranches = useMemo(() => [...new Set(baseRows.map((r) => r.branch).filter(Boolean))].sort(), [baseRows]);
