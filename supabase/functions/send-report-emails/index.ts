@@ -231,9 +231,9 @@ function buildOrdersPaymentEmail(rows: OrderRow[], date: string): string {
   return emailShell('Orders &amp; Payment Status Report', date, body);
 }
 
-// ─── Payment & credit email builders ────────────────────────────────────────
+// ─── Payment follow-up email (mirrors Receivables Tracker exactly) ───────────
 
-type OutstandingRow = {
+type FollowupRow = {
   customer_id: string;
   client_name: string;
   branch: string | null;
@@ -241,35 +241,38 @@ type OutstandingRow = {
   outstanding: number;
   invoice_count: number;
   oldest_sale_date: string | null;
-  age_days: number;
-  status: 'Overdue' | 'Due Soon';
+  next_followup_date: string | null;
+  comments: string | null;
+  status: 'Overdue' | 'Upcoming' | 'No Date';
 };
 
-function buildPaymentFollowupEmail(rows: OutstandingRow[], date: string): string {
-  const overdue = rows.filter(r => r.status === 'Overdue');
-  const dueSoon = rows.filter(r => r.status === 'Due Soon');
+function buildPaymentFollowupEmail(rows: FollowupRow[], date: string): string {
+  const overdue  = rows.filter(r => r.status === 'Overdue');
+  const upcoming = rows.filter(r => r.status === 'Upcoming');
+  const noDate   = rows.filter(r => r.status === 'No Date');
 
-  // Single list sorted by outstanding descending so the highest-owed client
-  // always appears first, regardless of Overdue vs Due Soon status.
-  const sorted = [...rows].sort((a, b) => b.outstanding - a.outstanding);
-
-  const cards = sorted.map(r => {
-    const isOverdue = r.status === 'Overdue';
-    const borderColor = isOverdue ? '#dc2626' : '#d97706';
-    const bg = isOverdue ? '#fff5f5' : '#fffbeb';
+  const cards = rows.map(r => {
+    const bg          = r.status === 'Overdue' ? '#fff5f5' : r.status === 'Upcoming' ? '#fffbeb' : '#f8fafc';
+    const borderHex   = r.status === 'Overdue' ? '#dc2626' : r.status === 'Upcoming' ? '#d97706' : '#e2e8f0';
+    const badgeBg     = r.status === 'Overdue' ? '#fee2e2' : r.status === 'Upcoming' ? '#fef3c7' : '#f1f5f9';
+    const badgeColor  = r.status === 'Overdue' ? '#991b1b' : r.status === 'Upcoming' ? '#92400e'  : '#475569';
+    const statusLabel = r.status === 'No Date' ? 'No Date Set' : r.status;
+    const dateDisplay = r.next_followup_date ? `📅 ${fmtDate(r.next_followup_date)}` : '📅 Not set';
+    const meta = r.invoice_count > 0
+      ? `${r.invoice_count} invoice${r.invoice_count !== 1 ? 's' : ''} · Oldest: ${fmtDate(r.oldest_sale_date)}`
+      : 'Opening balance only';
     return `
-      <div style="border:1px solid ${borderColor}40;border-radius:8px;padding:14px 16px;margin-bottom:10px;background:${bg};">
+      <div style="border:1px solid ${borderHex}40;border-radius:8px;padding:14px 16px;margin-bottom:10px;background:${bg};">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-          <div>
+          <div style="flex:1;min-width:200px;">
             <div style="font-weight:600;font-size:14px;color:#1e293b;">${r.client_name}${r.branch ? ` <span style="color:#64748b;font-weight:400;font-size:12px;">(${r.branch})</span>` : ''}</div>
-            <div style="font-size:12px;color:#64748b;margin-top:3px;">
-              ${r.invoice_count} invoice${r.invoice_count !== 1 ? 's' : ''} · Oldest: ${fmtDate(r.oldest_sale_date)} · ${r.age_days} days
-              ${r.whatsapp_number ? ` · 📱 ${r.whatsapp_number}` : ''}
-            </div>
+            <div style="font-size:12px;color:#64748b;margin-top:3px;">${meta}${r.whatsapp_number ? ` · 📱 ${r.whatsapp_number}` : ''}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">${dateDisplay}</div>
+            ${r.comments ? `<div style="font-size:12px;color:#475569;margin-top:4px;font-style:italic;">"${r.comments}"</div>` : ''}
           </div>
-          <div style="text-align:right;">
+          <div style="text-align:right;flex-shrink:0;">
             <div style="font-size:18px;font-weight:700;color:#dc2626;">${fmtINR(r.outstanding)}</div>
-            ${statusBadge(r.status)}
+            <span style="background:${badgeBg};color:${badgeColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${statusLabel}</span>
           </div>
         </div>
       </div>`;
@@ -278,8 +281,9 @@ function buildPaymentFollowupEmail(rows: OutstandingRow[], date: string): string
   const body = `
     <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
       ${summaryBox('Overdue', overdue.length, '#fee2e2', '#991b1b')}
-      ${summaryBox('Due Soon', dueSoon.length, '#fef3c7', '#92400e')}
-      ${summaryBox('Total', rows.length, '#f1f5f9', '#475569')}
+      ${summaryBox('Upcoming', upcoming.length, '#fef3c7', '#92400e')}
+      ${summaryBox('No Date', noDate.length, '#f1f5f9', '#475569')}
+      ${summaryBox('Total', rows.length, '#eff6ff', '#1d4ed8')}
     </div>
     ${cards}`;
 
@@ -338,140 +342,71 @@ function buildCreditRiskEmail(rows: CreditRow[], date: string): string {
 
 // ─── Data fetchers ───────────────────────────────────────────────────────────
 
-// Merge rows that share the same client_name + branch (duplicate customer records in DB).
-// Sums outstanding and invoice_count, takes the oldest sale date, escalates to Overdue if any.
-function mergeByNameBranch(rows: OutstandingRow[]): OutstandingRow[] {
-  const merged = new Map<string, OutstandingRow>();
-  for (const row of rows) {
-    const key = `${row.client_name.toLowerCase()}|||${(row.branch ?? '').toLowerCase()}`;
-    const ex = merged.get(key);
-    if (!ex) {
-      merged.set(key, { ...row });
-    } else {
-      ex.outstanding += row.outstanding;
-      ex.invoice_count += row.invoice_count;
-      if (row.oldest_sale_date && (!ex.oldest_sale_date || row.oldest_sale_date < ex.oldest_sale_date)) {
-        ex.oldest_sale_date = row.oldest_sale_date;
-        ex.age_days = Math.max(ex.age_days, row.age_days);
-      }
-      if (row.status === 'Overdue') ex.status = 'Overdue';
-      if (!ex.whatsapp_number && row.whatsapp_number) ex.whatsapp_number = row.whatsapp_number;
-    }
-  }
-  return Array.from(merged.values());
-}
+// Payment Follow Up mirrors the Receivables Tracker exactly:
+// status = Overdue if follow-up date has passed, Upcoming if date is set and future, No Date otherwise.
+async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient>): Promise<FollowupRow[]> {
+  const todayStr = new Date().toISOString().split('T')[0];
 
-// Payment Follow Up uses payment-pattern logic (same as the portal's Receivables Tracking view).
-// For customers with ≥2 payments: classify by whether predicted next payment is overdue.
-// For customers with 0–1 payments: fall back to invoice age (no pattern to calculate).
-async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient>): Promise<OutstandingRow[]> {
-  const todayDate = new Date();
-  todayDate.setHours(0, 0, 0, 0);
-  const todayMs = todayDate.getTime();
-  const todayStr = todayDate.toISOString().split('T')[0];
-  const DAY = 86400000;
-
-  const [{ data: outstanding }, { data: payments }, { data: customers }, { data: followups }] = await Promise.all([
+  const [{ data: outstanding }, { data: customers }, { data: followups }] = await Promise.all([
     supabase.rpc('get_customer_outstanding'),
-    supabase
-      .from('sales_transactions')
-      .select('customer_id, transaction_date')
-      .eq('transaction_type', 'payment')
-      .order('transaction_date', { ascending: true })
-      .limit(10000),
-    supabase.from('customers').select('id, client_name, branch, whatsapp_number').limit(10000),
-    supabase
-      .from('client_followups')
-      .select('client_name, branch, next_followup_date')
-      .not('next_followup_date', 'is', null)
-      .lte('next_followup_date', todayStr)
-      .limit(10000),
+    supabase.from('customers').select('id, client_name, branch, whatsapp_number').eq('is_active', true).limit(10000),
+    supabase.from('client_followups').select('client_name, branch, comments, next_followup_date').limit(10000),
   ]);
 
-  // Set of name+branch keys whose portal follow-up date has passed today.
-  const overdueFollowupKeys = new Set<string>(
-    (followups ?? []).map((f: { client_name: string; branch: string | null }) =>
-      `${f.client_name.toLowerCase()}|||${(f.branch ?? '').toLowerCase()}`
-    )
-  );
-
-  const customerMap = new Map(
-    (customers ?? []).map((c: { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }) => [c.id, c])
-  );
-
-  // Build customer_id → name+branch key (needed because payments may sit on a different
-  // customer_id than the representative one returned by get_customer_outstanding).
-  const custKeyMap = new Map<string, string>();
-  for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null }[]) {
-    custKeyMap.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
-  }
-
-  // Group payment dates by name+branch key so payments on any customer_id for the
-  // same client+branch are all counted together (already ascending).
-  const paymentDates = new Map<string, string[]>();
-  for (const tx of (payments ?? [])) {
-    if (!tx.transaction_date) continue;
-    const key = custKeyMap.get(tx.customer_id);
-    if (!key) continue;
-    const arr = paymentDates.get(key) ?? [];
-    arr.push(tx.transaction_date);
-    paymentDates.set(key, arr);
-  }
-
-  const rows: OutstandingRow[] = [];
-
-  for (const r of (outstanding ?? [])) {
-    const out = (r as { customer_id: string; outstanding: number; invoice_count: number; oldest_sale_date: string | null });
-    if (out.outstanding < 0.01 || !out.oldest_sale_date) continue;
-
-    const ageDays = Math.floor((Date.now() - new Date(out.oldest_sale_date).getTime()) / DAY);
-    const nameKey = custKeyMap.get(out.customer_id) ?? '';
-    const pmts = paymentDates.get(nameKey) ?? [];
-    const totalPayments = pmts.length;
-
-    let status: 'Overdue' | 'Due Soon' | null = null;
-
-    if (totalPayments <= 1) {
-      // No payment pattern available — use invoice age
-      if (ageDays > 30) status = 'Overdue';
-      else if (ageDays >= 15) status = 'Due Soon';
-    } else {
-      const firstMs = new Date(pmts[0]).setHours(0, 0, 0, 0);
-      const lastMs = new Date(pmts[totalPayments - 1]).setHours(0, 0, 0, 0);
-      const avgDays = Math.round((lastMs - firstMs) / ((totalPayments - 1) * DAY));
-
-      const expDate = new Date(pmts[totalPayments - 1]);
-      expDate.setDate(expDate.getDate() + avgDays);
-      const expMs = expDate.setHours(0, 0, 0, 0);
-      const daysOverdue = Math.max(0, Math.round((todayMs - expMs) / DAY));
-
-      if (daysOverdue > 14) status = 'Overdue';
-      else if (daysOverdue > 0) status = 'Due Soon';
-      else if (todayMs >= expMs - 5 * DAY) status = 'Due Soon';
-      // ON TRACK per payment pattern — but still check portal follow-up date below
+  // customer_id → name+branch key; prefer whatsapp-bearing record per name+branch
+  const custIdKeyMap = new Map<string, string>();
+  const custInfoMap  = new Map<string, { client_name: string; branch: string | null; whatsapp_number: string | null }>();
+  for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }[]) {
+    const key = `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`;
+    custIdKeyMap.set(c.id, key);
+    const ex = custInfoMap.get(key);
+    if (!ex) {
+      custInfoMap.set(key, { client_name: c.client_name, branch: c.branch ?? null, whatsapp_number: c.whatsapp_number ?? null });
+    } else if (!ex.whatsapp_number && c.whatsapp_number) {
+      ex.whatsapp_number = c.whatsapp_number;
     }
+  }
 
-    // Fall back: if the portal follow-up date has passed, always include as Overdue
-    // regardless of what the payment-pattern analysis said.
-    if (!status && overdueFollowupKeys.has(nameKey)) status = 'Overdue';
+  // name+branch key → follow-up data (unique constraint guarantees one row per key)
+  const followupMap = new Map<string, { comments: string | null; next_followup_date: string | null }>();
+  for (const f of (followups ?? []) as { client_name: string; branch: string | null; comments: string | null; next_followup_date: string | null }[]) {
+    const key = `${f.client_name.toLowerCase()}|||${(f.branch ?? '').toLowerCase()}`;
+    followupMap.set(key, { comments: f.comments, next_followup_date: f.next_followup_date });
+  }
 
-    if (!status) continue;
-
-    const cust = customerMap.get(out.customer_id) as { client_name: string; branch: string | null; whatsapp_number: string | null } | undefined;
+  const rows: FollowupRow[] = [];
+  for (const r of (outstanding ?? []) as { customer_id: string; outstanding: number; invoice_count: number; oldest_sale_date: string | null }[]) {
+    if (r.outstanding < 0.01) continue;
+    const nameKey = custIdKeyMap.get(r.customer_id);
+    if (!nameKey) continue;
+    const cust = custInfoMap.get(nameKey);
+    if (!cust) continue;
+    const followup     = followupMap.get(nameKey);
+    const followupDate = followup?.next_followup_date ?? null;
+    const status: 'Overdue' | 'Upcoming' | 'No Date' =
+      !followupDate         ? 'No Date'  :
+      followupDate < todayStr ? 'Overdue' : 'Upcoming';
     rows.push({
-      customer_id: out.customer_id,
-      client_name: cust?.client_name ?? 'Unknown',
-      branch: cust?.branch ?? null,
-      whatsapp_number: cust?.whatsapp_number ?? null,
-      outstanding: out.outstanding,
-      invoice_count: out.invoice_count,
-      oldest_sale_date: out.oldest_sale_date,
-      age_days: ageDays,
+      customer_id:       r.customer_id,
+      client_name:       cust.client_name,
+      branch:            cust.branch,
+      whatsapp_number:   cust.whatsapp_number,
+      outstanding:       r.outstanding,
+      invoice_count:     r.invoice_count,
+      oldest_sale_date:  r.oldest_sale_date,
+      next_followup_date: followupDate,
+      comments:          followup?.comments ?? null,
       status,
     });
   }
 
-  return mergeByNameBranch(rows).sort((a, b) => b.outstanding - a.outstanding);
+  // Sort: Overdue (oldest follow-up date first) → Upcoming (soonest first) → No Date (highest outstanding first)
+  return rows.sort((a, b) => {
+    const order = { Overdue: 0, Upcoming: 1, 'No Date': 2 };
+    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+    if (a.status === 'No Date') return b.outstanding - a.outstanding;
+    return (a.next_followup_date ?? '').localeCompare(b.next_followup_date ?? '');
+  });
 }
 
 async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promise<CreditRow[]> {
