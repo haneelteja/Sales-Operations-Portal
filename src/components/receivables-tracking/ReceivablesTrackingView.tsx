@@ -18,8 +18,7 @@ import { fetchReceivablesTracking, type RawRow, type FetchResult } from '@/lib/r
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type SortCol = 'name' | 'outstanding' | 'followup' | 'assignee';
-type ActivityMode = 'active' | 'all' | 'inactive';
-type ThresholdDays = '30' | '60' | '90';
+type ActivityMode = 'all' | 'inactive';
 type BalanceMode = 'positive' | 'all' | 'zero';
 
 interface AssigneeEntry { name: string; bgClass: string; }
@@ -43,7 +42,6 @@ export default function ReceivablesTrackingView() {
   const [filterAssignee, setFilterAssignee] = useState('');
   const [balanceMode, setBalanceMode] = useState<BalanceMode>('positive');
   const [activityMode, setActivityMode] = useState<ActivityMode>('all');
-  const [thresholdDays, setThresholdDays] = useState<ThresholdDays>('60');
   const [activeNotes, setActiveNotes] = useState<{
     customerId: string;
     clientName: string;
@@ -80,51 +78,56 @@ export default function ReceivablesTrackingView() {
     staleTime: 30000,
   });
 
-  // All customers (for building pair key → last sale date map)
-  const { data: allCustomers = [] } = useQuery({
-    queryKey: ['all-customers-id-pair'],
+  // Inactive clients — those with ALL customer_ids marked is_active=false in configuration
+  const { data: inactiveData } = useQuery<FetchResult>({
+    queryKey: ['inactive-receivables'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('customers')
-        .select('id, client_name, branch');
-      return (data ?? []) as Array<{ id: string; client_name: string; branch: string | null }>;
-    },
-    staleTime: 5 * 60_000,
-  });
-
-  const { data: lastSaleDates = [] } = useQuery({
-    queryKey: ['last-sale-dates'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('sales_transactions')
-        .select('customer_id, transaction_date')
-        .eq('transaction_type', 'sale')
-        .limit(100000);
-      return (data ?? []) as Array<{ customer_id: string; transaction_date: string }>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [summaryResult, followupResult] = await Promise.all([
+        (supabase as any).rpc('get_inactive_receivables'),
+        (supabase as any)
+          .from('client_followups')
+          .select('client_name, branch, comments, next_followup_date')
+          .limit(10000),
+      ]);
+      if (summaryResult.error) throw summaryResult.error;
+      const summaryRows = (summaryResult.data ?? []) as Array<{
+        customer_id: string; client_name: string; branch: string;
+        outstanding: string | number; payment_count: string | number;
+        last_payment_date: string | null; first_payment_date: string | null;
+        payments_this_month: string | number;
+      }>;
+      const followups = (followupResult.data ?? []) as Array<{
+        client_name: string; branch: string; comments: string | null; next_followup_date: string | null;
+      }>;
+      const followupMap = new Map<string, { comments: string; nextFollowupDate: string }>();
+      for (const f of followups) {
+        followupMap.set(`${f.client_name.toLowerCase()}|||${f.branch.toLowerCase()}`, {
+          comments: f.comments ?? '',
+          nextFollowupDate: f.next_followup_date ?? '',
+        });
+      }
+      let collectionsThisMonth = 0;
+      const rows: import('@/lib/receivablesUtils').RawRow[] = summaryRows.map(r => {
+        collectionsThisMonth += Number(r.payments_this_month);
+        const key = `${r.client_name.toLowerCase()}|||${r.branch.toLowerCase()}`;
+        const followup = followupMap.get(key) ?? { comments: '', nextFollowupDate: '' };
+        return {
+          key, customerId: r.customer_id, clientName: r.client_name, branch: r.branch,
+          outstanding: Number(r.outstanding),
+          lastPaymentDate: r.last_payment_date ?? null,
+          comments: followup.comments, nextFollowupDate: followup.nextFollowupDate,
+          totalPayments: Number(r.payment_count),
+          firstPaymentDate: r.first_payment_date ?? null,
+          avgDaysBetweenPayments: null, expectedNextPayment: null,
+          paymentDaysOverdue: null, paymentStatus: 'N/A',
+        };
+      });
+      return { rows, collectionsThisMonth };
     },
     staleTime: 60_000,
+    enabled: activityMode === 'inactive',
   });
-
-  // customer_id → "clientname|||branch" key (lowercased, matches r.clientName/r.branch)
-  const customerIdToPairKey = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of allCustomers) {
-      map.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
-    }
-    return map;
-  }, [allCustomers]);
-
-  // "clientname|||branch" → max sale date across ALL customer_ids for that pair
-  const lastSaleDateByPair = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const tx of lastSaleDates) {
-      const pairKey = customerIdToPairKey.get(tx.customer_id);
-      if (!pairKey) continue;
-      const cur = map.get(pairKey);
-      if (!cur || tx.transaction_date > cur) map.set(pairKey, tx.transaction_date);
-    }
-    return map;
-  }, [lastSaleDates, customerIdToPairKey]);
 
   const { data: assigneeListRaw } = useQuery({
     queryKey: ['assignee-list-config'],
@@ -218,9 +221,14 @@ export default function ReceivablesTrackingView() {
   }, [sortCol]);
 
   const displayRows = useMemo(() => {
-    if (!data?.rows) return [];
+    // Inactive mode uses a separate data source (clients with is_active=false)
+    const sourceRows = activityMode === 'inactive'
+      ? (inactiveData?.rows ?? [])
+      : (data?.rows ?? []);
 
-    let rows = data.rows.map(row => {
+    if (sourceRows.length === 0) return [];
+
+    let rows = sourceRows.map(row => {
       const isOverdue = row.outstanding > 0 && !!row.nextFollowupDate && row.nextFollowupDate < today;
       const overdueDays = isOverdue
         ? Math.round((new Date(today + 'T00:00:00').getTime() - new Date(row.nextFollowupDate + 'T00:00:00').getTime()) / 86400000)
@@ -233,27 +241,6 @@ export default function ReceivablesTrackingView() {
       rows = rows.filter(r => r.outstanding > 0);
     } else if (balanceMode === 'zero') {
       rows = rows.filter(r => r.outstanding <= 0);
-    }
-
-    // Activity filter — keyed by client_name|||branch to cover ALL customer_ids for a pair
-    if (activityMode !== 'all') {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - Number(thresholdDays));
-      const cutoffStr = cutoff.toISOString().split('T')[0];
-      if (activityMode === 'inactive') {
-        rows = rows.filter(r => {
-          const pairKey = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
-          const lastSale = lastSaleDateByPair.get(pairKey);
-          return !lastSale || lastSale < cutoffStr;
-        });
-      } else {
-        // active: had a sale within the threshold across any customer_id
-        rows = rows.filter(r => {
-          const pairKey = `${r.clientName.toLowerCase()}|||${r.branch.toLowerCase()}`;
-          const lastSale = lastSaleDateByPair.get(pairKey);
-          return !!lastSale && lastSale >= cutoffStr;
-        });
-      }
     }
 
     if (filterClient.trim()) {
@@ -320,7 +307,7 @@ export default function ReceivablesTrackingView() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, balanceMode, activityMode, thresholdDays, lastSaleDateByPair, sortCol, sortDir, assigneeMap, today]);
+  }, [data?.rows, inactiveData?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, balanceMode, activityMode, sortCol, sortDir, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -336,7 +323,7 @@ export default function ReceivablesTrackingView() {
     const ExcelJS = await importExcelJS();
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Aamodha Operations Portal';
-    const sheetName = activityMode === 'inactive' ? 'Inactive Clients' : activityMode === 'active' ? 'Active Clients' : 'Receivables';
+    const sheetName = activityMode === 'inactive' ? 'Inactive Clients' : 'Receivables';
     const ws = wb.addWorksheet(sheetName);
 
     const headerFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
@@ -348,47 +335,27 @@ export default function ReceivablesTrackingView() {
       left: { style: 'thin' }, right: { style: 'thin' },
     };
 
-    const colCount = activityMode !== 'all' ? 8 : 6;
-    const lastCol = String.fromCharCode(64 + colCount);
+    ws.columns = [
+      { key: 'client', width: 28 }, { key: 'branch', width: 22 },
+      { key: 'outstanding', width: 18 }, { key: 'comments', width: 40 },
+      { key: 'followup', width: 18 }, { key: 'assignee', width: 20 },
+    ];
 
-    if (activityMode !== 'all') {
-      ws.columns = [
-        { key: 'client', width: 28 }, { key: 'branch', width: 22 },
-        { key: 'outstanding', width: 18 }, { key: 'lastSale', width: 18 },
-        { key: 'daysSince', width: 16 }, { key: 'comments', width: 40 },
-        { key: 'followup', width: 18 }, { key: 'assignee', width: 20 },
-      ];
-    } else {
-      ws.columns = [
-        { key: 'client', width: 28 }, { key: 'branch', width: 22 },
-        { key: 'outstanding', width: 18 }, { key: 'comments', width: 40 },
-        { key: 'followup', width: 18 }, { key: 'assignee', width: 20 },
-      ];
-    }
-
-    ws.mergeCells(`A1:${lastCol}1`);
+    ws.mergeCells('A1:F1');
     const titleCell = ws.getCell('A1');
-    titleCell.value = activityMode === 'inactive'
-      ? `Inactive Clients Report (No sale in ${thresholdDays}+ days)`
-      : activityMode === 'active'
-        ? `Active Clients Report (Sale within ${thresholdDays} days)`
-        : 'Receivables Tracker Report';
+    titleCell.value = activityMode === 'inactive' ? 'Inactive Clients Report' : 'Receivables Tracker Report';
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 24;
 
-    ws.mergeCells(`A2:${lastCol}2`);
+    ws.mergeCells('A2:F2');
     ws.getCell('A2').value = `Generated: ${new Date().toLocaleDateString('en-IN')}   |   Clients shown: ${displayRows.length}`;
     ws.getCell('A2').font = { size: 10, italic: true, color: { argb: 'FF666666' } };
     ws.getCell('A2').alignment = { horizontal: 'center' };
 
     ws.addRow([]);
 
-    const headers = activityMode !== 'all'
-      ? ['Client', 'Branch', 'Outstanding (₹)', 'Last Sale Date', 'Days Since Last Sale', 'Latest Note', 'Next Follow-up', 'Assignee']
-      : ['Client', 'Branch', 'Outstanding (₹)', 'Latest Note', 'Next Follow-up', 'Assignee'];
-
-    const headerRow = ws.addRow(headers);
+    const headerRow = ws.addRow(['Client', 'Branch', 'Outstanding (₹)', 'Latest Note', 'Next Follow-up', 'Assignee']);
     headerRow.height = 20;
     headerRow.eachCell(cell => {
       cell.fill = headerFill;
@@ -397,31 +364,15 @@ export default function ReceivablesTrackingView() {
       cell.border = { top: { style: 'thin' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
     });
 
-    const todayMs = new Date(today + 'T00:00:00').getTime();
-
     for (const row of displayRows) {
-      const lastSale = lastSaleDateByPair.get(`${row.clientName.toLowerCase()}|||${row.branch.toLowerCase()}`) ?? null;
-      const daysSince = lastSale
-        ? Math.round((todayMs - new Date(lastSale + 'T00:00:00').getTime()) / 86400000)
-        : null;
+      const dataRow = ws.addRow([
+        row.clientName, row.branch, row.outstanding,
+        row.comments || '',
+        row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
+        assigneeMap[row.customerId] || '—',
+      ]);
 
-      const dataRow = activityMode !== 'all'
-        ? ws.addRow([
-            row.clientName, row.branch, row.outstanding,
-            lastSale ? new Date(lastSale).toLocaleDateString('en-IN') : 'Never',
-            daysSince ?? 'N/A',
-            row.comments || '',
-            row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
-            assigneeMap[row.customerId] || '—',
-          ])
-        : ws.addRow([
-            row.clientName, row.branch, row.outstanding,
-            row.comments || '',
-            row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—',
-            assigneeMap[row.customerId] || '—',
-          ]);
-
-      const rowFill = activityMode !== 'all' ? inactiveFill : (row.isOverdue ? overdueFill : normalFill);
+      const rowFill = activityMode === 'inactive' ? inactiveFill : (row.isOverdue ? overdueFill : normalFill);
       dataRow.eachCell({ includeEmpty: true }, (cell, col) => {
         cell.fill = rowFill;
         cell.border = thinBorder;
@@ -441,10 +392,8 @@ export default function ReceivablesTrackingView() {
     const a = document.createElement('a');
     a.href = url;
     a.download = activityMode === 'inactive'
-      ? `Inactive_Clients_${thresholdDays}days_${today}.xlsx`
-      : activityMode === 'active'
-        ? `Active_Clients_${thresholdDays}days_${today}.xlsx`
-        : `Receivables_${today}.xlsx`;
+      ? `Inactive_Clients_${today}.xlsx`
+      : `Receivables_${today}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -620,40 +569,24 @@ export default function ReceivablesTrackingView() {
         </div>
 
         {/* Activity mode */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex rounded-md border border-border overflow-hidden text-sm">
-            {(['active', 'all', 'inactive'] as ActivityMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setActivityMode(mode)}
-                className={[
-                  'px-3 py-1.5 whitespace-nowrap capitalize transition-colors',
-                  activityMode === mode
-                    ? mode === 'inactive'
-                      ? 'bg-amber-600 text-white font-medium'
-                      : mode === 'active'
-                        ? 'bg-green-700 text-white font-medium'
-                        : 'bg-gray-900 text-white font-medium'
-                    : 'bg-background text-muted-foreground hover:bg-muted/50',
-                ].join(' ')}
-              >
-                {mode === 'all' ? 'All' : mode === 'active' ? 'Active' : 'Inactive'}
-              </button>
-            ))}
-          </div>
-          {activityMode !== 'all' && (
-            <Select value={thresholdDays} onValueChange={v => setThresholdDays(v as ThresholdDays)}>
-              <SelectTrigger className="w-[90px] h-9 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="30">30 days</SelectItem>
-                <SelectItem value="60">60 days</SelectItem>
-                <SelectItem value="90">90 days</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
+        <div className="flex rounded-md border border-border overflow-hidden text-sm">
+          {(['all', 'inactive'] as ActivityMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setActivityMode(mode)}
+              className={[
+                'px-3 py-1.5 whitespace-nowrap transition-colors',
+                activityMode === mode
+                  ? mode === 'inactive'
+                    ? 'bg-amber-600 text-white font-medium'
+                    : 'bg-gray-900 text-white font-medium'
+                  : 'bg-background text-muted-foreground hover:bg-muted/50',
+              ].join(' ')}
+            >
+              {mode === 'all' ? 'Active' : 'Inactive'}
+            </button>
+          ))}
         </div>
 
         {(filterClient || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes || activityMode !== 'all' || balanceMode !== 'positive') && (
@@ -669,8 +602,7 @@ export default function ReceivablesTrackingView() {
               setFilterNotes('');
               setActivityMode('all');
               setBalanceMode('positive');
-            }}
-          >
+            }>
             <X className="h-3.5 w-3.5 mr-1" />
             Clear filters
           </Button>
@@ -678,7 +610,7 @@ export default function ReceivablesTrackingView() {
 
         <Button variant="outline" onClick={handleExport}>
           <Download className="h-4 w-4 mr-2" />
-          {activityMode === 'inactive' ? 'Export Inactive' : activityMode === 'active' ? 'Export Active' : 'Export Excel'}
+          {activityMode === 'inactive' ? 'Export Inactive' : 'Export Excel'}
         </Button>
       </div>
 
@@ -687,16 +619,14 @@ export default function ReceivablesTrackingView() {
       {displayRows.length === 0 ? (
         <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground border rounded-md">
           {activityMode === 'inactive'
-            ? `No inactive clients (no sale in ${thresholdDays}+ days)${balanceMode === 'positive' ? ' with outstanding balance' : balanceMode === 'zero' ? ' with no balance' : ''} found.`
-            : activityMode === 'active'
-              ? `No active clients (sale within ${thresholdDays} days)${balanceMode === 'positive' ? ' with outstanding balance' : balanceMode === 'zero' ? ' with no balance' : ''} found.`
-              : (filterClient || filterMinOutstanding || filterNotes || filterFollowupStatus || filterAssignee)
-                ? 'No clients match the current filters.'
-                : balanceMode === 'positive'
-                  ? 'No clients with outstanding balance found.'
-                  : balanceMode === 'zero'
-                    ? 'No clients with no balance found.'
-                    : 'No clients found.'}
+            ? `No inactive clients${balanceMode === 'positive' ? ' with outstanding balance' : balanceMode === 'zero' ? ' with no balance' : ''} found.`
+            : (filterClient || filterMinOutstanding || filterNotes || filterFollowupStatus || filterAssignee)
+              ? 'No clients match the current filters.'
+              : balanceMode === 'positive'
+                ? 'No clients with outstanding balance found.'
+                : balanceMode === 'zero'
+                  ? 'No clients with no balance found.'
+                  : 'No clients found.'}
         </div>
       ) : (
         <div className="flex-1 min-h-0 rounded-md border overflow-auto">
@@ -873,7 +803,7 @@ export default function ReceivablesTrackingView() {
 
       <p className="text-xs text-muted-foreground text-right flex-shrink-0">
         {displayRows.length}{' '}
-        {activityMode === 'inactive' ? 'inactive' : activityMode === 'active' ? 'active' : ''}{' '}
+        {activityMode === 'inactive' ? 'inactive ' : ''}
         client{displayRows.length !== 1 ? 's' : ''}
         {balanceMode === 'positive' ? ' with outstanding balance' : balanceMode === 'zero' ? ' with no balance' : ''}
       </p>
