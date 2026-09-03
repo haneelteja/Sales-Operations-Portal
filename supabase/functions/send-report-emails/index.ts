@@ -231,7 +231,7 @@ function buildOrdersPaymentEmail(rows: OrderRow[], date: string): string {
   return emailShell('Orders &amp; Payment Status Report', date, body);
 }
 
-// ─── Email builders ──────────────────────────────────────────────────────────
+// ─── Payment & credit email builders ────────────────────────────────────────
 
 type OutstandingRow = {
   customer_id: string;
@@ -244,46 +244,6 @@ type OutstandingRow = {
   age_days: number;
   status: 'Overdue' | 'Due Soon';
 };
-
-function buildOrdersPaymentEmail(rows: OutstandingRow[], date: string): string {
-  const overdue = rows.filter(r => r.status === 'Overdue');
-  const dueSoon = rows.filter(r => r.status === 'Due Soon');
-  const totalOutstanding = rows.reduce((s, r) => s + r.outstanding, 0);
-
-  const tableRows = rows.map(r => `
-    <tr style="border-bottom:1px solid #f1f5f9;">
-      <td style="padding:7px 8px;font-weight:500;">${r.client_name}</td>
-      <td style="padding:7px 8px;color:#64748b;">${r.branch || '—'}</td>
-      <td style="padding:7px 8px;text-align:center;">${r.invoice_count}</td>
-      <td style="padding:7px 8px;font-weight:600;color:#dc2626;">${fmtINR(r.outstanding)}</td>
-      <td style="padding:7px 8px;color:#64748b;white-space:nowrap;">${fmtDate(r.oldest_sale_date)}</td>
-      <td style="padding:7px 8px;text-align:center;">${r.age_days}</td>
-      <td style="padding:7px 8px;">${statusBadge(r.status)}</td>
-    </tr>`).join('');
-
-  const body = `
-    <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
-      ${summaryBox('Overdue', overdue.length, '#fee2e2', '#991b1b')}
-      ${summaryBox('Due Soon', dueSoon.length, '#fef3c7', '#92400e')}
-      ${summaryBox('Total Outstanding', fmtINR(totalOutstanding), '#f1f5f9', '#475569')}
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead>
-        <tr style="background:#f8fafc;">
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Client</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Branch</th>
-          <th style="text-align:center;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Invoices</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Outstanding</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Oldest Invoice</th>
-          <th style="text-align:center;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Days</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Status</th>
-        </tr>
-      </thead>
-      <tbody>${tableRows}</tbody>
-    </table>`;
-
-  return emailShell('Orders &amp; Payment Status Report', date, body);
-}
 
 function buildPaymentFollowupEmail(rows: OutstandingRow[], date: string): string {
   const overdue = rows.filter(r => r.status === 'Overdue');
@@ -399,40 +359,6 @@ function mergeByNameBranch(rows: OutstandingRow[]): OutstandingRow[] {
     }
   }
   return Array.from(merged.values());
-}
-
-async function fetchOutstandingRows(supabase: ReturnType<typeof createClient>): Promise<OutstandingRow[]> {
-  const today = Date.now();
-  const DAY = 86400000;
-
-  const [{ data: outstanding }, { data: customers }] = await Promise.all([
-    supabase.rpc('get_customer_outstanding'),
-    supabase.from('customers').select('id, client_name, branch, whatsapp_number'),
-  ]);
-
-  const customerMap = new Map((customers ?? []).map((c: { id: string; client_name: string; branch: string | null; whatsapp_number: string | null }) => [c.id, c]));
-
-  const unmerged = (outstanding ?? [])
-    .filter((r: { outstanding: number; oldest_sale_date: string | null }) => r.outstanding > 0 && r.oldest_sale_date)
-    .map((r: { customer_id: string; outstanding: number; invoice_count: number; oldest_sale_date: string | null }) => {
-      const ageDays = Math.floor((today - new Date(r.oldest_sale_date!).getTime()) / DAY);
-      if (ageDays < 15) return null;
-      const cust = customerMap.get(r.customer_id) as { client_name: string; branch: string | null; whatsapp_number: string | null } | undefined;
-      return {
-        customer_id: r.customer_id,
-        client_name: cust?.client_name ?? 'Unknown',
-        branch: cust?.branch ?? null,
-        whatsapp_number: cust?.whatsapp_number ?? null,
-        outstanding: r.outstanding,
-        invoice_count: r.invoice_count,
-        oldest_sale_date: r.oldest_sale_date,
-        age_days: ageDays,
-        status: ageDays > 30 ? 'Overdue' : 'Due Soon',
-      } as OutstandingRow;
-    })
-    .filter(Boolean) as OutstandingRow[];
-
-  return mergeByNameBranch(unmerged).sort((a, b) => b.outstanding - a.outstanding);
 }
 
 // Payment Follow Up uses payment-pattern logic (same as the portal's Receivables Tracking view).
