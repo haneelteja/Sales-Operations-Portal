@@ -113,14 +113,35 @@ const OrderAnalysis: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("transaction_type, amount, transaction_date, customers(client_name, branch, is_active)")
-        .limit(10000);
+        .select("transaction_type, transaction_date, customers(client_name, branch, is_active)")
+        .limit(50000);
       return (data || []) as Array<{
         transaction_type: string;
-        amount: number | null;
         transaction_date: string | null;
         customers: { client_name: string; branch: string; is_active: boolean } | null;
       }>;
+    },
+  });
+
+  // Use get_customer_outstanding RPC for accurate outstanding (includes opening_balance)
+  const { data: outstandingRpc = [] } = useQuery({
+    queryKey: ["order-analysis-outstanding"],
+    staleTime: 2 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase.rpc("get_customer_outstanding");
+      return (data || []) as Array<{ customer_id: string; outstanding: number }>;
+    },
+  });
+
+  const { data: customersData = [] } = useQuery({
+    queryKey: ["order-analysis-customers"],
+    staleTime: 2 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, client_name, branch")
+        .limit(10000);
+      return (data || []) as Array<{ id: string; client_name: string; branch: string | null }>;
     },
   });
 
@@ -130,30 +151,30 @@ const OrderAnalysis: React.FC = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const dateMap = new Map<string, string[]>();
+    // Build outstanding map from RPC (includes opening_balance — accurate)
+    const custKeyById = new Map<string, string>();
+    for (const c of customersData) {
+      custKeyById.set(c.id, `${c.client_name.trim()}|||${(c.branch || "").trim()}`);
+    }
     const outstandingMap = new Map<string, number>();
+    for (const r of outstandingRpc) {
+      const key = custKeyById.get(r.customer_id);
+      if (!key) continue;
+      outstandingMap.set(key, (outstandingMap.get(key) ?? 0) + r.outstanding);
+    }
 
+    // Build order-date history from sale transactions (active clients only)
+    const dateMap = new Map<string, string[]>();
     rawTx.forEach((tx) => {
       const cust = tx.customers;
       if (!cust?.client_name || cust.is_active === false) return;
+      if (tx.transaction_type !== "sale" || !tx.transaction_date) return;
       const key = `${cust.client_name.trim()}|||${(cust.branch || "").trim()}`;
-
-      // Outstanding balance
-      const prev = outstandingMap.get(key) ?? 0;
-      const amt = tx.amount ?? 0;
-      outstandingMap.set(
-        key,
-        tx.transaction_type === "sale" ? prev + amt : tx.transaction_type === "payment" ? prev - amt : prev
-      );
-
-      // Order date history — only from sale transactions
-      if (tx.transaction_type === "sale" && tx.transaction_date) {
-        const d = tx.transaction_date.split("T")[0];
-        if (d && d !== "null") {
-          const arr = dateMap.get(key);
-          if (arr) arr.push(d);
-          else dateMap.set(key, [d]);
-        }
+      const d = tx.transaction_date.split("T")[0];
+      if (d && d !== "null") {
+        const arr = dateMap.get(key);
+        if (arr) arr.push(d);
+        else dateMap.set(key, [d]);
       }
     });
 
@@ -199,13 +220,16 @@ const OrderAnalysis: React.FC = () => {
       });
     });
 
-    // Default sort: OVERDUE first, then by daysOverdue desc
+    // Sort: by status group, then by expectedNext ascending within each group (nulls last)
     return result.sort((a, b) => {
       const so = (STATUS_ORDER[a.status] ?? 6) - (STATUS_ORDER[b.status] ?? 6);
       if (so !== 0) return so;
-      return b.daysOverdue - a.daysOverdue;
+      if (a.expectedNext && b.expectedNext) return a.expectedNext.localeCompare(b.expectedNext);
+      if (a.expectedNext) return -1;
+      if (b.expectedNext) return 1;
+      return 0;
     });
-  }, [rawTx]);
+  }, [rawTx, outstandingRpc, customersData]);
 
   // ── Unique values for filter dropdowns ────────────────────────────────────────
 
