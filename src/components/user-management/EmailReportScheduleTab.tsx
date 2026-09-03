@@ -35,7 +35,7 @@ interface EmailReportLog {
 
 const REPORT_DESCRIPTIONS: Record<string, string> = {
   orders_payment_status: 'Table of all clients with overdue (>30 days) or due soon (15–30 days) outstanding invoices — client, branch, invoice count, outstanding amount, oldest invoice date.',
-  payment_followup: 'Action-oriented list grouped by Overdue and Due Soon, including WhatsApp number for easy follow-up.',
+  payment_followup: 'Mirrors the Receivables Tracker — all active clients with outstanding balance, classified by follow-up date: Overdue (date passed), Upcoming (date set), or No Date.',
   credit_risk: 'Per client/branch credit limit (= avg monthly sales), current outstanding, % used, and status — Over Limit / Warning / OK.',
 };
 
