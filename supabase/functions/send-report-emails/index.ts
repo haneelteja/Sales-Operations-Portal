@@ -350,7 +350,7 @@ async function fetchPaymentFollowupRows(supabase: ReturnType<typeof createClient
   const [{ data: outstanding }, { data: customers }, { data: followups }] = await Promise.all([
     supabase.rpc('get_customer_outstanding'),
     supabase.from('customers').select('id, client_name, branch, whatsapp_number').eq('is_active', true).limit(10000),
-    supabase.from('client_followups').select('client_name, branch, comments, next_followup_date').limit(10000),
+    supabase.from('client_followups').select('client_name, branch, comments, next_followup_date').order('updated_at', { ascending: true }).limit(10000),
   ]);
 
   // customer_id → name+branch key; prefer whatsapp-bearing record per name+branch
