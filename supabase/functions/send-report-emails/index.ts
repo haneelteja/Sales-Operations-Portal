@@ -177,20 +177,30 @@ async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promi
     return a.days_left - b.days_left;
   });
 
-  const dispatched = (dispatchedOrders ?? []).map((o: Record<string, unknown>) => {
-    const outKey = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
-    return {
-      client: (o.client as string) ?? '',
-      branch: (o.branch as string | null) ?? null,
-      sku: (o.sku as string) ?? '',
-      number_of_cases: (o.cases as number) ?? 0,
-      order_date: (o.order_date as string) ?? '',
-      tentative_delivery_date: (o.delivery_date as string) ?? null,
-      status: 'dispatched',
-      days_left: null,
-      outstanding: outstandingByKey.get(outKey) ?? 0,
-    } as OrderRow;
-  });
+  // Deduplicate dispatched by client+branch — orders_dispatch is sorted delivery_date DESC
+  // so the first occurrence of each pair is the most recent dispatch.
+  const seenDispatch = new Set<string>();
+  const dispatched = (dispatchedOrders ?? [])
+    .map((o: Record<string, unknown>) => {
+      const outKey = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
+      return {
+        client: (o.client as string) ?? '',
+        branch: (o.branch as string | null) ?? null,
+        sku: (o.sku as string) ?? '',
+        number_of_cases: (o.cases as number) ?? 0,
+        order_date: (o.order_date as string) ?? '',
+        tentative_delivery_date: (o.delivery_date as string) ?? null,
+        status: 'dispatched',
+        days_left: null,
+        outstanding: outstandingByKey.get(outKey) ?? 0,
+      } as OrderRow;
+    })
+    .filter((r: OrderRow) => {
+      const key = `${r.client.toLowerCase()}|||${(r.branch ?? '').toLowerCase()}`;
+      if (seenDispatch.has(key)) return false;
+      seenDispatch.add(key);
+      return true;
+    });
 
   return [...pending, ...dispatched];
 }
