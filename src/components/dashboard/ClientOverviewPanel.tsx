@@ -207,19 +207,39 @@ export default function ClientOverviewPanel() {
 
   const selectedCustomer = customers.find(c => c.id === selectedId) ?? null;
 
+  // ── All customer_ids for this (client_name, branch) pair ───────────────────
+  // A client may have multiple customer_ids (one per SKU). Aggregate across all
+  // so that outstanding is never wrongly negative due to split-ID payment records.
+  const { data: pairCustomerIds = [] } = useQuery<string[]>({
+    queryKey: ['overview-pair-ids', selectedCustomer?.client_name, selectedCustomer?.branch],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('client_name', selectedCustomer!.client_name)
+        .eq('branch', selectedCustomer!.branch ?? '');
+      if (error) throw error;
+      return (data ?? []).map(c => c.id as string);
+    },
+    enabled: !!selectedCustomer,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const effectiveIds = pairCustomerIds.length > 0 ? pairCustomerIds : (selectedId ? [selectedId] : []);
+
   // ── Sales transactions ──────────────────────────────────────────────────────
   const { data: saleTxs = [], isLoading: txLoading } = useQuery<SaleTx[]>({
-    queryKey: ['overview-sales-txs', selectedId],
+    queryKey: ['overview-sales-txs', ...effectiveIds],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sales_transactions')
         .select('transaction_date, transaction_type, amount, quantity, sku')
-        .eq('customer_id', selectedId)
+        .in('customer_id', effectiveIds)
         .order('transaction_date', { ascending: true });
       if (error) throw error;
       return (data ?? []) as SaleTx[];
     },
-    enabled: !!selectedId,
+    enabled: effectiveIds.length > 0,
     staleTime: 2 * 60 * 1000,
   });
 
@@ -252,55 +272,55 @@ export default function ClientOverviewPanel() {
 
   // ── factory_payables (production type) ─────────────────────────────────────
   const { data: factoryPayables = [] } = useQuery({
-    queryKey: ['overview-factory', selectedId],
+    queryKey: ['overview-factory', ...effectiveIds],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('factory_payables')
         .select('transaction_date, amount, quantity')
-        .eq('customer_id', selectedId)
+        .in('customer_id', effectiveIds)
         .eq('transaction_type', 'production');
       if (error) throw error;
       return (data ?? []) as { transaction_date: string; amount: number | null; quantity: number | null }[];
     },
-    enabled: !!selectedId,
+    enabled: effectiveIds.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
   // ── transport_expenses ──────────────────────────────────────────────────────
   const { data: transportExpenses = [] } = useQuery({
-    queryKey: ['overview-transport', selectedId],
+    queryKey: ['overview-transport', ...effectiveIds],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('transport_expenses')
         .select('expense_date, amount')
-        .eq('client_id', selectedId);
+        .in('client_id', effectiveIds);
       if (error) throw error;
       return (data ?? []) as { expense_date: string; amount: number | null }[];
     },
-    enabled: !!selectedId,
+    enabled: effectiveIds.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
   // ── label_purchases ─────────────────────────────────────────────────────────
   const { data: labelPurchases = [] } = useQuery({
-    queryKey: ['overview-labels', selectedId],
+    queryKey: ['overview-labels', ...effectiveIds],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('label_purchases')
         .select('purchase_date, total_amount')
-        .eq('client_id', selectedId);
+        .in('client_id', effectiveIds);
       if (error) throw error;
       return (data ?? []) as { purchase_date: string; total_amount: number | null }[];
     },
-    enabled: !!selectedId,
+    enabled: effectiveIds.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
   // ── Computed metrics ────────────────────────────────────────────────────────
   const metrics = useMemo(() => {
-    if (!selectedId || saleTxs.length === 0) return null;
+    if (!selectedId || effectiveIds.length === 0 || saleTxs.length === 0) return null;
 
     const sales = saleTxs.filter(t => t.transaction_type === 'sale');
     const payments = saleTxs.filter(t => t.transaction_type === 'payment');
@@ -397,7 +417,7 @@ export default function ClientOverviewPanel() {
       orderStatus, paymentStatus,
       paymentCount: payments.length,
     };
-  }, [selectedId, saleTxs]);
+  }, [selectedId, effectiveIds, saleTxs]);
 
   // ── Monthly chart data ──────────────────────────────────────────────────────
   const chartData = useMemo((): MonthBucket[] => {
