@@ -20,6 +20,7 @@ import { fetchReceivablesTracking, type RawRow, type FetchResult } from '@/lib/r
 type SortCol = 'name' | 'outstanding' | 'followup' | 'assignee';
 type ActivityMode = 'active' | 'all' | 'inactive';
 type ThresholdDays = '30' | '60' | '90';
+type BalanceMode = 'positive' | 'all' | 'zero';
 
 interface AssigneeEntry { name: string; bgClass: string; }
 
@@ -40,7 +41,7 @@ export default function ReceivablesTrackingView() {
   const [filterNotes, setFilterNotes] = useState('');
   const [filterFollowupStatus, setFilterFollowupStatus] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
-  const [showAllClients, setShowAllClients] = useState(false);
+  const [balanceMode, setBalanceMode] = useState<BalanceMode>('positive');
   const [activityMode, setActivityMode] = useState<ActivityMode>('all');
   const [thresholdDays, setThresholdDays] = useState<ThresholdDays>('60');
   const [activeNotes, setActiveNotes] = useState<{
@@ -228,8 +229,10 @@ export default function ReceivablesTrackingView() {
     });
 
     // Balance filter
-    if (!showAllClients) {
+    if (balanceMode === 'positive') {
       rows = rows.filter(r => r.outstanding > 0);
+    } else if (balanceMode === 'zero') {
+      rows = rows.filter(r => r.outstanding <= 0);
     }
 
     // Activity filter — keyed by client_name|||branch to cover ALL customer_ids for a pair
@@ -317,7 +320,7 @@ export default function ReceivablesTrackingView() {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, showAllClients, activityMode, thresholdDays, lastSaleDateByPair, sortCol, sortDir, assigneeMap, today]);
+  }, [data?.rows, filterClient, filterMinOutstanding, filterNotes, filterFollowupStatus, filterAssignee, balanceMode, activityMode, thresholdDays, lastSaleDateByPair, sortCol, sortDir, assigneeMap, today]);
 
   const overdueCount = useMemo(
     () => displayRows.filter(r => r.isOverdue).length,
@@ -599,19 +602,19 @@ export default function ReceivablesTrackingView() {
 
         {/* Balance toggle */}
         <div className="flex rounded-md border border-border overflow-hidden text-sm">
-          {(['with', 'all'] as const).map((v) => (
+          {(['positive', 'all', 'zero'] as BalanceMode[]).map((v) => (
             <button
               key={v}
               type="button"
-              onClick={() => setShowAllClients(v === 'all')}
+              onClick={() => setBalanceMode(v)}
               className={[
                 'px-3 py-1.5 whitespace-nowrap transition-colors',
-                (v === 'all') === showAllClients
+                balanceMode === v
                   ? 'bg-gray-900 text-white font-medium'
                   : 'bg-background text-muted-foreground hover:bg-muted/50',
               ].join(' ')}
             >
-              {v === 'with' ? 'With balance' : 'No balance'}
+              {v === 'positive' ? 'With balance' : v === 'all' ? 'All' : 'No balance'}
             </button>
           ))}
         </div>
@@ -653,7 +656,7 @@ export default function ReceivablesTrackingView() {
           )}
         </div>
 
-        {(filterClient || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes || activityMode !== 'all' || showAllClients) && (
+        {(filterClient || filterAssignee || filterMinOutstanding || filterFollowupStatus || filterNotes || activityMode !== 'all' || balanceMode !== 'positive') && (
           <Button
             variant="ghost"
             size="sm"
@@ -665,7 +668,7 @@ export default function ReceivablesTrackingView() {
               setFilterFollowupStatus('');
               setFilterNotes('');
               setActivityMode('all');
-              setShowAllClients(false);
+              setBalanceMode('positive');
             }}
           >
             <X className="h-3.5 w-3.5 mr-1" />
@@ -684,14 +687,16 @@ export default function ReceivablesTrackingView() {
       {displayRows.length === 0 ? (
         <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground border rounded-md">
           {activityMode === 'inactive'
-            ? `No inactive clients (no sale in ${thresholdDays}+ days)${!showAllClients ? ' with outstanding balance' : ''} found.`
+            ? `No inactive clients (no sale in ${thresholdDays}+ days)${balanceMode === 'positive' ? ' with outstanding balance' : balanceMode === 'zero' ? ' with no balance' : ''} found.`
             : activityMode === 'active'
-              ? `No active clients (sale within ${thresholdDays} days)${!showAllClients ? ' with outstanding balance' : ''} found.`
+              ? `No active clients (sale within ${thresholdDays} days)${balanceMode === 'positive' ? ' with outstanding balance' : balanceMode === 'zero' ? ' with no balance' : ''} found.`
               : (filterClient || filterMinOutstanding || filterNotes || filterFollowupStatus || filterAssignee)
                 ? 'No clients match the current filters.'
-                : showAllClients
-                  ? 'No clients found.'
-                  : 'No clients with outstanding balance found.'}
+                : balanceMode === 'positive'
+                  ? 'No clients with outstanding balance found.'
+                  : balanceMode === 'zero'
+                    ? 'No clients with no balance found.'
+                    : 'No clients found.'}
         </div>
       ) : (
         <div className="flex-1 min-h-0 rounded-md border overflow-auto">
@@ -870,7 +875,7 @@ export default function ReceivablesTrackingView() {
         {displayRows.length}{' '}
         {activityMode === 'inactive' ? 'inactive' : activityMode === 'active' ? 'active' : ''}{' '}
         client{displayRows.length !== 1 ? 's' : ''}
-        {!showAllClients ? ' with outstanding balance' : ''}
+        {balanceMode === 'positive' ? ' with outstanding balance' : balanceMode === 'zero' ? ' with no balance' : ''}
       </p>
       </div>{/* end flex-1 table+count wrapper */}
 
