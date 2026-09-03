@@ -585,7 +585,7 @@ export default function ReceivablesTrackingView() {
                   : 'bg-background text-muted-foreground hover:bg-muted/50',
               ].join(' ')}
             >
-              {v === 'with' ? 'With balance' : 'All clients'}
+              {v === 'with' ? 'With balance' : 'No balance'}
             </button>
           ))}
         </div>
@@ -665,7 +665,7 @@ export default function ReceivablesTrackingView() {
                 ? 'No clients match the current filters.'
                 : showAllClients
                   ? 'No clients found.'
-                  : 'No clients with outstanding balances found.'}
+                  : 'No clients with outstanding balance found.'}
         </div>
       ) : (
         <div className="flex-1 min-h-0 rounded-md border overflow-auto">
