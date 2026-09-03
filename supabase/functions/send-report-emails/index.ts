@@ -81,60 +81,54 @@ type OrderRow = {
   number_of_cases: number;
   order_date: string;
   tentative_delivery_date: string | null;
-  status: string;
   days_left: number | null;
   outstanding: number;
 };
 
-function orderDeliveryStatus(r: OrderRow): string {
-  if (r.status === 'dispatched') return 'Dispatched';
-  if (r.status === 'delivered')  return 'delivered';
-  if (r.status === 'cancelled')  return 'cancelled';
-  // pending
-  if (r.days_left === null)  return 'Pending';
-  if (r.days_left < 0)       return 'Delivery Overdue';
-  if (r.days_left === 0)     return 'Due Today';
-  if (r.days_left === 1)     return 'Due Tomorrow';
-  return `Pending`;
+type AnalysisRow = {
+  client: string;
+  branch: string;
+  outstanding: number;
+  lastOrderDate: string | null;
+  avgDays: number | null;
+  expectedNext: string | null;
+  daysOverdue: number;
+  status: 'OVERDUE' | 'DUE SOON' | 'ON TRACK' | 'Only 1 Order' | 'No Orders' | 'N/A';
+};
+
+function computeAnalysisStatus(
+  totalOrders: number, expectedNext: string | null, daysOverdue: number
+): AnalysisRow['status'] {
+  if (totalOrders === 0) return 'No Orders';
+  if (totalOrders === 1) return 'Only 1 Order';
+  if (!expectedNext) return 'N/A';
+  if (daysOverdue > 7) return 'OVERDUE';
+  if (daysOverdue > 0) return 'DUE SOON';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const exp   = new Date(expectedNext); exp.setHours(0, 0, 0, 0);
+  if (today.getTime() >= exp.getTime() - 3 * 86400000) return 'DUE SOON';
+  return 'ON TRACK';
 }
 
-function orderRowBg(r: OrderRow): string {
-  if (r.status !== 'pending') return 'transparent';
-  if (r.days_left === null)  return 'transparent';
-  if (r.days_left < 0)       return '#fff5f5';
-  if (r.days_left <= 1)      return '#fffbeb';
-  return 'transparent';
+function pendingDaysLabel(days_left: number | null): string {
+  if (days_left === null) return '—';
+  if (days_left < 0) return `${Math.abs(days_left)}d late`;
+  if (days_left === 0) return 'Today';
+  if (days_left === 1) return 'Tomorrow';
+  return `${days_left}d`;
 }
 
-function daysLabel(r: OrderRow): string {
-  if (r.status !== 'pending' || r.days_left === null) return '—';
-  if (r.days_left < 0) return `${Math.abs(r.days_left)}d late`;
-  if (r.days_left === 0) return 'Today';
-  if (r.days_left === 1) return 'Tomorrow';
-  return `${r.days_left}d`;
-}
-
-async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promise<OrderRow[]> {
-  const cutoffDispatched = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-
-  const [{ data: pendingOrders }, { data: dispatchedOrders }, { data: outstanding }, { data: customers }] = await Promise.all([
-    // Pending orders from orders table
+async function fetchPendingOrders(supabase: ReturnType<typeof createClient>): Promise<OrderRow[]> {
+  const [{ data: orders }, { data: outstanding }, { data: customers }] = await Promise.all([
     supabase
       .from('orders')
-      .select('client, branch, sku, number_of_cases, order_date, tentative_delivery_date, status')
+      .select('client, branch, sku, number_of_cases, order_date, tentative_delivery_date')
       .eq('status', 'pending')
       .order('tentative_delivery_date', { ascending: true, nullsFirst: false }),
-    // Dispatched orders from orders_dispatch table (last 30 days)
-    supabase
-      .from('orders_dispatch')
-      .select('client, branch, sku, cases, order_date, delivery_date')
-      .gte('delivery_date', cutoffDispatched)
-      .order('delivery_date', { ascending: false }),
     supabase.rpc('get_customer_outstanding'),
     supabase.from('customers').select('id, client_name, branch').limit(10000),
   ]);
 
-  // Build outstanding lookup: lowercase(client_name)|||lowercase(branch) → total outstanding
   const custKeyMap = new Map<string, string>();
   for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null }[]) {
     custKeyMap.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
@@ -146,17 +140,15 @@ async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promi
     outstandingByKey.set(key, (outstandingByKey.get(key) ?? 0) + r.outstanding);
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
 
-  const pending = (pendingOrders ?? []).map((o: Record<string, unknown>) => {
-    const outKey = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
+  return (orders ?? []).map((o: Record<string, unknown>) => {
+    const outKey     = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
     const rawDelivery = o.tentative_delivery_date as string | null;
     let daysLeft: number | null = null;
     if (rawDelivery) {
-      const d = new Date(rawDelivery);
-      d.setHours(0, 0, 0, 0);
+      const d = new Date(rawDelivery); d.setHours(0, 0, 0, 0);
       daysLeft = Math.round((d.getTime() - todayMs) / 86400000);
     }
     return {
@@ -166,92 +158,189 @@ async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promi
       number_of_cases: (o.number_of_cases as number) ?? 0,
       order_date: (o.order_date as string) ?? '',
       tentative_delivery_date: rawDelivery,
-      status: 'pending',
       days_left: daysLeft,
       outstanding: outstandingByKey.get(outKey) ?? 0,
     } as OrderRow;
-  }).sort((a, b) => {
-    if (a.days_left === null && b.days_left === null) return 0;
-    if (a.days_left === null) return 1;
-    if (b.days_left === null) return -1;
-    return a.days_left - b.days_left;
   });
-
-  // Deduplicate dispatched by client+branch — orders_dispatch is sorted delivery_date DESC
-  // so the first occurrence of each pair is the most recent dispatch.
-  const seenDispatch = new Set<string>();
-  const dispatched = (dispatchedOrders ?? [])
-    .map((o: Record<string, unknown>) => {
-      const outKey = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
-      return {
-        client: (o.client as string) ?? '',
-        branch: (o.branch as string | null) ?? null,
-        sku: (o.sku as string) ?? '',
-        number_of_cases: (o.cases as number) ?? 0,
-        order_date: (o.order_date as string) ?? '',
-        tentative_delivery_date: (o.delivery_date as string) ?? null,
-        status: 'dispatched',
-        days_left: null,
-        outstanding: outstandingByKey.get(outKey) ?? 0,
-      } as OrderRow;
-    })
-    .filter((r: OrderRow) => {
-      const key = `${r.client.toLowerCase()}|||${(r.branch ?? '').toLowerCase()}`;
-      if (seenDispatch.has(key)) return false;
-      seenDispatch.add(key);
-      return true;
-    });
-
-  return [...pending, ...dispatched];
 }
 
-function buildOrdersPaymentEmail(rows: OrderRow[], date: string): string {
-  const pending    = rows.filter(r => r.status === 'pending');
-  const dispatched = rows.filter(r => r.status === 'dispatched');
-  const urgentDelivery = pending.filter(r => r.days_left !== null && r.days_left <= 1);
-  const uniqueClients = new Set(rows.map(r => `${r.client}|||${r.branch ?? ''}`)).size;
+async function fetchOrderAnalysisRows(supabase: ReturnType<typeof createClient>): Promise<AnalysisRow[]> {
+  const [{ data: txData }, { data: outstanding }, { data: customers }] = await Promise.all([
+    supabase
+      .from('sales_transactions')
+      .select('transaction_type, transaction_date, customer_id')
+      .limit(50000),
+    supabase.rpc('get_customer_outstanding'),
+    supabase.from('customers').select('id, client_name, branch, is_active').limit(10000),
+  ]);
 
-  const tableRows = rows.map(r => {
-    const dlStatus = orderDeliveryStatus(r);
-    const dLabel   = daysLabel(r);
-    const bg       = orderRowBg(r);
+  // Active customer id → {client_name, branch}
+  const custMap = new Map<string, { client_name: string; branch: string }>();
+  for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null; is_active: boolean }[]) {
+    if (c.is_active) custMap.set(c.id, { client_name: c.client_name, branch: c.branch ?? '' });
+  }
+
+  // Outstanding by lowercase name+branch key
+  const custKeyMap = new Map<string, string>();
+  for (const c of (customers ?? []) as { id: string; client_name: string; branch: string | null }[]) {
+    custKeyMap.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
+  }
+  const outstandingByKey = new Map<string, number>();
+  for (const r of (outstanding ?? []) as { customer_id: string; outstanding: number }[]) {
+    const key = custKeyMap.get(r.customer_id);
+    if (!key) continue;
+    outstandingByKey.set(key, (outstandingByKey.get(key) ?? 0) + r.outstanding);
+  }
+
+  // Build unique order-date set per active client+branch (from sale transactions only)
+  const dateMap = new Map<string, Set<string>>();
+  for (const tx of (txData ?? []) as { transaction_type: string; transaction_date: string | null; customer_id: string }[]) {
+    if (tx.transaction_type !== 'sale' || !tx.transaction_date) continue;
+    const cust = custMap.get(tx.customer_id);
+    if (!cust) continue;
+    const key = `${cust.client_name}|||${cust.branch}`;
+    const d = tx.transaction_date.split('T')[0];
+    if (!dateMap.has(key)) dateMap.set(key, new Set());
+    dateMap.get(key)!.add(d);
+  }
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+
+  const STATUS_ORDER: Record<string, number> = { OVERDUE: 0, 'DUE SOON': 1, 'ON TRACK': 2, 'Only 1 Order': 3, 'N/A': 4, 'No Orders': 5 };
+
+  const rows: AnalysisRow[] = [];
+  dateMap.forEach((dateSet, key) => {
+    const [client, branch] = key.split('|||');
+    const sorted        = [...dateSet].sort();
+    const totalOrders   = sorted.length;
+    const lastOrderDate = sorted[totalOrders - 1] ?? null;
+    const firstOrderDate = sorted[0] ?? null;
+
+    let avgDays: number | null     = null;
+    let expectedNext: string | null = null;
+    if (totalOrders > 1 && firstOrderDate && lastOrderDate) {
+      const span = new Date(lastOrderDate).getTime() - new Date(firstOrderDate).getTime();
+      avgDays = Math.round(span / ((totalOrders - 1) * 86400000));
+      if (avgDays > 0) {
+        expectedNext = new Date(new Date(lastOrderDate).getTime() + avgDays * 86400000).toISOString().split('T')[0];
+      }
+    }
+
+    let daysOverdue = 0;
+    if (expectedNext) {
+      const expMs = new Date(expectedNext).getTime();
+      if (todayMs > expMs) daysOverdue = Math.round((todayMs - expMs) / 86400000);
+    }
+
+    const outKey = `${client.toLowerCase()}|||${branch.toLowerCase()}`;
+    rows.push({
+      client, branch,
+      outstanding:   outstandingByKey.get(outKey) ?? 0,
+      lastOrderDate, avgDays, expectedNext, daysOverdue,
+      status: computeAnalysisStatus(totalOrders, expectedNext, daysOverdue),
+    });
+  });
+
+  return rows.sort((a, b) => {
+    const so = (STATUS_ORDER[a.status] ?? 6) - (STATUS_ORDER[b.status] ?? 6);
+    return so !== 0 ? so : b.daysOverdue - a.daysOverdue;
+  });
+}
+
+function buildOrdersPaymentEmail(pending: OrderRow[], analysis: AnalysisRow[], date: string): string {
+  const overdue = analysis.filter(r => r.status === 'OVERDUE').length;
+  const dueSoon = analysis.filter(r => r.status === 'DUE SOON').length;
+  const onTrack = analysis.filter(r => r.status === 'ON TRACK').length;
+
+  // ── Pending orders table (shown only when there are pending orders) ──────────
+  const pendingSection = pending.length === 0 ? '' : `
+    <h3 style="font-size:14px;font-weight:600;color:#1e293b;margin:0 0 10px;">Pending Orders</h3>
+    <div style="overflow-x:auto;margin-bottom:28px;">
+      <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:13px;">
+        <thead>
+          <tr style="background:#eff6ff;border-bottom:2px solid #bfdbfe;">
+            <th style="padding:9px 10px;text-align:left;color:#1d4ed8;font-weight:600;">CLIENT</th>
+            <th style="padding:9px 10px;text-align:left;color:#1d4ed8;font-weight:600;">BRANCH</th>
+            <th style="padding:9px 10px;text-align:left;color:#1d4ed8;font-weight:600;">SKU</th>
+            <th style="padding:9px 10px;text-align:center;color:#1d4ed8;font-weight:600;">CASES</th>
+            <th style="padding:9px 10px;text-align:left;color:#1d4ed8;font-weight:600;">ORDER DATE</th>
+            <th style="padding:9px 10px;text-align:left;color:#1d4ed8;font-weight:600;">DELIVERY DATE</th>
+            <th style="padding:9px 10px;text-align:center;color:#1d4ed8;font-weight:600;">DAYS LEFT</th>
+            <th style="padding:9px 10px;text-align:right;color:#1d4ed8;font-weight:600;">OUTSTANDING</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pending.map(r => {
+            const dl = r.days_left;
+            const dLabel = pendingDaysLabel(dl);
+            const bg = dl !== null && dl < 0 ? '#fff5f5' : dl !== null && dl <= 1 ? '#fffbeb' : '#ffffff';
+            const dColor = dl !== null && dl < 0 ? '#dc2626' : dl !== null && dl <= 1 ? '#92400e' : '#475569';
+            return `
+          <tr style="border-bottom:1px solid #e2e8f0;background:${bg};">
+            <td style="padding:9px 10px;font-weight:600;color:#1e293b;">${r.client}</td>
+            <td style="padding:9px 10px;color:#64748b;">${r.branch || '—'}</td>
+            <td style="padding:9px 10px;">${r.sku}</td>
+            <td style="padding:9px 10px;text-align:center;">${r.number_of_cases}</td>
+            <td style="padding:9px 10px;color:#64748b;white-space:nowrap;">${fmtDate(r.order_date)}</td>
+            <td style="padding:9px 10px;color:#64748b;white-space:nowrap;">${fmtDate(r.tentative_delivery_date)}</td>
+            <td style="padding:9px 10px;text-align:center;font-weight:600;color:${dColor};">${dLabel}</td>
+            <td style="padding:9px 10px;text-align:right;font-weight:700;color:${r.outstanding > 0 ? '#dc2626' : '#94a3b8'};">${r.outstanding > 0 ? fmtINR(r.outstanding) : '—'}</td>
+          </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  // ── Order analysis table ─────────────────────────────────────────────────────
+  const analysisRows = analysis.map(r => {
+    const bg         = r.status === 'OVERDUE' ? '#fff5f5' : r.status === 'DUE SOON' ? '#fffbeb' : r.status === 'Only 1 Order' || r.status === 'No Orders' ? '#f8fafc' : '#ffffff';
+    const badgeBg    = r.status === 'OVERDUE' ? '#fee2e2' : r.status === 'DUE SOON' ? '#fef3c7' : r.status === 'ON TRACK' ? '#dcfce7' : '#f1f5f9';
+    const badgeColor = r.status === 'OVERDUE' ? '#991b1b' : r.status === 'DUE SOON' ? '#92400e' : r.status === 'ON TRACK' ? '#166534' : '#475569';
+    const statusLabel = r.status === 'OVERDUE' ? `OVERDUE (${r.daysOverdue}d)` : r.status;
+    const outColor   = r.outstanding > 0 ? '#dc2626' : r.outstanding < 0 ? '#16a34a' : '#94a3b8';
+    const outLabel   = r.outstanding === 0 ? '—' : `${fmtINR(Math.abs(r.outstanding))}${r.outstanding < 0 ? ' (cr)' : ''}`;
     return `
-    <tr style="border-bottom:1px solid #f1f5f9;background:${bg};">
-      <td style="padding:7px 8px;font-weight:500;">${r.client}</td>
-      <td style="padding:7px 8px;color:#64748b;">${r.branch || '—'}</td>
-      <td style="padding:7px 8px;">${r.sku}</td>
-      <td style="padding:7px 8px;text-align:center;">${r.number_of_cases}</td>
-      <td style="padding:7px 8px;color:#64748b;white-space:nowrap;">${fmtDate(r.order_date)}</td>
-      <td style="padding:7px 8px;color:#64748b;white-space:nowrap;">${fmtDate(r.tentative_delivery_date)}</td>
-      <td style="padding:7px 8px;text-align:center;font-weight:600;color:${r.days_left !== null && r.days_left < 0 ? '#dc2626' : r.days_left !== null && r.days_left <= 1 ? '#92400e' : '#475569'};">${dLabel}</td>
-      <td style="padding:7px 8px;">${statusBadge(dlStatus)}</td>
-      <td style="padding:7px 8px;font-weight:600;color:${r.outstanding > 0 ? '#dc2626' : '#94a3b8'};">${r.outstanding > 0 ? fmtINR(r.outstanding) : '—'}</td>
+    <tr style="border-bottom:1px solid #e2e8f0;background:${bg};">
+      <td style="padding:9px 10px;font-weight:600;color:#1e293b;">${r.client}</td>
+      <td style="padding:9px 10px;color:#64748b;">${r.branch || '—'}</td>
+      <td style="padding:9px 10px;text-align:right;font-weight:700;color:${outColor};">${outLabel}</td>
+      <td style="padding:9px 10px;color:#64748b;white-space:nowrap;">${fmtDate(r.lastOrderDate)}</td>
+      <td style="padding:9px 10px;text-align:center;color:#475569;">${r.avgDays !== null ? `${r.avgDays}d` : '—'}</td>
+      <td style="padding:9px 10px;color:#64748b;white-space:nowrap;">${fmtDate(r.expectedNext)}</td>
+      <td style="padding:9px 10px;text-align:center;font-weight:600;color:${r.daysOverdue > 0 ? '#dc2626' : '#94a3b8'};">${r.daysOverdue > 0 ? `${r.daysOverdue}d` : '—'}</td>
+      <td style="padding:9px 10px;">
+        <span style="background:${badgeBg};color:${badgeColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap;">${statusLabel}</span>
+      </td>
     </tr>`;
   }).join('');
 
   const body = `
     <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
       ${summaryBox('Pending Orders', pending.length, '#eff6ff', '#1d4ed8')}
-      ${summaryBox('Urgent (≤1 day)', urgentDelivery.length, urgentDelivery.length > 0 ? '#fef3c7' : '#f1f5f9', urgentDelivery.length > 0 ? '#92400e' : '#475569')}
-      ${summaryBox('Dispatched (30d)', dispatched.length, '#dcfce7', '#166534')}
-      ${summaryBox('Active Clients', uniqueClients, '#f1f5f9', '#475569')}
+      ${summaryBox('OVERDUE', overdue, overdue > 0 ? '#fee2e2' : '#f1f5f9', overdue > 0 ? '#991b1b' : '#475569')}
+      ${summaryBox('DUE SOON', dueSoon, dueSoon > 0 ? '#fef3c7' : '#f1f5f9', dueSoon > 0 ? '#92400e' : '#475569')}
+      ${summaryBox('ON TRACK', onTrack, '#dcfce7', '#166534')}
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead>
-        <tr style="background:#f8fafc;">
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Client</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Branch</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">SKU</th>
-          <th style="text-align:center;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Cases</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Order Date</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Delivery Date</th>
-          <th style="text-align:center;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Days</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Status</th>
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:500;border-bottom:1px solid #e2e8f0;">Outstanding</th>
-        </tr>
-      </thead>
-      <tbody>${tableRows}</tbody>
-    </table>`;
+    ${pendingSection}
+    <h3 style="font-size:14px;font-weight:600;color:#1e293b;margin:0 0 10px;">Order Analysis — Expected Next Order</h3>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:13px;">
+        <thead>
+          <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+            <th style="padding:9px 10px;text-align:left;color:#64748b;font-weight:600;">CLIENT</th>
+            <th style="padding:9px 10px;text-align:left;color:#64748b;font-weight:600;">BRANCH</th>
+            <th style="padding:9px 10px;text-align:right;color:#64748b;font-weight:600;">OUTSTANDING</th>
+            <th style="padding:9px 10px;text-align:left;color:#64748b;font-weight:600;">LAST ORDER</th>
+            <th style="padding:9px 10px;text-align:center;color:#64748b;font-weight:600;">AVG DAYS</th>
+            <th style="padding:9px 10px;text-align:left;color:#64748b;font-weight:600;">EXPECTED NEXT</th>
+            <th style="padding:9px 10px;text-align:center;color:#64748b;font-weight:600;">DAYS OVERDUE</th>
+            <th style="padding:9px 10px;text-align:left;color:#64748b;font-weight:600;">STATUS</th>
+          </tr>
+        </thead>
+        <tbody>${analysisRows}</tbody>
+      </table>
+    </div>`;
 
   return emailShell('Orders &amp; Payment Status Report', date, body);
 }
@@ -573,11 +662,13 @@ serve(async (req) => {
         let html = '';
 
         if (schedule.report_type === 'orders_payment_status') {
-          const rows = await fetchOrdersData(supabase);
-          const pending = rows.filter(r => r.status === 'pending').length;
-          const dispatched = rows.filter(r => r.status === 'dispatched').length;
-          subject = `Orders & Payment Status — ${dateLabel} (${pending} pending, ${dispatched} dispatched)`;
-          html = buildOrdersPaymentEmail(rows, dateLabel);
+          const [pendingOrders, analysisRows] = await Promise.all([
+            fetchPendingOrders(supabase),
+            fetchOrderAnalysisRows(supabase),
+          ]);
+          const overdue = analysisRows.filter(r => r.status === 'OVERDUE').length;
+          subject = `Orders & Payment Status — ${dateLabel} (${pendingOrders.length} pending, ${overdue} overdue)`;
+          html = buildOrdersPaymentEmail(pendingOrders, analysisRows, dateLabel);
         } else if (schedule.report_type === 'payment_followup') {
           const rows = await fetchPaymentFollowupRows(supabase);
           subject = `Payment Follow Up — ${dateLabel} (${rows.filter(r => r.status === 'Overdue').length} overdue)`;
