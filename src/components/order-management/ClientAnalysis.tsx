@@ -192,7 +192,7 @@ const ClientAnalysis: React.FC = () => {
       const monthsActive = b.monthsSet.size || 1;
       const avgMonthlyRevenue = totalRevenue / monthsActive;
       const paymentRatio = totalRevenue > 0 ? totalPaid / totalRevenue : 0;
-      const creditLimit = Math.round(avgMonthlyRevenue * 2 * paymentRatio);
+      const creditLimit = Math.round(avgMonthlyRevenue * paymentRatio);
       const utilization = creditLimit > 0 ? outstanding / creditLimit : 0;
       const status = computeCreditStatus(creditLimit, utilization);
 
