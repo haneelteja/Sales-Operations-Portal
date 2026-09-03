@@ -117,13 +117,19 @@ function daysLabel(r: OrderRow): string {
 async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promise<OrderRow[]> {
   const cutoffDispatched = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
 
-  const [{ data: allOrders }, { data: outstanding }, { data: customers }] = await Promise.all([
-    // All pending orders + dispatched in last 30 days
+  const [{ data: pendingOrders }, { data: dispatchedOrders }, { data: outstanding }, { data: customers }] = await Promise.all([
+    // Pending orders from orders table
     supabase
       .from('orders')
       .select('client, branch, sku, number_of_cases, order_date, tentative_delivery_date, status')
-      .or(`status.eq.pending,and(status.eq.dispatched,order_date.gte.${cutoffDispatched})`)
+      .eq('status', 'pending')
       .order('tentative_delivery_date', { ascending: true, nullsFirst: false }),
+    // Dispatched orders from orders_dispatch table (last 30 days)
+    supabase
+      .from('orders_dispatch')
+      .select('client, branch, sku, cases, order_date, delivery_date')
+      .gte('delivery_date', cutoffDispatched)
+      .order('delivery_date', { ascending: false }),
     supabase.rpc('get_customer_outstanding'),
     supabase.from('customers').select('id, client_name, branch').limit(10000),
   ]);
@@ -144,7 +150,7 @@ async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promi
   today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
 
-  const rows = (allOrders ?? []).map((o: Record<string, unknown>) => {
+  const pending = (pendingOrders ?? []).map((o: Record<string, unknown>) => {
     const outKey = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
     const rawDelivery = o.tentative_delivery_date as string | null;
     let daysLeft: number | null = null;
@@ -160,22 +166,31 @@ async function fetchOrdersData(supabase: ReturnType<typeof createClient>): Promi
       number_of_cases: (o.number_of_cases as number) ?? 0,
       order_date: (o.order_date as string) ?? '',
       tentative_delivery_date: rawDelivery,
-      status: (o.status as string) ?? '',
+      status: 'pending',
       days_left: daysLeft,
       outstanding: outstandingByKey.get(outKey) ?? 0,
     } as OrderRow;
+  }).sort((a, b) => {
+    if (a.days_left === null && b.days_left === null) return 0;
+    if (a.days_left === null) return 1;
+    if (b.days_left === null) return -1;
+    return a.days_left - b.days_left;
   });
 
-  // Pending (sorted by delivery date ascending, nulls last) then dispatched (most recent first)
-  const pending    = rows.filter(r => r.status === 'pending')
-    .sort((a, b) => {
-      if (a.days_left === null && b.days_left === null) return 0;
-      if (a.days_left === null) return 1;
-      if (b.days_left === null) return -1;
-      return a.days_left - b.days_left;
-    });
-  const dispatched = rows.filter(r => r.status !== 'pending')
-    .sort((a, b) => b.order_date.localeCompare(a.order_date));
+  const dispatched = (dispatchedOrders ?? []).map((o: Record<string, unknown>) => {
+    const outKey = `${((o.client as string) ?? '').toLowerCase()}|||${((o.branch as string) ?? '').toLowerCase()}`;
+    return {
+      client: (o.client as string) ?? '',
+      branch: (o.branch as string | null) ?? null,
+      sku: (o.sku as string) ?? '',
+      number_of_cases: (o.cases as number) ?? 0,
+      order_date: (o.order_date as string) ?? '',
+      tentative_delivery_date: (o.delivery_date as string) ?? null,
+      status: 'dispatched',
+      days_left: null,
+      outstanding: outstandingByKey.get(outKey) ?? 0,
+    } as OrderRow;
+  });
 
   return [...pending, ...dispatched];
 }
