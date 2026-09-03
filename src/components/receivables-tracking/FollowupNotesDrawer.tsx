@@ -62,6 +62,8 @@ export function FollowupNotesDrawer({
     setSaving(true);
     try {
       await insertFollowupNote(customerId, trimmed, followupDate || null, operatorName);
+      // Clear immediately so a follow-up error can't trigger a duplicate submission.
+      setNote('');
 
       // Use ilike so the lookup is case-insensitive — client_name in client_followups
       // may differ in case from what get_receivables_summary returns (legacy data).
@@ -103,7 +105,6 @@ export function FollowupNotesDrawer({
 
       queryClient.invalidateQueries({ queryKey: ['followup-notes', customerId] });
       queryClient.invalidateQueries({ queryKey: ['receivables-tracking'] });
-      setNote('');
       toast({ title: 'Note saved', description: 'Follow-up note logged successfully.' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
