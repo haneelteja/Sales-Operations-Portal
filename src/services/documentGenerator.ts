@@ -76,7 +76,6 @@ export async function generateWordDocument(
 
       // Client details — template uses {clientName} and {branch}
       clientName: data.clientName ?? '',
-      clientName: data.clientName ?? '',
       area: data.area ?? '',
       branch: data.area ?? '',
       clientAddress: data.clientAddress || '',
@@ -203,7 +202,6 @@ function replaceTemplatePlaceholders(template: string, data: InvoiceData): strin
     companyName: escHtml(data.companyName ?? ''),
     // escape first, then convert newlines to <br> — order matters
     companyAddress: escHtml(data.companyAddress ?? '').replace(/\n/g, '<br>'),
-    clientName: escHtml(data.clientName ?? ''),
     clientName: escHtml(data.clientName ?? ''),
     area: escHtml(data.area ?? ''),
     branch: escHtml(data.area ?? ''),
