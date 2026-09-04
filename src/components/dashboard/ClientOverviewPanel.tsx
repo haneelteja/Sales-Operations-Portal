@@ -213,11 +213,14 @@ export default function ClientOverviewPanel() {
   const { data: pairCustomerIds = [] } = useQuery<string[]>({
     queryKey: ['overview-pair-ids', selectedCustomer?.client_name, selectedCustomer?.branch],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const base = supabase
         .from('customers')
         .select('id')
-        .eq('client_name', selectedCustomer!.client_name)
-        .eq('branch', selectedCustomer!.branch ?? '');
+        .eq('client_name', selectedCustomer!.client_name);
+      const q = selectedCustomer!.branch == null
+        ? base.is('branch', null)
+        : base.eq('branch', selectedCustomer!.branch);
+      const { data, error } = await q;
       if (error) throw error;
       return (data ?? []).map(c => c.id as string);
     },
