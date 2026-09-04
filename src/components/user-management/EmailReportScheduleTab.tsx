@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { Mail, Clock, Send, Loader2, CheckCircle2, XCircle, User, Download, UserX } from 'lucide-react';
@@ -242,40 +241,73 @@ const EmailReportScheduleTab: React.FC = () => {
 
 // ─── Inactive Clients Export Card ────────────────────────────────────────────
 
-type InactiveDays = '30' | '60' | '90';
-
 const InactiveClientsExportCard: React.FC = () => {
   const { toast } = useToast();
-  const [days, setDays] = useState<InactiveDays>('60');
   const [loading, setLoading] = useState(false);
 
   const handleDownload = async () => {
     setLoading(true);
     try {
-      const threshold = Number(days);
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - threshold);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
       const today = new Date().toISOString().split('T')[0];
 
-      const [{ data: outstanding }, { data: saleTxns }, { data: customers }, { data: followups }, { data: assignees }] = await Promise.all([
-        supabase.rpc('get_customer_outstanding'),
-        supabase.from('sales_transactions').select('customer_id, transaction_date').eq('transaction_type', 'sale').limit(100000),
+      // Fetch inactive clients (config-based: all customer_ids have is_active=false)
+      // plus customers, followups, assignees and sale transactions in parallel.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [inactiveResult, { data: allCustomers }, { data: followups }, { data: assignees }] = await Promise.all([
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any).rpc('get_inactive_receivables'),
         supabase.from('customers').select('id, client_name, branch'),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any).from('client_followups').select('client_name, branch, next_followup_date').limit(10000),
         supabase.from('customer_assignee').select('customer_id, assignee_name'),
       ]);
 
-      // Build maps
-      const lastSaleMap = new Map<string, string>();
-      for (const tx of (saleTxns ?? []) as Array<{ customer_id: string; transaction_date: string }>) {
-        const cur = lastSaleMap.get(tx.customer_id);
-        if (!cur || tx.transaction_date > cur) lastSaleMap.set(tx.customer_id, tx.transaction_date);
+      if (inactiveResult.error) throw inactiveResult.error;
+
+      type InactiveRow = { customer_id: string; client_name: string; branch: string; outstanding: number | string };
+      const inactiveClients = (inactiveResult.data ?? []) as InactiveRow[];
+
+      if (inactiveClients.length === 0) {
+        toast({ title: 'No inactive clients', description: 'No clients marked as inactive in configuration.' });
+        return;
       }
-      const customerMap = new Map(
-        (customers ?? []).map((c: { id: string; client_name: string; branch: string | null }) => [c.id, c])
-      );
+
+      // Build id → pairKey map so transaction lookups are O(1)
+      const customers = (allCustomers ?? []) as Array<{ id: string; client_name: string; branch: string | null }>;
+      const idToPairKey = new Map<string, string>();
+      for (const c of customers) {
+        idToPairKey.set(c.id, `${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`);
+      }
+
+      // Collect all customer_ids for inactive pairs
+      const inactivePairKeys = new Set(inactiveClients.map(ic => `${ic.client_name.toLowerCase()}|||${ic.branch.toLowerCase()}`));
+      const inactiveIds = customers
+        .filter(c => inactivePairKeys.has(`${c.client_name.toLowerCase()}|||${(c.branch ?? '').toLowerCase()}`))
+        .map(c => c.id);
+
+      // Fetch all sale transactions for inactive customer_ids
+      const { data: saleTxns } = await supabase
+        .from('sales_transactions')
+        .select('customer_id, transaction_date')
+        .in('customer_id', inactiveIds)
+        .eq('transaction_type', 'sale');
+
+      // Aggregate per-pair: first order, last order, order count
+      type SaleStats = { first: string; last: string; count: number };
+      const pairSaleStats = new Map<string, SaleStats>();
+      for (const tx of (saleTxns ?? []) as Array<{ customer_id: string; transaction_date: string }>) {
+        const pairKey = idToPairKey.get(tx.customer_id);
+        if (!pairKey || !inactivePairKeys.has(pairKey)) continue;
+        const cur = pairSaleStats.get(pairKey);
+        if (!cur) {
+          pairSaleStats.set(pairKey, { first: tx.transaction_date, last: tx.transaction_date, count: 1 });
+        } else {
+          if (tx.transaction_date < cur.first) cur.first = tx.transaction_date;
+          if (tx.transaction_date > cur.last) cur.last = tx.transaction_date;
+          cur.count++;
+        }
+      }
+
       const followupMap = new Map<string, string>(
         (followups ?? []).map((f: { client_name: string; branch: string; next_followup_date: string | null }) => [
           `${f.client_name.toLowerCase()}|||${(f.branch ?? '').toLowerCase()}`,
@@ -286,55 +318,44 @@ const InactiveClientsExportCard: React.FC = () => {
         (assignees ?? []).map((a: { customer_id: string; assignee_name: string }) => [a.customer_id, a.assignee_name])
       );
 
-      const todayMs = new Date(today + 'T00:00:00').getTime();
-      type Row = { client: string; branch: string; outstanding: number; lastSale: string; daysSince: number | string; followup: string; assignee: string };
-      const rows: Row[] = [];
+      const fmtDate = (d: string | null | undefined) =>
+        d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-      for (const r of (outstanding ?? []) as Array<{ customer_id: string; outstanding: number }>) {
-        if ((r.outstanding ?? 0) <= 0) continue;
-        const cust = customerMap.get(r.customer_id) as { client_name: string; branch: string | null } | undefined;
-        if (!cust) continue;
-        const lastSale = lastSaleMap.get(r.customer_id) ?? null;
-        if (lastSale && lastSale >= cutoffStr) continue; // active — skip
-        const daysSince = lastSale
-          ? Math.round((todayMs - new Date(lastSale + 'T00:00:00').getTime()) / 86400000)
-          : 'Never';
-        const fKey = `${cust.client_name.toLowerCase()}|||${(cust.branch ?? '').toLowerCase()}`;
-        rows.push({
-          client: cust.client_name,
-          branch: cust.branch ?? '',
-          outstanding: r.outstanding,
-          lastSale: lastSale ? new Date(lastSale).toLocaleDateString('en-IN') : 'Never',
-          daysSince,
-          followup: followupMap.get(fKey) ? new Date(followupMap.get(fKey)!).toLocaleDateString('en-IN') : '—',
-          assignee: assigneeMap.get(r.customer_id) ?? '—',
-        });
-      }
+      const rows = inactiveClients
+        .map(ic => {
+          const pairKey = `${ic.client_name.toLowerCase()}|||${ic.branch.toLowerCase()}`;
+          const stats = pairSaleStats.get(pairKey);
+          return {
+            client: ic.client_name,
+            branch: ic.branch,
+            outstanding: Number(ic.outstanding),
+            firstOrder: stats?.first ?? null,
+            lastOrder: stats?.last ?? null,
+            orderCount: stats?.count ?? 0,
+            followup: followupMap.get(pairKey) || null,
+            assignee: assigneeMap.get(ic.customer_id) ?? '—',
+          };
+        })
+        .sort((a, b) => b.outstanding - a.outstanding);
 
-      rows.sort((a, b) => b.outstanding - a.outstanding);
-
-      if (rows.length === 0) {
-        toast({ title: 'No inactive clients', description: `No clients with outstanding balance inactive for ${days}+ days.` });
-        return;
-      }
-
-      // Build CSV
-      const csvHeader = ['Client', 'Branch', 'Outstanding (INR)', 'Last Sale Date', 'Days Since Last Sale', 'Next Follow-up', 'Assignee'];
+      const csvHeader = ['Client', 'Branch', 'Outstanding (INR)', 'First Order', 'Last Order', 'No. of Orders', 'Next Follow-up', 'Assignee'];
       const csvRows = rows.map(r => [
         `"${r.client.replace(/"/g, '""')}"`,
         `"${r.branch.replace(/"/g, '""')}"`,
         r.outstanding.toFixed(2),
-        `"${r.lastSale}"`,
-        `${r.daysSince}`,
-        `"${r.followup}"`,
+        `"${fmtDate(r.firstOrder)}"`,
+        `"${fmtDate(r.lastOrder)}"`,
+        r.orderCount,
+        `"${fmtDate(r.followup)}"`,
         `"${r.assignee}"`,
       ]);
+
       const csv = [csvHeader.join(','), ...csvRows.map(r => r.join(','))].join('\n');
       const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Inactive_Clients_${days}days_${today}.csv`;
+      a.download = `Inactive_Clients_${today}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       toast({ title: 'Downloaded', description: `${rows.length} inactive client${rows.length !== 1 ? 's' : ''} exported.` });
@@ -354,30 +375,17 @@ const InactiveClientsExportCard: React.FC = () => {
             <div>
               <CardTitle className="text-base">Inactive Clients with Outstanding</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Export clients who have an outstanding balance but no sale in the selected period. Downloads as CSV.
+                Exports all clients marked inactive in configuration — includes first order, last order, order count, and outstanding balance.
               </p>
             </div>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-3">
-          <Label className="text-sm text-muted-foreground whitespace-nowrap">No sale in last</Label>
-          <Select value={days} onValueChange={v => setDays(v as InactiveDays)}>
-            <SelectTrigger className="w-[110px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30">30 days</SelectItem>
-              <SelectItem value="60">60 days</SelectItem>
-              <SelectItem value="90">90 days</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={handleDownload} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-            Download CSV
-          </Button>
-        </div>
+        <Button variant="outline" onClick={handleDownload} disabled={loading}>
+          {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          Download CSV
+        </Button>
       </CardContent>
     </Card>
   );
