@@ -207,6 +207,10 @@ serve(async (req) => {
 
 // ── All tables in the database (order matters for FK restore) ─────────────────
 const TABLES_TO_BACKUP = [
+  // Archived / legacy tables (no FK dependencies)
+  '_archived_adjustments',
+  '_archived_label_design_costs',
+
   // Config / master data (no FK dependencies)
   'profiles',
   'invoice_configurations',
@@ -267,10 +271,34 @@ const TABLES_TO_BACKUP = [
  */
 async function generateDatabaseSQL(supabase: ReturnType<typeof createClient>): Promise<string> {
   const generated = new Date().toISOString();
+
+  // Fetch applied migrations so the backup header documents the exact schema state.
+  // Before restoring this data file, replay all listed migrations against a fresh DB first.
+  let migrationBlock = '';
+  try {
+    const { data: migrations, error: migError } = await (supabase as any).rpc('get_applied_migrations');
+    if (!migError && Array.isArray(migrations) && migrations.length > 0) {
+      migrationBlock += `-- Applied migrations (${migrations.length} total) — replay these first on a fresh DB before restoring:\n`;
+      for (const m of migrations as Array<{ version: string }>) {
+        migrationBlock += `--   ${m.version}\n`;
+      }
+    } else {
+      migrationBlock = `-- Applied migrations: could not fetch (${migError?.message ?? 'unknown error'})\n`;
+    }
+  } catch (e) {
+    migrationBlock = `-- Applied migrations: fetch threw error — ${e instanceof Error ? e.message : String(e)}\n`;
+  }
+
   let sql = `-- Aamodha Operations Portal — Full Database Backup\n`;
   sql += `-- Generated: ${generated}\n`;
   sql += `-- Tables included: ${TABLES_TO_BACKUP.length}\n`;
-  sql += `-- Restore: psql -d <database> -f <this_file>\n`;
+  sql += `--\n`;
+  sql += `-- HOW TO RESTORE:\n`;
+  sql += `--   1. Create a fresh Supabase project (or a local Postgres DB)\n`;
+  sql += `--   2. Run: npx supabase db push   (to replay all migrations below and recreate schema)\n`;
+  sql += `--   3. Run: psql -d <database> -f <this_file>   (to restore data)\n`;
+  sql += `--\n`;
+  sql += migrationBlock;
   sql += `-- =============================================================\n\n`;
   sql += `BEGIN;\n\n`;
   sql += `-- Disable FK checks so tables can be restored in any order\n`;
