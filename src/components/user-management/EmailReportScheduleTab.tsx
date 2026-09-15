@@ -314,9 +314,13 @@ const InactiveClientsExportCard: React.FC = () => {
           f.next_followup_date ?? '',
         ])
       );
-      const assigneeMap = new Map(
-        (assignees ?? []).map((a: { customer_id: string; assignee_name: string }) => [a.customer_id, a.assignee_name])
-      );
+      // Build pairKey → assignee map by checking ALL customer_ids for each pair,
+      // not just the representative ID returned by the RPC.
+      const assigneeByPair = new Map<string, string>();
+      for (const a of (assignees ?? []) as Array<{ customer_id: string; assignee_name: string }>) {
+        const pk = idToPairKey.get(a.customer_id);
+        if (pk && !assigneeByPair.has(pk)) assigneeByPair.set(pk, a.assignee_name);
+      }
 
       const fmtDate = (d: string | null | undefined) =>
         d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -333,7 +337,7 @@ const InactiveClientsExportCard: React.FC = () => {
             lastOrder: stats?.last ?? null,
             orderCount: stats?.count ?? 0,
             followup: followupMap.get(pairKey) || null,
-            assignee: assigneeMap.get(ic.customer_id) ?? '—',
+            assignee: assigneeByPair.get(pairKey) ?? '—',
           };
         })
         .sort((a, b) => b.outstanding - a.outstanding);
