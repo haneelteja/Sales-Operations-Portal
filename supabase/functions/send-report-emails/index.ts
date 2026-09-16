@@ -544,7 +544,7 @@ async function fetchCreditRows(supabase: ReturnType<typeof createClient>): Promi
       .select('customer_id, amount, transaction_type, transaction_date')
       .in('transaction_type', ['sale', 'payment'])
       .limit(50000),
-    supabase.from('customers').select('id, client_name, branch'),
+    supabase.from('customers').select('id, client_name, branch').limit(10000),
   ]);
 
   const custKeyMap = new Map<string, string>();
