@@ -119,8 +119,8 @@ const ClientAnalysis: React.FC = () => {
     queryKey: ["client-analysis-customers"],
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
-      const { data } = await supabase.from("customers").select("id, client_name, branch").limit(10000);
-      return (data || []) as Array<{ id: string; client_name: string; branch: string | null }>;
+      const { data } = await supabase.from("customers").select("id, client_name, branch, is_active").limit(10000);
+      return (data || []) as Array<{ id: string; client_name: string; branch: string | null; is_active: boolean }>;
     },
   });
 
@@ -134,6 +134,13 @@ const ClientAnalysis: React.FC = () => {
     for (const c of customersData) {
       custKeyById.set(c.id, `${c.client_name.trim()}|||${(c.branch || "").trim()}`);
     }
+
+    // Only show pairs that have at least one currently active customer row
+    const activePairs = new Set<string>();
+    for (const c of customersData) {
+      if (c.is_active) activePairs.add(`${c.client_name.trim()}|||${(c.branch || "").trim()}`);
+    }
+
     const outstandingMap = new Map<string, number>();
     for (const r of outstandingRpc) {
       const key = custKeyById.get(r.customer_id);
@@ -148,10 +155,13 @@ const ClientAnalysis: React.FC = () => {
 
     const buckets = new Map<string, Bucket>();
 
+    // Include ALL transactions regardless of is_active — historical payments on
+    // deprecated SKU rows are still valid and must count toward the credit limit.
     for (const tx of rawTx) {
       const cust = tx.customers;
       if (!cust?.client_name) continue;
       const key = `${cust.client_name.trim()}|||${(cust.branch ?? "").trim()}`;
+      if (!activePairs.has(key)) continue; // skip fully-deprecated clients
       if (!buckets.has(key)) buckets.set(key, { txs: [], monthsSet: new Set() });
       const b = buckets.get(key)!;
       if (tx.transaction_date) {
@@ -161,6 +171,7 @@ const ClientAnalysis: React.FC = () => {
     }
 
     const result: ClientAnalysisRow[] = [];
+    const processedKeys = new Set<string>();
 
     for (const [key, b] of buckets) {
       const [client, branch] = key.split("|||");
@@ -203,6 +214,25 @@ const ClientAnalysis: React.FC = () => {
         creditLimit,
         utilization,
         status,
+        outstanding,
+      });
+      processedKeys.add(key);
+    }
+
+    // Clients whose transactions reference deleted customer_ids won't appear in
+    // buckets (JOIN returns null). Sweep outstandingMap to catch them.
+    for (const [key, outstanding] of outstandingMap) {
+      if (processedKeys.has(key)) continue;
+      if (!activePairs.has(key)) continue;
+      const [client, branch] = key.split("|||");
+      const utilization = 0;
+      result.push({
+        client,
+        branch,
+        clientRisk: 0,
+        creditLimit: 0,
+        utilization,
+        status: computeCreditStatus(0, utilization),
         outstanding,
       });
     }
