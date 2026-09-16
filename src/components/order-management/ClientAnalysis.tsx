@@ -93,14 +93,14 @@ const ClientAnalysis: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("sales_transactions")
-        .select("transaction_type, amount, transaction_date, customers(client_name, branch)")
+        .select("customer_id, transaction_type, amount, transaction_date")
         .order("transaction_date", { ascending: true })
         .limit(50000);
       return (data ?? []) as Array<{
+        customer_id: string;
         transaction_type: string;
         amount: number | null;
         transaction_date: string | null;
-        customers: { client_name: string; branch: string } | null;
       }>;
     },
   });
@@ -157,10 +157,11 @@ const ClientAnalysis: React.FC = () => {
 
     // Include ALL transactions regardless of is_active — historical payments on
     // deprecated SKU rows are still valid and must count toward the credit limit.
+    // Use custKeyById (client-side map) instead of an embedded JOIN so that every
+    // customer_id resolves reliably with no whitespace or format ambiguity.
     for (const tx of rawTx) {
-      const cust = tx.customers;
-      if (!cust?.client_name) continue;
-      const key = `${cust.client_name.trim()}|||${(cust.branch ?? "").trim()}`;
+      const key = custKeyById.get(tx.customer_id);
+      if (!key) continue;
       if (!activePairs.has(key)) continue; // skip fully-deprecated clients
       if (!buckets.has(key)) buckets.set(key, { txs: [], monthsSet: new Set() });
       const b = buckets.get(key)!;
