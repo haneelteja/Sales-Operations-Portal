@@ -140,23 +140,16 @@ const LabelPurchases = () => {
   const addFormSkus = useMemo(() => getSkusForCustomerId(form.client_id), [form.client_id, getSkusForCustomerId]);
   const editFormSkus = useMemo(() => getSkusForCustomerId(editForm.client_id), [editForm.client_id, getSkusForCustomerId]);
 
-  const { data: labelVendors } = useQuery({
-    queryKey: ["label-vendors-config"],
+  const { data: labelVendors = [] } = useQuery({
+    queryKey: ["label-vendors"],
     queryFn: async () => {
       const { data } = await supabase
-        .from("invoice_configurations")
-        .select("config_value")
-        .eq("config_key", "label_vendors")
-        .maybeSingle();
-      if (!data) return [] as string[];
-      try {
-        const parsed = JSON.parse(data.config_value || "[]");
-        if (!Array.isArray(parsed)) return [] as string[];
-        const vendors = parsed.map((e: unknown) =>
-          typeof e === 'string' ? e : (e as { vendor?: string })?.vendor
-        ).filter((v): v is string => !!v);
-        return [...new Set(vendors)].sort() as string[];
-      } catch { return [] as string[]; }
+        .from("label_vendors")
+        .select("id, vendor_name")
+        .eq("is_active", true)
+        .eq("is_commercial", true)
+        .order("vendor_name", { ascending: true });
+      return (data || []) as { id: string; vendor_name: string }[];
     },
   });
 
@@ -196,7 +189,7 @@ const LabelPurchases = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("label_purchases")
-        .select("id, vendor_id, client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description, record_type, reason")
+        .select("id, vendor_id, label_vendors(vendor_name, is_commercial), client_id, sku, quantity, cost_per_label, total_amount, purchase_date, description, record_type, reason")
         .order("created_at", { ascending: false })
         .limit(10000);
       return (data || []) as LabelPurchase[];
@@ -330,17 +323,19 @@ const LabelPurchases = () => {
   };
 
   // Vendor change in add form: auto-fill price from config
-  const handleVendorChange = (vendor: string) => {
-    const cost = lookupPrice(vendor, form.sku, form.purchase_date);
+  const handleVendorChange = (vendorId: string) => {
+    const vendorName = labelVendors.find(v => v.id === vendorId)?.vendor_name || '';
+    const cost = lookupPrice(vendorName, form.sku, form.purchase_date);
     const total = cost && form.quantity
       ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(4)
       : form.total_amount;
-    setForm(prev => ({ ...prev, vendor_id: vendor, cost_per_label: cost, total_amount: cost ? total : prev.total_amount }));
+    setForm(prev => ({ ...prev, vendor_id: vendorId, cost_per_label: cost, total_amount: cost ? total : prev.total_amount }));
   };
 
   // SKU change in add form: auto-fill price from config
   const handleSkuChange = (sku: string) => {
-    const cost = lookupPrice(form.vendor_id, sku, form.purchase_date);
+    const vendorName = labelVendors.find(v => v.id === form.vendor_id)?.vendor_name || '';
+    const cost = lookupPrice(vendorName, sku, form.purchase_date);
     const total = cost && form.quantity
       ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(4)
       : form.total_amount;
@@ -349,7 +344,8 @@ const LabelPurchases = () => {
 
   // Purchase date change in add form: re-lookup price if vendor+SKU set
   const handleDateChange = (date: string) => {
-    const cost = form.vendor_id && form.sku ? lookupPrice(form.vendor_id, form.sku, date) : form.cost_per_label;
+    const vendorName = form.vendor_id ? labelVendors.find(v => v.id === form.vendor_id)?.vendor_name || '' : '';
+    const cost = vendorName && form.sku ? lookupPrice(vendorName, form.sku, date) : form.cost_per_label;
     const total = cost && form.quantity
       ? (parseFloat(cost) * parseFloat(form.quantity)).toFixed(4)
       : form.total_amount;
@@ -365,16 +361,18 @@ const LabelPurchases = () => {
     setEditForm(newForm);
   };
 
-  const handleEditVendorChange = (vendor: string) => {
-    const cost = lookupPrice(vendor, editForm.sku, editForm.purchase_date);
+  const handleEditVendorChange = (vendorId: string) => {
+    const vendorName = labelVendors.find(v => v.id === vendorId)?.vendor_name || '';
+    const cost = lookupPrice(vendorName, editForm.sku, editForm.purchase_date);
     const total = cost && editForm.quantity
       ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(4)
       : editForm.total_amount;
-    setEditForm(prev => ({ ...prev, vendor_id: vendor, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
+    setEditForm(prev => ({ ...prev, vendor_id: vendorId, cost_per_label: cost || prev.cost_per_label, total_amount: cost ? total : prev.total_amount }));
   };
 
   const handleEditSkuChange = (sku: string) => {
-    const cost = lookupPrice(editForm.vendor_id, sku, editForm.purchase_date);
+    const vendorName = labelVendors.find(v => v.id === editForm.vendor_id)?.vendor_name || '';
+    const cost = lookupPrice(vendorName, sku, editForm.purchase_date);
     const total = cost && editForm.quantity
       ? (parseFloat(cost) * parseFloat(editForm.quantity)).toFixed(4)
       : editForm.total_amount;
@@ -384,7 +382,7 @@ const LabelPurchases = () => {
   const handleEditClick = (purchase: LabelPurchase) => {
     setEditingPurchase(purchase);
     setEditForm({
-      vendor_id: purchase.vendor_id || "",
+      vendor_id: purchase.vendor_id ?? "",
       client_id: purchase.client_id || "",
       sku: purchase.sku || "",
       quantity: purchase.quantity.toString(),
@@ -476,7 +474,7 @@ const LabelPurchases = () => {
     const filtered = baseList.filter((purchase) => {
       if (debouncedSearchTerm) {
         const searchLower = debouncedSearchTerm.toLowerCase();
-        const vendorName = purchase.vendor_id?.toLowerCase() || '';
+        const vendorName = purchase.label_vendors?.vendor_name?.toLowerCase() || '';
         const customer = customersForLookup?.find(c => c.id === purchase.client_id);
         const clientName = customer?.client_name?.toLowerCase() || '';
         const skuName = purchase.sku?.toLowerCase() || '';
@@ -487,7 +485,8 @@ const LabelPurchases = () => {
       }
 
       if (columnFilters.vendor) {
-        if (!(purchase.vendor_id?.toLowerCase() || '').includes(columnFilters.vendor.toLowerCase())) return false;
+        const vendorName = purchase.label_vendors?.vendor_name || '';
+        if (!vendorName.toLowerCase().includes(columnFilters.vendor.toLowerCase())) return false;
       }
       if (columnFilters.client) {
         const customer = customersForLookup?.find(c => c.id === purchase.client_id);
@@ -512,7 +511,7 @@ const LabelPurchases = () => {
         let bValue: string | number | Date;
         switch (column) {
           case 'purchase_date': aValue = new Date(a.purchase_date); bValue = new Date(b.purchase_date); break;
-          case 'vendor': aValue = a.vendor_id || ''; bValue = b.vendor_id || ''; break;
+          case 'vendor': aValue = a.label_vendors?.vendor_name || ''; bValue = b.label_vendors?.vendor_name || ''; break;
           case 'client': {
             const ca = customersForLookup?.find(c => c.id === a.client_id);
             const cb = customersForLookup?.find(c => c.id === b.client_id);
@@ -586,7 +585,7 @@ const LabelPurchases = () => {
         'Quantity': purchase.quantity,
         'Cost per Label': purchase.cost_per_label,
         'Total Amount': purchase.total_amount,
-        'Vendor': purchase.vendor_id || 'N/A',
+        'Vendor': purchase.label_vendors?.vendor_name || 'N/A',
         'Reason': purchase.reason || '',
         'Description': purchase.description || ''
       };
@@ -637,7 +636,7 @@ const LabelPurchases = () => {
           <div className="space-y-2">
             <Label htmlFor="vendor">Vendor{form.record_type === 'purchase' ? ' *' : ''}</Label>
             <SearchableSelect
-              options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
+              options={labelVendors.map((v) => ({ value: v.id, label: v.vendor_name }))}
               value={form.vendor_id}
               onValueChange={handleVendorChange}
               placeholder="Select vendor"
@@ -855,7 +854,7 @@ const LabelPurchases = () => {
                     <TableCell className={`text-right ${purchase.quantity < 0 ? 'text-orange-600' : ''}`}>{purchase.quantity?.toLocaleString()}</TableCell>
                     <TableCell className="text-right">{purchase.record_type === 'adjustment' ? '—' : `₹${purchase.cost_per_label}`}</TableCell>
                     <TableCell className="text-right font-medium">{purchase.record_type === 'adjustment' ? '—' : `₹${purchase.total_amount?.toLocaleString('en-IN', { maximumFractionDigits: 4 })}`}</TableCell>
-                    <TableCell>{purchase.vendor_id || '—'}</TableCell>
+                    <TableCell>{purchase.label_vendors?.vendor_name || '—'}</TableCell>
                     <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate" title={purchase.reason || purchase.description || ''}>{purchase.reason || purchase.description || '—'}</TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center gap-2">
@@ -909,7 +908,7 @@ const LabelPurchases = () => {
                                 <div className="space-y-2">
                                   <Label>Vendor{editForm.record_type === 'purchase' ? ' *' : ''}</Label>
                                   <SearchableSelect
-                                    options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
+                                    options={labelVendors.map((v) => ({ value: v.id, label: v.vendor_name }))}
                                     value={editForm.vendor_id}
                                     onValueChange={handleEditVendorChange}
                                     placeholder="Select vendor"

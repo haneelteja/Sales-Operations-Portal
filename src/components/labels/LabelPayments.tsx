@@ -19,7 +19,8 @@ interface LabelPayment {
   payment_amount: number;
   payment_date: string;
   payment_method: string;
-  vendor_id: string;
+  vendor_id: string | null; // UUID FK → label_vendors(id)
+  label_vendors: { vendor_name: string; is_commercial: boolean } | null;
   description?: string;
 }
 
@@ -27,7 +28,7 @@ interface LabelPaymentForm {
   payment_amount: string;
   payment_date: string;
   payment_method: string;
-  vendor_id: string;
+  vendor_id: string; // UUID
   description: string;
 }
 
@@ -83,34 +84,25 @@ const LabelPayments = () => {
   const queryClient = useQueryClient();
   const log = useAuditLog();
 
-  // Fetch label vendors from configuration
-  const { data: labelVendors } = useQuery({
-    queryKey: ["label-vendors-config"],
+  const { data: labelVendors = [] } = useQuery({
+    queryKey: ["label-vendors"],
     queryFn: async () => {
       const { data } = await supabase
-        .from("invoice_configurations")
-        .select("config_value")
-        .eq("config_key", "label_vendors")
-        .maybeSingle();
-      if (!data) return [] as string[];
-      try {
-        const parsed = JSON.parse(data.config_value || "[]");
-        if (!Array.isArray(parsed)) return [] as string[];
-        const vendors = parsed.map((e: unknown) =>
-          typeof e === 'string' ? e : (e as { vendor?: string })?.vendor
-        ).filter((v): v is string => !!v);
-        return [...new Set(vendors)].sort() as string[];
-      } catch { return [] as string[]; }
+        .from("label_vendors")
+        .select("id, vendor_name")
+        .eq("is_active", true)
+        .eq("is_commercial", true)
+        .order("vendor_name", { ascending: true });
+      return (data || []) as { id: string; vendor_name: string }[];
     },
   });
 
-  // Get only purchase-type label records for vendor outstanding (exclude adjustments)
   const { data: purchases } = useQuery({
     queryKey: ["label-purchases-for-outstanding"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_purchases")
-        .select("vendor_id, total_amount, purchase_date, record_type")
+        .select("vendor_id, label_vendors(vendor_name, is_commercial), total_amount, purchase_date, record_type")
         .order("purchase_date", { ascending: false })
         .limit(10000);
       if (error) throw error;
@@ -123,11 +115,11 @@ const LabelPayments = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("label_payments")
-        .select("id, payment_amount, payment_date, payment_method, vendor_id, description")
+        .select("id, payment_amount, payment_date, payment_method, vendor_id, label_vendors(vendor_name, is_commercial), description")
         .order("payment_date", { ascending: false })
         .limit(10000);
       if (error) throw error;
-      return data || [];
+      return (data || []) as LabelPayment[];
     },
   });
 
@@ -242,69 +234,40 @@ const LabelPayments = () => {
     }
   };
 
-  // Calculate vendor outstanding amounts
   const vendorOutstanding = React.useMemo(() => {
     if (!purchases || !payments) return [];
-
-    const isUUID = (str: string) => {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      return uuidRegex.test(str);
-    };
-
-    const canonicalizeVendorName = (name: string) => {
-      const t = name.trim();
-      if (/^gmg\s*(labels?)?$/i.test(t)) return 'GMG labels';
-      return t;
-    };
-    const normalizeVendorName = (name: string) => canonicalizeVendorName(name).toLowerCase();
-
-    // Only commercial vendors (those configured in label_vendors) contribute to outstanding.
-    // Direct/internal sources (Haneel, Venu, ABS, etc.) are excluded.
-    const commercialVendorSet = new Set(
-      (labelVendors || []).map(v => normalizeVendorName(v))
-    );
-    const isCommercialVendor = (vendorId: string) => {
-      if (isUUID(vendorId)) return true; // historical UUID = GMG
-      return commercialVendorSet.has(normalizeVendorName(vendorId));
-    };
 
     const vendorMap = new Map<string, { vendor_name: string; total_purchased: number; total_paid: number; outstanding: number }>();
 
     purchases.forEach((purchase) => {
-      if (!purchase.vendor_id || typeof purchase.vendor_id !== 'string') return;
-      if (!isCommercialVendor(purchase.vendor_id)) return;
-      const vendorName = isUUID(purchase.vendor_id) ? 'GMG labels' : canonicalizeVendorName(purchase.vendor_id);
-      const normalizedName = normalizeVendorName(vendorName);
-      const totalAmount = parseFloat(purchase.total_amount) || 0;
-      const existing = vendorMap.get(normalizedName);
+      const lv = (purchase as { label_vendors?: { vendor_name?: string; is_commercial?: boolean } | null }).label_vendors;
+      if (!lv?.is_commercial || !lv.vendor_name) return;
+      const key = lv.vendor_name.toLowerCase();
+      const totalAmount = parseFloat(String(purchase.total_amount)) || 0;
+      const existing = vendorMap.get(key);
       if (existing) {
         existing.total_purchased += totalAmount;
       } else {
-        vendorMap.set(normalizedName, { vendor_name: vendorName, total_purchased: totalAmount, total_paid: 0, outstanding: 0 });
+        vendorMap.set(key, { vendor_name: lv.vendor_name, total_purchased: totalAmount, total_paid: 0, outstanding: 0 });
       }
     });
 
     payments.forEach((payment) => {
-      if (payment.vendor_id && typeof payment.vendor_id === 'string' && isCommercialVendor(payment.vendor_id)) {
-        const vendorName = isUUID(payment.vendor_id) ? 'GMG labels' : canonicalizeVendorName(payment.vendor_id);
-        const normalizedName = normalizeVendorName(vendorName);
-        const paymentAmount = parseFloat(payment.payment_amount) || 0;
-        const existing = vendorMap.get(normalizedName);
-        if (existing) {
-          existing.total_paid += paymentAmount;
-        } else {
-          vendorMap.set(normalizedName, { vendor_name: vendorName, total_purchased: 0, total_paid: paymentAmount, outstanding: 0 });
-        }
+      if (!payment.label_vendors?.is_commercial || !payment.label_vendors.vendor_name) return;
+      const key = payment.label_vendors.vendor_name.toLowerCase();
+      const paymentAmount = parseFloat(String(payment.payment_amount)) || 0;
+      const existing = vendorMap.get(key);
+      if (existing) {
+        existing.total_paid += paymentAmount;
+      } else {
+        vendorMap.set(key, { vendor_name: payment.label_vendors.vendor_name, total_purchased: 0, total_paid: paymentAmount, outstanding: 0 });
       }
     });
 
-    const outstandingData = Array.from(vendorMap.values()).map(vendor => ({
-      ...vendor,
-      outstanding: vendor.total_purchased - vendor.total_paid
-    }));
-
-    return outstandingData.sort((a, b) => a.vendor_name.localeCompare(b.vendor_name));
-  }, [purchases, payments, labelVendors]);
+    return Array.from(vendorMap.values())
+      .map(vendor => ({ ...vendor, outstanding: vendor.total_purchased - vendor.total_paid }))
+      .sort((a, b) => a.vendor_name.localeCompare(b.vendor_name));
+  }, [purchases, payments]);
 
   const filteredAndSortedVendorOutstanding = React.useMemo(() => {
     const filtered = vendorOutstanding.filter((vendor) =>
@@ -338,18 +301,19 @@ const LabelPayments = () => {
       : payments;
 
     const filtered = baseList.filter((payment) => {
+      const vendorName = payment.label_vendors?.vendor_name || '';
       // Global search
       if (debouncedPaymentsSearch) {
         const q = debouncedPaymentsSearch.toLowerCase();
         const matches =
-          payment.vendor_id.toLowerCase().includes(q) ||
+          vendorName.toLowerCase().includes(q) ||
           payment.payment_method.toLowerCase().includes(q) ||
           (payment.description?.toLowerCase() || '').includes(q);
         if (!matches) return false;
       }
 
       // Per-column filters
-      if (columnFilters.vendor && !payment.vendor_id.toLowerCase().includes(columnFilters.vendor.toLowerCase())) return false;
+      if (columnFilters.vendor && !vendorName.toLowerCase().includes(columnFilters.vendor.toLowerCase())) return false;
       if (columnFilters.payment_method && !payment.payment_method.toLowerCase().includes(columnFilters.payment_method.toLowerCase())) return false;
       if (columnFilters.description && !(payment.description?.toLowerCase() || '').includes(columnFilters.description.toLowerCase())) return false;
       if (columnFilters.payment_amount && payment.payment_amount.toString() !== columnFilters.payment_amount) return false;
@@ -368,7 +332,7 @@ const LabelPayments = () => {
         let bValue: string | number | Date;
         switch (column) {
           case 'payment_date': aValue = new Date(a.payment_date); bValue = new Date(b.payment_date); break;
-          case 'vendor': aValue = a.vendor_id || ''; bValue = b.vendor_id || ''; break;
+          case 'vendor': aValue = a.label_vendors?.vendor_name || ''; bValue = b.label_vendors?.vendor_name || ''; break;
           case 'payment_amount': aValue = a.payment_amount || 0; bValue = b.payment_amount || 0; break;
           case 'payment_method': aValue = a.payment_method || ''; bValue = b.payment_method || ''; break;
           default: continue;
@@ -441,7 +405,7 @@ const LabelPayments = () => {
   const handleExportPayments = async () => {
     const exportData = filteredAndSortedPayments.map(payment => ({
       'Payment Date': new Date(payment.payment_date).toLocaleDateString(),
-      'Vendor': payment.vendor_id,
+      'Vendor': payment.label_vendors?.vendor_name || '',
       'Amount (₹)': payment.payment_amount,
       'Method': payment.payment_method,
       'Description': payment.description || ''
@@ -469,7 +433,7 @@ const LabelPayments = () => {
           <div className="space-y-2">
             <Label htmlFor="vendor">Vendor *</Label>
             <SearchableSelect
-              options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
+              options={labelVendors.map((v) => ({ value: v.id, label: v.vendor_name }))}
               value={form.vendor_id}
               onValueChange={(value) => setForm({...form, vendor_id: value})}
               placeholder="Select a vendor"
@@ -747,7 +711,7 @@ const LabelPayments = () => {
                 paginatedPayments.map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
-                    <TableCell>{payment.vendor_id || 'N/A'}</TableCell>
+                    <TableCell>{payment.label_vendors?.vendor_name || 'N/A'}</TableCell>
                     <TableCell className="font-medium">₹{payment.payment_amount.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</TableCell>
                     <TableCell>{payment.payment_method}</TableCell>
                     <TableCell>{payment.description || '—'}</TableCell>
@@ -818,7 +782,7 @@ const LabelPayments = () => {
                 <div className="space-y-2">
                   <Label htmlFor="edit-vendor">Vendor *</Label>
                   <SearchableSelect
-                    options={(labelVendors || []).map((vendor) => ({ value: vendor, label: vendor }))}
+                    options={labelVendors.map((v) => ({ value: v.id, label: v.vendor_name }))}
                     value={editForm.vendor_id}
                     onValueChange={(value) => setEditForm({...editForm, vendor_id: value})}
                     placeholder="Select a vendor"

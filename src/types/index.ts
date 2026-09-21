@@ -94,7 +94,8 @@ export interface TransportExpense {
 
 export interface LabelPurchase {
   id: string;
-  vendor_id: string; // Stores vendor name as text
+  vendor_id: string | null; // UUID FK → label_vendors(id)
+  label_vendors: { vendor_name: string; is_commercial: boolean } | null;
   client_id: string | null;
   sku: string | null;
   quantity: number;
@@ -199,7 +200,7 @@ export interface TransportExpenseForm {
 }
 
 export interface LabelPurchaseForm {
-  vendor_id: string; // This will contain vendor name as text
+  vendor_id: string; // UUID from label_vendors
   client_id: string;
   sku: string;
   quantity: string;

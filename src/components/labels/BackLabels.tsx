@@ -24,7 +24,8 @@ interface BackLabelPurchase {
   quantity: number;
   cost_per_label: number;
   total_amount: number;
-  vendor_id: string | null;
+  vendor_id: string | null; // UUID FK → label_vendors(id)
+  label_vendors: { vendor_name: string } | null;
   description: string | null;
 }
 
@@ -91,23 +92,15 @@ const BackLabels = () => {
   // ── Queries ──────────────────────────────────────────────────────────────────
 
   const { data: labelVendors = [] } = useQuery({
-    queryKey: ["label-vendors-config"],
+    queryKey: ["label-vendors"],
     queryFn: async () => {
       const { data } = await supabase
-        .from("invoice_configurations")
-        .select("config_value")
-        .eq("config_key", "label_vendors")
-        .maybeSingle();
-      if (!data) return [] as string[];
-      try {
-        const parsed = JSON.parse(data.config_value || "[]");
-        return (Array.isArray(parsed)
-          ? parsed.map((e: unknown) =>
-              typeof e === "string" ? e : (e as { vendor?: string })?.vendor
-            ).filter((v): v is string => !!v)
-          : []
-        ).sort() as string[];
-      } catch { return [] as string[]; }
+        .from("label_vendors")
+        .select("id, vendor_name")
+        .eq("is_active", true)
+        .eq("is_commercial", true)
+        .order("vendor_name", { ascending: true });
+      return (data || []) as { id: string; vendor_name: string }[];
     },
   });
 
@@ -116,7 +109,7 @@ const BackLabels = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("back_label_purchases")
-        .select("id, purchase_date, quantity, cost_per_label, total_amount, vendor_id, description")
+        .select("id, purchase_date, quantity, cost_per_label, total_amount, vendor_id, label_vendors(vendor_name), description")
         .order("purchase_date", { ascending: false })
         .limit(10000);
       if (error) throw error;
@@ -251,7 +244,7 @@ const BackLabels = () => {
       list = list.filter((p) =>
         new Date(p.purchase_date).toLocaleDateString().includes(q) ||
         p.quantity.toString().includes(q) ||
-        (p.vendor_id || "").toLowerCase().includes(q) ||
+        (p.label_vendors?.vendor_name || "").toLowerCase().includes(q) ||
         (p.description || "").toLowerCase().includes(q)
       );
     }
@@ -262,7 +255,7 @@ const BackLabels = () => {
     if (columnFilters.quantity) list = list.filter((p) => p.quantity.toString() === columnFilters.quantity);
     if (columnFilters.cost_per_label) list = list.filter((p) => p.cost_per_label.toString() === columnFilters.cost_per_label);
     if (columnFilters.total_amount) list = list.filter((p) => p.total_amount.toString() === columnFilters.total_amount);
-    if (columnFilters.vendor) list = list.filter((p) => (p.vendor_id || "").toLowerCase().includes(columnFilters.vendor.toLowerCase()));
+    if (columnFilters.vendor) list = list.filter((p) => (p.label_vendors?.vendor_name || "").toLowerCase().includes(columnFilters.vendor.toLowerCase()));
     if (columnFilters.description) list = list.filter((p) => (p.description || "").toLowerCase().includes(columnFilters.description.toLowerCase()));
 
     const activeSort = Object.entries(columnSorts).find(([, d]) => d !== null);
@@ -275,7 +268,7 @@ const BackLabels = () => {
           case "quantity": av = a.quantity; bv = b.quantity; break;
           case "cost_per_label": av = a.cost_per_label; bv = b.cost_per_label; break;
           case "total_amount": av = a.total_amount; bv = b.total_amount; break;
-          case "vendor": av = a.vendor_id || ""; bv = b.vendor_id || ""; break;
+          case "vendor": av = a.label_vendors?.vendor_name || ""; bv = b.label_vendors?.vendor_name || ""; break;
           case "description": av = a.description || ""; bv = b.description || ""; break;
           default: return 0;
         }
@@ -410,7 +403,7 @@ const BackLabels = () => {
       quantity: p.quantity.toString(),
       cost_per_label: p.cost_per_label.toString(),
       total_amount: p.total_amount.toString(),
-      vendor_id: p.vendor_id || "",
+      vendor_id: p.vendor_id ?? "",
       description: p.description || "",
     });
     setEditDialogOpen(true);
@@ -435,13 +428,13 @@ const BackLabels = () => {
       Quantity: p.quantity,
       "Cost per Label (₹)": p.cost_per_label,
       "Total Amount (₹)": p.total_amount,
-      Vendor: p.vendor_id || "",
+      Vendor: p.label_vendors?.vendor_name || "",
       Description: p.description || "",
     }));
     await exportJsonToExcel(rows, "Back Label Purchases", `back-label-purchases-${today}.xlsx`);
   };
 
-  const vendorOptions = labelVendors.map((v) => ({ value: v, label: v }));
+  const vendorOptions = labelVendors.map((v) => ({ value: v.id, label: v.vendor_name }));
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -800,7 +793,7 @@ const BackLabels = () => {
                         <TableCell className="text-right font-medium">
                           ₹{p.total_amount.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
                         </TableCell>
-                        <TableCell>{p.vendor_id || "—"}</TableCell>
+                        <TableCell>{p.label_vendors?.vendor_name || "—"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={p.description || ""}>
                           {p.description || "—"}
                         </TableCell>
